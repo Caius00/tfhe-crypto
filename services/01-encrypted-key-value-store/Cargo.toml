@@ -1,0 +1,7 @@
+[package]
+name = "encrypted-key-value-store"
+version = "0.1.0"
+edition = "2021"
+description = "Encrypted Key-Value Store"
+
+[dependencies]

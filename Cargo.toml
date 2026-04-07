@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = [
+    "services/01-encrypted-key-value-store",
+    "services/02-encrypted-age-verification",
+    "services/03-encrypted-voting-polling",
+    "services/04-sealed-bid-auction",
+    "services/05-encrypted-statistics-service",
+    "services/06-encrypted-genomics",
+    "services/07-encrypted-image-processing",
+    "services/08-encrypted-leaderboard",
+    "services/09-encrypted-program-execution",
+]

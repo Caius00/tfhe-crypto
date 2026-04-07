@@ -1,0 +1,7 @@
+[package]
+name = "encrypted-program-execution"
+version = "0.1.0"
+edition = "2021"
+description = "Encrypted Program Execution"
+
+[dependencies]
