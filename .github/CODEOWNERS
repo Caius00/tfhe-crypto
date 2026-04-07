@@ -1,0 +1,13 @@
+# Jeder Service hat seinen eigenen Owner
+/services/01-encrypted-key-value-store/         @owner-service-01
+/services/02-encrypted-age-verification/        @owner-service-02
+/services/03-encrypted-voting-polling/          @owner-service-03
+/services/04-sealed-bid-auction/                @owner-service-04
+/services/05-encrypted-statistics-service/      @owner-service-05
+/services/06-encrypted-genomics/                @owner-service-06
+/services/07-encrypted-image-processing/        @owner-service-07
+/services/08-encrypted-leaderboard/             @owner-service-08
+/services/09-encrypted-program-execution/       @owner-service-09
+
+# Client
+/client/                                        @owner-client
