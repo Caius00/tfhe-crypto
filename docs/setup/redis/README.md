@@ -9,15 +9,18 @@
 
 **Starten**
 ```bash
-docker compose up -d
+cd docs/setup/redis
+docker-compose up -d
 ```
 
 **Stoppen**
 ```bash
-docker compose down
+cd docs/setup/redis
+docker-compose down
 ```
 
 **Löschen** (inkl. Daten)
 ```bash
-docker compose down -v
+cd docs/setup/redis
+docker-compose down -v
 ```

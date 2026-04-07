@@ -11,15 +11,18 @@
 
 **Starten**
 ```bash
-docker compose up -d
+cd docs/setup/postgres
+docker-compose up -d
 ```
 
 **Stoppen**
 ```bash
-docker compose down
+cd docs/setup/postgres
+docker-compose down
 ```
 
 **Löschen** (inkl. Daten)
 ```bash
-docker compose down -v
+cd docs/setup/postgres
+docker-compose down -v
 ```
