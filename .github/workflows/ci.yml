@@ -5,20 +5,21 @@ on:
 
 jobs:
   check:
+    name: "${{ matrix.nr }} ${{ matrix.service }}"
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        service:
-          - encrypted-key-value-store
-          - encrypted-age-verification
-          - encrypted-voting-polling
-          - sealed-bid-auction
-          - encrypted-statistics-service
-          - encrypted-genomics
-          - encrypted-image-processing
-          - encrypted-leaderboard
-          - encrypted-program-execution
+        include:
+          - { nr: "01", service: encrypted-key-value-store }
+          - { nr: "02", service: encrypted-age-verification }
+          - { nr: "03", service: encrypted-voting-polling }
+          - { nr: "04", service: sealed-bid-auction }
+          - { nr: "05", service: encrypted-statistics-service }
+          - { nr: "06", service: encrypted-genomics }
+          - { nr: "07", service: encrypted-image-processing }
+          - { nr: "08", service: encrypted-leaderboard }
+          - { nr: "09", service: encrypted-program-execution }
     steps:
       - uses: actions/checkout@v4.2.2
       - uses: dtolnay/rust-toolchain@stable
@@ -37,16 +38,43 @@ jobs:
         id: test
         run: cargo test -p ${{ matrix.service }}
 
-      - name: Summary
+      - name: Save result
         if: always()
         run: |
+          mkdir result
+          printf 'fmt=${{ steps.fmt.outcome }}\nclippy=${{ steps.clippy.outcome }}\ntest=${{ steps.test.outcome }}' > result/outcome.txt
+          echo '${{ matrix.nr }}' > result/nr.txt
+
+      - name: Upload result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: result-${{ matrix.nr }}-${{ matrix.service }}
+          path: result/
+
+  summary:
+    needs: check
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: result-*
+          path: results
+
+      - name: Build summary
+        run: |
+          icon() { case "$1" in success) echo "✅";; skipped) echo "⏭️";; *) echo "❌";; esac; }
+
           {
-            echo "### \`${{ matrix.service }}\`"
-            echo ""
-            echo "| Check   | Result |"
-            echo "|---------|--------|"
-            echo "| Format  | ${{ steps.fmt.outcome    == 'success' && '✅ passed' || steps.fmt.outcome    == 'skipped' && '⏭️ skipped' || '❌ failed' }} |"
-            echo "| Clippy  | ${{ steps.clippy.outcome == 'success' && '✅ passed' || steps.clippy.outcome == 'skipped' && '⏭️ skipped' || '❌ failed' }} |"
-            echo "| Test    | ${{ steps.test.outcome   == 'success' && '✅ passed' || steps.test.outcome   == 'skipped' && '⏭️ skipped' || '❌ failed' }} |"
-            echo ""
+            echo "| # | Service | Format | Clippy | Test |"
+            echo "|---|---------|:------:|:------:|:----:|"
+            for dir in $(ls -d results/result-* | sort); do
+              service="${dir#results/result-??-}"
+              nr=$(cat "$dir/nr.txt")
+              fmt=$(grep    "^fmt="    "$dir/outcome.txt" | cut -d= -f2)
+              clippy=$(grep "^clippy=" "$dir/outcome.txt" | cut -d= -f2)
+              test=$(grep   "^test="   "$dir/outcome.txt" | cut -d= -f2)
+              echo "| $nr | \`$service\` | $(icon $fmt) | $(icon $clippy) | $(icon $test) |"
+            done
           } >> "$GITHUB_STEP_SUMMARY"
