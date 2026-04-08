@@ -20,16 +20,33 @@ jobs:
           - encrypted-leaderboard
           - encrypted-program-execution
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4.2.2
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
 
       - name: Format
+        id: fmt
         run: cargo fmt -p ${{ matrix.service }} -- --check
 
       - name: Clippy
+        id: clippy
         run: cargo clippy -p ${{ matrix.service }} -- -D warnings
 
       - name: Test
+        id: test
         run: cargo test -p ${{ matrix.service }}
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### \`${{ matrix.service }}\`"
+            echo ""
+            echo "| Check   | Result |"
+            echo "|---------|--------|"
+            echo "| Format  | ${{ steps.fmt.outcome    == 'success' && '✅ passed' || steps.fmt.outcome    == 'skipped' && '⏭️ skipped' || '❌ failed' }} |"
+            echo "| Clippy  | ${{ steps.clippy.outcome == 'success' && '✅ passed' || steps.clippy.outcome == 'skipped' && '⏭️ skipped' || '❌ failed' }} |"
+            echo "| Test    | ${{ steps.test.outcome   == 'success' && '✅ passed' || steps.test.outcome   == 'skipped' && '⏭️ skipped' || '❌ failed' }} |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
