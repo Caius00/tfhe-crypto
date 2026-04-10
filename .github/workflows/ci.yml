@@ -7,7 +7,7 @@ on:
 jobs:
   check:
     name: "${{ matrix.nr }} ${{ matrix.service }}"
-    runs-on: github-runners
+    runs-on: arc-runners
     strategy:
       fail-fast: false
       matrix:
