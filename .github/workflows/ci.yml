@@ -23,6 +23,8 @@ jobs:
           - { nr: "09", service: encrypted-program-execution }
     steps:
       - uses: actions/checkout@v4.2.2
+      - name: Install build dependencies                                                                                               
+        run: sudo apt-get update && sudo apt-get install -y build-essential
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
