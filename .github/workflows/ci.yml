@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-
+  workflow_dispatch:
+  
 jobs:
   check:
     name: "${{ matrix.nr }} ${{ matrix.service }}"
