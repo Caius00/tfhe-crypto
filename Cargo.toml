@@ -11,3 +11,8 @@ members = [
     "services/08-encrypted-leaderboard",
     "services/09-encrypted-program-execution",
 ]
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
