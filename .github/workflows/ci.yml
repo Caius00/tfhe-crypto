@@ -2,11 +2,12 @@ name: CI
 
 on:
   push:
-
+  workflow_dispatch:
+  
 jobs:
   check:
     name: "${{ matrix.nr }} ${{ matrix.service }}"
-    runs-on: ubuntu-latest
+    runs-on: arc-runners
     strategy:
       fail-fast: false
       matrix:
@@ -22,6 +23,8 @@ jobs:
           - { nr: "09", service: encrypted-program-execution }
     steps:
       - uses: actions/checkout@v4.2.2
+      - name: Install build dependencies                                                                                               
+        run: sudo apt-get update && sudo apt-get install -y build-essential
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
