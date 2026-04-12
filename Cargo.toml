@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "shared/health",
     "services/01-encrypted-key-value-store",
     "services/02-encrypted-age-verification",
     "services/03-encrypted-voting-polling",
@@ -13,6 +14,8 @@ members = [
 ]
 
 [workspace.dependencies]
+axum = "0.8"
+health = { path = "shared/health" }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
