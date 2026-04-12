@@ -23,6 +23,8 @@ jobs:
           - { nr: "09", service: encrypted-program-execution }
     steps:
       - uses: actions/checkout@v4.2.2
+        with:
+          token: ${{ secrets.GH_PAT }}
 
       - uses: Swatinem/rust-cache@v2
         with:
