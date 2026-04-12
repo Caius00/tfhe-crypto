@@ -12,22 +12,92 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  changes:
+    runs-on: arc-runners
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      any: ${{ steps.matrix.outputs.any }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            s01:
+              - 'services/01-encrypted-key-value-store/**'
+              - 'shared/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            s02:
+              - 'services/02-encrypted-age-verification/**'
+              - 'shared/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            s03:
+              - 'services/03-encrypted-voting-polling/**'
+              - 'shared/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            s04:
+              - 'services/04-sealed-bid-auction/**'
+              - 'shared/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            s05:
+              - 'services/05-encrypted-statistics-service/**'
+              - 'shared/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            s06:
+              - 'services/06-encrypted-genomics/**'
+              - 'shared/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            s07:
+              - 'services/07-encrypted-image-processing/**'
+              - 'shared/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            s08:
+              - 'services/08-encrypted-leaderboard/**'
+              - 'shared/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            s09:
+              - 'services/09-encrypted-program-execution/**'
+              - 'shared/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+
+      - id: matrix
+        run: |
+          INCLUDE='[]'
+          add() { INCLUDE=$(echo "$INCLUDE" | jq ". + [{\"nr\":\"$1\",\"service\":\"$2\"}]"); }
+
+          [ "${{ steps.filter.outputs.s01 }}" = "true" ] && add "01" "encrypted-key-value-store"
+          [ "${{ steps.filter.outputs.s02 }}" = "true" ] && add "02" "encrypted-age-verification"
+          [ "${{ steps.filter.outputs.s03 }}" = "true" ] && add "03" "encrypted-voting-polling"
+          [ "${{ steps.filter.outputs.s04 }}" = "true" ] && add "04" "sealed-bid-auction"
+          [ "${{ steps.filter.outputs.s05 }}" = "true" ] && add "05" "encrypted-statistics-service"
+          [ "${{ steps.filter.outputs.s06 }}" = "true" ] && add "06" "encrypted-genomics"
+          [ "${{ steps.filter.outputs.s07 }}" = "true" ] && add "07" "encrypted-image-processing"
+          [ "${{ steps.filter.outputs.s08 }}" = "true" ] && add "08" "encrypted-leaderboard"
+          [ "${{ steps.filter.outputs.s09 }}" = "true" ] && add "09" "encrypted-program-execution"
+
+          echo "matrix={\"include\":$INCLUDE}" >> $GITHUB_OUTPUT
+          [ "$INCLUDE" = "[]" ] && echo "any=false" >> $GITHUB_OUTPUT || echo "any=true" >> $GITHUB_OUTPUT
+
   check:
+    needs: changes
+    if: needs.changes.outputs.any == 'true'
     name: "${{ matrix.nr }} ${{ matrix.service }}"
     runs-on: arc-runners
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - { nr: "01", service: encrypted-key-value-store }
-          - { nr: "02", service: encrypted-age-verification }
-          - { nr: "03", service: encrypted-voting-polling }
-          - { nr: "04", service: sealed-bid-auction }
-          - { nr: "05", service: encrypted-statistics-service }
-          - { nr: "06", service: encrypted-genomics }
-          - { nr: "07", service: encrypted-image-processing }
-          - { nr: "08", service: encrypted-leaderboard }
-          - { nr: "09", service: encrypted-program-execution }
+      matrix: ${{ fromJson(needs.changes.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -80,7 +150,7 @@ jobs:
           {
             echo "| # | Service | Format | Clippy | Test |"
             echo "|---|---------|:------:|:------:|:----:|"
-            for dir in $(ls -d results/result-* | sort); do
+            for dir in $(ls -d results/result-* 2>/dev/null | sort); do
               service="${dir#results/result-??-}"
               nr=$(cat "$dir/nr.txt")
               fmt=$(grep    "^fmt="    "$dir/outcome.txt" | cut -d= -f2)

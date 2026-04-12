@@ -5,6 +5,7 @@ USER root
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
+    jq \
     && rm -rf /var/lib/apt/lists/*
 
 USER runner
