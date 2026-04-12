@@ -1,0 +1,67 @@
+name: Task / Feature Request
+description: New feature, infrastructure setup, API change, cross-team request
+labels: ["task"]
+body:
+  - type: dropdown
+    id: assigned_to
+    attributes:
+      label: Assigned to (who needs to do this?)
+      options:
+        - "Service 01 – Encrypted Key-Value Store"
+        - "Service 02 – Encrypted Age Verification"
+        - "Service 03 – Encrypted Voting & Polling"
+        - "Service 04 – Sealed Bid Auction"
+        - "Service 05 – Encrypted Statistics Service"
+        - "Service 06 – Encrypted Genomics"
+        - "Service 07 – Encrypted Image Processing"
+        - "Service 08 – Encrypted Leaderboard"
+        - "Service 09 – Encrypted Program Execution"
+        - "Client"
+        - "Infrastructure"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: requested_by
+    attributes:
+      label: Requested by (who needs this?)
+      options:
+        - "Service 01 – Encrypted Key-Value Store"
+        - "Service 02 – Encrypted Age Verification"
+        - "Service 03 – Encrypted Voting & Polling"
+        - "Service 04 – Sealed Bid Auction"
+        - "Service 05 – Encrypted Statistics Service"
+        - "Service 06 – Encrypted Genomics"
+        - "Service 07 – Encrypted Image Processing"
+        - "Service 08 – Encrypted Leaderboard"
+        - "Service 09 – Encrypted Program Execution"
+        - "Client"
+        - "Infrastructure"
+        - "Own team"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: type
+    attributes:
+      label: Type
+      options:
+        - label: New feature
+        - label: Enhancement / change to existing feature
+        - label: Database / infrastructure setup
+        - label: API endpoint (new or changed)
+        - label: Bug fix
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      placeholder: What needs to be done and why?
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Done when...
+      placeholder: What does "done" look like? (optional)

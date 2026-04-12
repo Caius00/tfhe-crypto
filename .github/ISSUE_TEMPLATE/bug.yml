@@ -1,0 +1,47 @@
+name: Bug Report
+description: Something is broken
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - "Service 01 – Encrypted Key-Value Store"
+        - "Service 02 – Encrypted Age Verification"
+        - "Service 03 – Encrypted Voting & Polling"
+        - "Service 04 – Sealed Bid Auction"
+        - "Service 05 – Encrypted Statistics Service"
+        - "Service 06 – Encrypted Genomics"
+        - "Service 07 – Encrypted Image Processing"
+        - "Service 08 – Encrypted Leaderboard"
+        - "Service 09 – Encrypted Program Execution"
+        - "Client"
+        - "Infrastructure"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - "Low – minor issue, workaround exists"
+        - "Medium – affects functionality"
+        - "High – blocking"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What is broken?
+      placeholder: Describe what happens and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. ...\n2. ...\n3. ..."
