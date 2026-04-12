@@ -23,11 +23,10 @@ jobs:
           - { nr: "09", service: encrypted-program-execution }
     steps:
       - uses: actions/checkout@v4.2.2
-      - name: Install build dependencies                                                                                               
-        run: sudo apt-get update && sudo apt-get install -y build-essential
-      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
         with:
-          components: rustfmt, clippy
+          shared-key: ci
 
       - name: Format
         id: fmt
