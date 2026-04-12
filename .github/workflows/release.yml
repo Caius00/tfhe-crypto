@@ -23,13 +23,12 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
-      - uses: release-plz/action@v0.5
-        with:
-          command: release-pr
-          verbose: true
+      - name: Install release-plz
+        run: curl -sSL https://github.com/release-plz/release-plz/releases/download/release-plz-v0.3.157/release-plz-x86_64-unknown-linux-gnu.tar.gz | tar xz -C /usr/local/bin
+      - name: Run release-plz release-pr
+        run: RUST_LOG=release_plz=debug release-plz release-pr --git-token ${{ secrets.GH_PAT }} --repo-url https://github.com/Caius00/tfhe-crypto 2>&1
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
-          RUST_LOG: release_plz=debug
 
   release:
     if: |
