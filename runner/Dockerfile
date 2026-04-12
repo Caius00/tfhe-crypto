@@ -13,4 +13,8 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
     --default-toolchain stable \
     && /home/runner/.cargo/bin/rustup component add rustfmt clippy
 
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "aarch64" ]; then PLATFORM="linux-arm"; else PLATFORM="linux"; fi && \
+    curl -LsSf "https://get.nexte.st/latest/${PLATFORM}" | tar zxf - -C /home/runner/.cargo/bin
+
 ENV PATH="/home/runner/.cargo/bin:${PATH}"

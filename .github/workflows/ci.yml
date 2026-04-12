@@ -3,7 +3,11 @@ name: CI
 on:
   push:
   workflow_dispatch:
-  
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     name: "${{ matrix.nr }} ${{ matrix.service }}"
@@ -40,7 +44,7 @@ jobs:
 
       - name: Test
         id: test
-        run: cargo test -p ${{ matrix.service }}
+        run: cargo nextest run -p ${{ matrix.service }}
 
       - name: Save result
         if: always()
@@ -59,7 +63,7 @@ jobs:
   summary:
     needs: check
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: arc-runners
     steps:
       - uses: actions/download-artifact@v4
         with:
