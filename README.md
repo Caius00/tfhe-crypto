@@ -37,21 +37,20 @@ Code used across **all** services lives here — service-specific logic stays in
 ```
 GET /healthz   liveness probe
 GET /readyz    readiness probe
+GET /version   current service version
 ```
 
 ---
 
 ## 💬 Commit Convention
 
-Commits on `main` trigger automatic versioning via [release-plz](https://release-plz.dev). Use the following prefixes:
+| Prefix | Example | When to use |
+|--------|---------|-------------|
+| `fix:` | `fix: correct encryption output` | Bug fix |
+| `feat:` | `feat: add key rotation` | New feature |
+| `chore:` | `chore: update dependencies` | Maintenance, no functional change |
 
-| Prefix | Example | Version bump |
-|--------|---------|--------------|
-| `fix:` | `fix: correct encryption output` | Patch `0.1.0 → 0.1.1` |
-| `feat:` | `feat: add key rotation` | Minor `0.1.0 → 0.2.0` |
-| `feat!:` | `feat!: redesign API` | Major `0.1.0 → 1.0.0` |
-
-After merging to `main`, release-plz opens a Release PR with the updated version. Merging that PR triggers the deploy automatically — no manual version bumping needed.
+Merging to `main` automatically builds and deploys all changed services. The patch version is bumped automatically (`0.1.0 → 0.1.1`). For a minor or major bump, update the version in `Cargo.toml` manually before merging.
 
 ---
 

@@ -104,6 +104,12 @@ jobs:
         with:
           token: ${{ secrets.GH_PAT }}
 
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: bump
+
       - id: bump
         run: |
           git config user.name "github-actions[bot]"
@@ -122,6 +128,7 @@ jobs:
             NEW="$MAJOR.$MINOR.$((PATCH + 1))"
 
             sed -i "s/^version = \"$CURRENT\"/version = \"$NEW\"/" "$CARGO"
+            cargo update -p "$SERVICE" --precise "$NEW"
 
             UPDATED=$(echo "$UPDATED" | jq -c ".include += [{\"nr\":\"$NR\",\"service\":\"$SERVICE\",\"dir\":\"$DIR\",\"version\":\"$NEW\"}]")
           done
