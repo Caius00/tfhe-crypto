@@ -44,7 +44,7 @@ jobs:
 
       - name: Test
         id: test
-        run: cargo nextest run -p ${{ matrix.service }}
+        run: cargo nextest run -p ${{ matrix.service }} --no-tests=pass
 
       - name: Save result
         if: always()
