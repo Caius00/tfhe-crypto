@@ -29,6 +29,7 @@ jobs:
           verbose: true
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          RUST_LOG: release_plz=debug
 
   release:
     if: |
