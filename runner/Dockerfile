@@ -11,6 +11,6 @@ USER runner
 
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
     --default-toolchain stable \
-    --component rustfmt clippy
+    && /home/runner/.cargo/bin/rustup component add rustfmt clippy
 
 ENV PATH="/home/runner/.cargo/bin:${PATH}"
