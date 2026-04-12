@@ -58,10 +58,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: deploy
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: nextest
-      - run: cargo nextest run -p ${{ needs.setup.outputs.service }} --no-tests=pass
+      - run: cargo test -p ${{ needs.setup.outputs.service }}
 
   build-push:
     needs: [setup, test]
