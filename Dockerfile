@@ -7,6 +7,7 @@ WORKDIR /app
 FROM chef AS planner
 COPY Cargo.toml Cargo.lock ./
 COPY services/ services/
+COPY shared/ shared/
 RUN cargo chef prepare --recipe-path recipe.json
 
 # Nur Abhängigkeiten bauen und cachen (inkl. tfhe)
@@ -19,6 +20,7 @@ FROM chef AS builder
 ARG SERVICE_NAME
 COPY Cargo.toml Cargo.lock ./
 COPY services/ services/
+COPY shared/ shared/
 COPY --from=cacher /app/target target
 COPY --from=cacher /usr/local/cargo /usr/local/cargo
 RUN cargo build --release -p $SERVICE_NAME
