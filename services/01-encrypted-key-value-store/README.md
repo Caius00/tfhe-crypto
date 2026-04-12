@@ -1,6 +1,6 @@
 # 🔐 01 · Encrypted Key-Value Store
 
-![version](https://img.shields.io/badge/version-0.1.1-blue)
+![version](https://img.shields.io/badge/version-0.1.2-blue)
 
 Store and retrieve values — without ever seeing them in plaintext.
 
