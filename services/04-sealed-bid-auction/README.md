@@ -9,6 +9,7 @@ Run auctions where bids remain hidden until resolution.
 | Method | Path | Description | Request | Response |
 |--------|------|-------------|---------|----------|
 | — | — | — | — | — |
+| `GET` | `/version` | Service version | — | `0.1.0` |
 | `GET` | `/healthz` | Liveness probe | — | `200 ok` |
 | `GET` | `/readyz` | Readiness probe | — | `200 ok` |
 

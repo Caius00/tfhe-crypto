@@ -9,6 +9,7 @@ Execute programs on encrypted inputs — the runtime never sees the actual value
 | Method | Path | Description | Request | Response |
 |--------|------|-------------|---------|----------|
 | — | — | — | — | — |
+| `GET` | `/version` | Service version | — | `0.1.0` |
 | `GET` | `/healthz` | Liveness probe | — | `200 ok` |
 | `GET` | `/readyz` | Readiness probe | — | `200 ok` |
 
