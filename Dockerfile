@@ -1,4 +1,4 @@
-FROM rust:1.86 AS chef
+FROM rust:latest AS chef
 RUN cargo install cargo-chef --locked
 RUN apt-get update && apt-get install -y cmake clang && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
