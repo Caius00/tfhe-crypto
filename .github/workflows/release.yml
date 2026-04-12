@@ -1,63 +1,207 @@
-name: Release
+name: Build and Deploy
 
 on:
-  workflow_dispatch:
-    inputs:
-      service:
-        description: Service
-        type: choice
-        required: true
-        options:
-          - all
-          - encrypted-key-value-store
-          - encrypted-age-verification
-          - encrypted-voting-polling
-          - sealed-bid-auction
-          - encrypted-statistics-service
-          - encrypted-genomics
-          - encrypted-image-processing
-          - encrypted-leaderboard
-          - encrypted-program-execution
-      bump:
-        description: Version bump
-        type: choice
-        required: true
-        default: patch
-        options:
-          - patch
-          - minor
-          - major
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**/*.md'
+
+concurrency:
+  group: build-deploy
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  release:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      any: ${{ steps.matrix.outputs.any }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            s01:
+              - 'services/01-encrypted-key-value-store/**'
+              - 'shared/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            s02:
+              - 'services/02-encrypted-age-verification/**'
+              - 'shared/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            s03:
+              - 'services/03-encrypted-voting-polling/**'
+              - 'shared/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            s04:
+              - 'services/04-sealed-bid-auction/**'
+              - 'shared/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            s05:
+              - 'services/05-encrypted-statistics-service/**'
+              - 'shared/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            s06:
+              - 'services/06-encrypted-genomics/**'
+              - 'shared/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            s07:
+              - 'services/07-encrypted-image-processing/**'
+              - 'shared/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            s08:
+              - 'services/08-encrypted-leaderboard/**'
+              - 'shared/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+            s09:
+              - 'services/09-encrypted-program-execution/**'
+              - 'shared/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+
+      - id: matrix
+        run: |
+          INCLUDE='[]'
+          add() { INCLUDE=$(echo "$INCLUDE" | jq -c ". + [{\"nr\":\"$1\",\"service\":\"$2\",\"dir\":\"$3\"}]"); }
+
+          [ "${{ steps.filter.outputs.s01 }}" = "true" ] && add "01" "encrypted-key-value-store"   "01-encrypted-key-value-store"
+          [ "${{ steps.filter.outputs.s02 }}" = "true" ] && add "02" "encrypted-age-verification"  "02-encrypted-age-verification"
+          [ "${{ steps.filter.outputs.s03 }}" = "true" ] && add "03" "encrypted-voting-polling"    "03-encrypted-voting-polling"
+          [ "${{ steps.filter.outputs.s04 }}" = "true" ] && add "04" "sealed-bid-auction"          "04-sealed-bid-auction"
+          [ "${{ steps.filter.outputs.s05 }}" = "true" ] && add "05" "encrypted-statistics-service" "05-encrypted-statistics-service"
+          [ "${{ steps.filter.outputs.s06 }}" = "true" ] && add "06" "encrypted-genomics"          "06-encrypted-genomics"
+          [ "${{ steps.filter.outputs.s07 }}" = "true" ] && add "07" "encrypted-image-processing"  "07-encrypted-image-processing"
+          [ "${{ steps.filter.outputs.s08 }}" = "true" ] && add "08" "encrypted-leaderboard"       "08-encrypted-leaderboard"
+          [ "${{ steps.filter.outputs.s09 }}" = "true" ] && add "09" "encrypted-program-execution" "09-encrypted-program-execution"
+
+          echo "matrix={\"include\":$INCLUDE}" >> $GITHUB_OUTPUT
+          [ "$INCLUDE" = "[]" ] && echo "any=false" >> $GITHUB_OUTPUT || echo "any=true" >> $GITHUB_OUTPUT
+
+  bump:
+    needs: setup
+    if: needs.setup.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      matrix: ${{ steps.bump.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+
+      - id: bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          UPDATED='{"include":[]}'
+
+          for row in $(echo '${{ needs.setup.outputs.matrix }}' | jq -c '.include[]'); do
+            NR=$(echo "$row"      | jq -r '.nr')
+            SERVICE=$(echo "$row" | jq -r '.service')
+            DIR=$(echo "$row"     | jq -r '.dir')
+
+            CARGO="services/$DIR/Cargo.toml"
+            CURRENT=$(grep '^version = ' "$CARGO" | cut -d'"' -f2)
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+            NEW="$MAJOR.$MINOR.$((PATCH + 1))"
+
+            sed -i "s/^version = \"$CURRENT\"/version = \"$NEW\"/" "$CARGO"
+
+            UPDATED=$(echo "$UPDATED" | jq -c ".include += [{\"nr\":\"$NR\",\"service\":\"$SERVICE\",\"dir\":\"$DIR\",\"version\":\"$NEW\"}]")
+          done
+
+          git add -A
+          git diff --cached --quiet || git commit -m "chore: bump versions [skip ci]"
+          git push
+
+          echo "matrix=$UPDATED" >> $GITHUB_OUTPUT
+
+  build-push:
+    needs: [setup, bump]
+    if: needs.setup.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix: ${{ fromJson(needs.bump.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: deploy
+
+      - run: cargo test -p ${{ matrix.service }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/caius00/${{ matrix.service }}
+          tags: |
+            type=raw,value=${{ matrix.version }}
+            type=raw,value=latest
+            type=sha,prefix=sha-
+
+      - uses: docker/build-push-action@v6
+        with:
+          push: true
+          build-args: SERVICE_NAME=${{ matrix.service }}
+          tags: ${{ steps.meta.outputs.tags }}
+
+  update-readme:
+    needs: [bump, build-push]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          ref: main
           token: ${{ secrets.GH_PAT }}
 
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: release
-
-      - name: Install cargo-release
-        run: cargo install cargo-release --locked
-
-      - name: Configure git
+      - name: Update version badges
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Release
-        run: |
-          if [ "${{ inputs.service }}" = "all" ]; then
-            PACKAGES="-p encrypted-key-value-store -p encrypted-age-verification -p encrypted-voting-polling -p sealed-bid-auction -p encrypted-statistics-service -p encrypted-genomics -p encrypted-image-processing -p encrypted-leaderboard -p encrypted-program-execution"
-          else
-            PACKAGES="-p ${{ inputs.service }}"
-          fi
-          cargo release ${{ inputs.bump }} $PACKAGES --execute --no-confirm
+          for row in $(echo '${{ needs.bump.outputs.matrix }}' | jq -c '.include[]'); do
+            SERVICE=$(echo "$row" | jq -r '.service')
+            DIR=$(echo "$row"     | jq -r '.dir')
+            VERSION=$(echo "$row" | jq -r '.version')
+
+            sed -i "s|version-[0-9]*\.[0-9]*\.[0-9]*-blue|version-$VERSION-blue|g" "services/$DIR/README.md" 2>/dev/null || true
+            sed -i "/$SERVICE/s|version-[0-9]*\.[0-9]*\.[0-9]*-blue|version-$VERSION-blue|g" README.md 2>/dev/null || true
+          done
+
+          git add -A
+          git diff --cached --quiet || git commit -m "chore: update version badges [skip ci]"
+          git push
