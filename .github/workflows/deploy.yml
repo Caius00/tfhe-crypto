@@ -47,7 +47,7 @@ jobs:
           fi
           echo "service=$SERVICE" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "image=ghcr.io/${{ github.repository_owner }}/$SERVICE" >> $GITHUB_OUTPUT
+          echo "image=ghcr.io/caius00/$SERVICE" >> $GITHUB_OUTPUT
 
   test:
     needs: setup
