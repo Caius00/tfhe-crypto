@@ -26,7 +26,7 @@ jobs:
           - { nr: "08", service: encrypted-leaderboard }
           - { nr: "09", service: encrypted-program-execution }
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GH_PAT }}
 
