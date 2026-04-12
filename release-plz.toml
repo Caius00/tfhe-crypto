@@ -1,6 +1,7 @@
 [workspace]
 publish = false
 git_release_enable = true
+release_always = true
 
 [[package]]
 name = "health"
