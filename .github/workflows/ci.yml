@@ -75,7 +75,7 @@ jobs:
       - id: matrix
         run: |
           INCLUDE='[]'
-          add() { INCLUDE=$(echo "$INCLUDE" | jq ". + [{\"nr\":\"$1\",\"service\":\"$2\"}]"); }
+          add() { INCLUDE=$(echo "$INCLUDE" | jq -c ". + [{\"nr\":\"$1\",\"service\":\"$2\"}]"); }
 
           [ "${{ steps.filter.outputs.s01 }}" = "true" ] && add "01" "encrypted-key-value-store"
           [ "${{ steps.filter.outputs.s02 }}" = "true" ] && add "02" "encrypted-age-verification"
