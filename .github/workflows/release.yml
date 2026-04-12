@@ -1,39 +1,35 @@
 name: Release
 
 on:
-  push:
-    branches:
-      - main
-    paths-ignore:
-      - '**/*.md'
-  pull_request:
-    types: [closed]
-    branches:
-      - main
+  workflow_dispatch:
+    inputs:
+      service:
+        description: Service
+        type: choice
+        required: true
+        options:
+          - all
+          - encrypted-key-value-store
+          - encrypted-age-verification
+          - encrypted-voting-polling
+          - sealed-bid-auction
+          - encrypted-statistics-service
+          - encrypted-genomics
+          - encrypted-image-processing
+          - encrypted-leaderboard
+          - encrypted-program-execution
+      bump:
+        description: Version bump
+        type: choice
+        required: true
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
 
 jobs:
-  release-pr:
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GH_PAT }}
-      - uses: release-plz/action@v0.5
-        with:
-          command: release-pr
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
-
   release:
-    if: |
-      github.event_name == 'pull_request' &&
-      github.event.pull_request.merged == true &&
-      startsWith(github.event.pull_request.title, 'chore: release')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -42,8 +38,26 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GH_PAT }}
-      - uses: release-plz/action@v0.5
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
         with:
-          command: release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          shared-key: release
+
+      - name: Install cargo-release
+        run: cargo install cargo-release --locked
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Release
+        run: |
+          if [ "${{ inputs.service }}" = "all" ]; then
+            PACKAGES="-p encrypted-key-value-store -p encrypted-age-verification -p encrypted-voting-polling -p sealed-bid-auction -p encrypted-statistics-service -p encrypted-genomics -p encrypted-image-processing -p encrypted-leaderboard -p encrypted-program-execution"
+          else
+            PACKAGES="-p ${{ inputs.service }}"
+          fi
+          cargo release ${{ inputs.bump }} $PACKAGES --execute --no-confirm

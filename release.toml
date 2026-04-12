@@ -1,0 +1,14 @@
+publish = false
+push = true
+tag = true
+sign-tag = false
+sign-commit = false
+tag-name = "{{crate_name}}-v{{version}}"
+pre-release-commit-message = "chore: release {{crate_name}} v{{version}}"
+
+# Don't modify CHANGELOG.md files
+pre-release-replacements = []
+
+[[package]]
+name = "health"
+release = false
