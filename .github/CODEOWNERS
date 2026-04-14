@@ -1,13 +1,14 @@
 # Jeder Service hat seinen eigenen Owner
-/services/01-encrypted-key-value-store/         @owner-service-01
-/services/02-encrypted-age-verification/        @owner-service-02
-/services/03-encrypted-voting-polling/          @owner-service-03
-/services/04-sealed-bid-auction/                @owner-service-04
-/services/05-encrypted-statistics-service/      @owner-service-05
-/services/06-encrypted-genomics/                @owner-service-06
-/services/07-encrypted-image-processing/        @owner-service-07
-/services/08-encrypted-leaderboard/             @owner-service-08
-/services/09-encrypted-program-execution/       @owner-service-09
+/services/01-encrypted-key-value-store/         @8Ninn
+/services/02-encrypted-age-verification/        @Rafael131203
+/services/03-encrypted-voting-polling/          @17Jones-Li
+/services/04-sealed-bid-auction/                @AmirDarani
+/services/05-encrypted-statistics-service/      @Rafael131203
+/services/06-encrypted-genomics/                @Chrysoprase2
+/services/07-encrypted-image-processing/        @Olivius-Kehzawokaso
+/services/08-encrypted-leaderboard/             @MrBowlin
+/services/09-encrypted-program-execution/       @SkateAbrogateDefenestrate
 
 # Client
-/client/                                        @owner-client
+/client/                                        @SkateAbrogateDefenestrate
+
