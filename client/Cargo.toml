@@ -1,0 +1,21 @@
+[package]
+name = "tfhe-client"
+version = "0.1.0"
+edition = "2021"
+description = "Interactive TUI client for TFHE-encrypted HTTP requests"
+
+[dependencies]
+ratatui = "0.29"
+crossterm = "0.28"
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bincode = "1"
+base64 = "0.22"
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+tfhe = { version = "0.10", features = ["integer", "boolean", "shortint", "seeder_x86_64_rdseed"] }
+
+[target.'cfg(all(not(target_arch = "x86_64"), unix))'.dependencies]
+tfhe = { version = "0.10", features = ["integer", "boolean", "shortint", "seeder_unix"] }

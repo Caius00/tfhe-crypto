@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "client",
     "shared/health",
     "services/01-encrypted-key-value-store",
     "services/02-encrypted-age-verification",
