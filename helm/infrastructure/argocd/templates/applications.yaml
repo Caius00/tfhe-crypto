@@ -1,0 +1,43 @@
+{{- $repoURL := "https://github.com/Caius00/tfhe-crypto" }}
+{{- $services := list
+  "01-encrypted-key-value-store"
+  "02-encrypted-age-verification"
+  "03-encrypted-voting-polling"
+  "04-sealed-bid-auction"
+  "05-encrypted-statistics-service"
+  "06-encrypted-genomics"
+  "07-encrypted-image-processing"
+  "08-encrypted-leaderboard"
+  "09-encrypted-program-execution"
+}}
+{{- range $services }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ . }}
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: {{ $repoURL }}
+    targetRevision: HEAD
+    path: helm/services/{{ . }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: {{ . }}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+        - /spec/template/spec/containers/0/resources
+{{- end }}

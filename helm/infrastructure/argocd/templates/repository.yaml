@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: tfhe-crypto-repo
+  namespace: {{ .Release.Namespace }}
+  labels:
+    argocd.argoproj.io/secret-type: repository
+type: Opaque
+stringData:
+  type: git
+  url: https://github.com/Caius00/tfhe-crypto
+  username: Caius00
+  password: "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"

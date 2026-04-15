@@ -1,0 +1,6 @@
+apiVersion: v2
+name: encrypted-program-execution
+description: Encrypted Program Execution Service
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

@@ -1,0 +1,43 @@
+traefik:
+
+  service:
+    type: LoadBalancer
+
+  ports:
+    web:
+      port: 8000
+      exposedPort: 80
+      protocol: TCP
+    websecure:
+      port: 8443
+      exposedPort: 443
+      protocol: TCP
+    traefik:
+      port: 9000
+      exposedPort: 9000
+      protocol: TCP
+      expose:
+        default: false  # true = Dashboard über LoadBalancer-IP:9000 erreichbar (nur für Debugging)
+
+  api:
+    dashboard: true
+    insecure: true
+
+  additionalArguments:
+    - "--api.insecure=true"
+
+  providers:
+    kubernetesCRD:
+      enabled: false  # Traefik CRDs nicht installiert (--skip-crds), nur Gateway API wird genutzt
+    kubernetesGateway:
+      enabled: true
+
+  gatewayClass:
+    enabled: true
+    name: traefik
+
+  logs:
+    general:
+      level: INFO
+    access:
+      enabled: true

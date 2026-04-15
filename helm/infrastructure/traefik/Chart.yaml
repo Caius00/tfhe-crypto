@@ -1,0 +1,10 @@
+apiVersion: v2
+name: traefik
+description: Traefik als API Gateway für den tfhe-crypto Cluster
+type: application
+version: 0.1.0
+
+dependencies:
+  - name: traefik
+    version: "34.4.1"
+    repository: https://traefik.github.io/charts

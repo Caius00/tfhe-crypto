@@ -1,0 +1,25 @@
+namespace: 08-encrypted-leaderboard
+replicaCount: 1
+
+image:
+  repository: ghcr.io/caius00/encrypted-leaderboard
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+service:
+  port: 8080
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 1536Mi
+
+route:
+  path: /leaderboard
+  gateway:
+    name: traefik-gateway
+    namespace: traefik
+    sectionName: web

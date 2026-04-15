@@ -1,0 +1,50 @@
+argo-cd:
+
+  server:
+    service:
+      type: ClusterIP
+
+  configs:
+    params:
+      server.insecure: "true"
+      server.rootpath: "/argocd"
+      server.basehref: "/argocd"
+
+    cm:
+      url: "http://159.195.145.100/argocd"
+      # GitHub OAuth via Dex
+      # redirectURI muss mit der GitHub OAuth App übereinstimmen
+      dex.config: |
+        connectors:
+          - type: github
+            id: github
+            name: GitHub
+            config:
+              clientID: $dex.github.clientID
+              clientSecret: $dex.github.clientSecret
+              redirectURI: http://159.195.145.100/argocd/api/dex/callback
+
+    # Credentials werden aus argocd-secret gelesen ($dex.github.clientID)
+    # Werte werden per kubectl gesetzt - nicht hier eintragen (Git!)
+    secret:
+      extra:
+        dex.github.clientID: "Ov23li0svKxH1vxkxI4Z"
+        dex.github.clientSecret: "4cad993e4823ff5a6e4aa5b1248b1c1a78f6877d"
+
+    rbac:
+      # Jeder der sich per GitHub einloggt bekommt read-only
+      # Admin-Zugriff muss explizit vergeben werden
+      policy.default: ""
+      policy.csv: |
+        g, Caius00, role:admin
+        g, MrBowlin, role:readonly
+        g, 17Jones-Li, role:readonly
+        g, 8Ninn, role:readonly
+        g, AmirDarani, role:readonly
+        g, Chrysoprase2, role:readonly
+        g, Fdr3iZzz, role:readonly
+        g, MarjanovicDarko, role:readonly
+        g, Olivius-Kehzawokaso, role:readonly
+        g, Rafael131203, role:readonly
+        g, SkateAbrogateDefenestrate, role:readonly
+        g, Tristan-H11, role:readonly

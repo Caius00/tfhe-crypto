@@ -1,0 +1,6 @@
+apiVersion: v2
+name: sealed-bid-auction
+description: Sealed Bid Auction Service
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

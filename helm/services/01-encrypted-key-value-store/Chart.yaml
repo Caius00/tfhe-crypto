@@ -1,0 +1,6 @@
+apiVersion: v2
+name: encrypted-key-value-store
+description: Encrypted Key-Value Store Service
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
