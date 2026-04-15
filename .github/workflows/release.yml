@@ -212,3 +212,30 @@ jobs:
           git add -A
           git diff --cached --quiet || git commit -m "chore: update version badges [skip ci]"
           git push
+
+  update-helm:
+    needs: [bump, build-push, update-readme]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Update Helm chart image tags
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          for row in $(echo '${{ needs.bump.outputs.matrix }}' | jq -c '.include[]'); do
+            DIR=$(echo "$row"     | jq -r '.dir')
+            VERSION=$(echo "$row" | jq -r '.version')
+
+            sed -i "s/^  tag: .*/  tag: \"$VERSION\"/" "helm/services/$DIR/values.yaml"
+          done
+
+          git add -A
+          git diff --cached --quiet || git commit -m "chore: update helm image tags [skip ci]"
+          git push

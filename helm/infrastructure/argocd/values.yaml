@@ -35,6 +35,7 @@ argo-cd:
       # Jeder der sich per GitHub einloggt bekommt read-only
       # Admin-Zugriff muss explizit vergeben werden
       policy.default: ""
+      scopes: '[groups, preferred_username]'
       policy.csv: |
         g, Caius00, role:admin
         g, MrBowlin, role:readonly
