@@ -13,6 +13,12 @@ spec:
         - path:
             type: PathPrefix
             value: {{ .Values.route.path }}
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
       backendRefs:
         - name: {{ .Chart.Name }}
           kind: Service
