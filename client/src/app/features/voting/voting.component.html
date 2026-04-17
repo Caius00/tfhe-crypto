@@ -1,0 +1,18 @@
+<h1>03 – Encrypted Voting / Polling</h1>
+
+<app-input
+  label="Session ID"
+  placeholder="Session-ID eingeben"
+  [value]="sessionId()"
+  (valueChange)="sessionId.set($event)"
+/>
+
+<app-input
+  label="Stimme (Ganzzahl)"
+  type="number"
+  placeholder="z.B. 1"
+  [value]="vote()"
+  (valueChange)="vote.set($event)"
+/>
+
+<app-button label="Stimme abgeben" (clicked)="onSubmit()" />
