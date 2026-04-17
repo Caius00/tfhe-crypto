@@ -16,7 +16,7 @@ type Phase =
   | 'IDLE';
 
 const SCROLL_SPEED = 0.6;
-const GREEN        = '#22c55e';
+const GREEN        = '#166534';
 const TEXT_X_FRAC  = 0.5;
 
 function easeOutBack(t: number): number {
@@ -276,7 +276,7 @@ export class FlappyBirdComponent implements AfterViewInit, OnDestroy {
 
     const ctx  = this.ctx;
     const font = this.fontReady ? '"Press Start 2P"' : '"Courier New", monospace';
-    const size = Math.max(20, Math.min(W / 14, 48));
+    const size = Math.max(30, Math.min(W / 10, 74));
 
     let x = W / 2, alpha = 1;
 
@@ -303,14 +303,16 @@ export class FlappyBirdComponent implements AfterViewInit, OnDestroy {
     ctx.shadowBlur = 0; ctx.shadowOffsetX = 3; ctx.shadowOffsetY = 3;
     ctx.fillText('Clappy-Bird', x, H * 0.45);
 
-    // glow + fill
-    ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
-    ctx.shadowColor   = GREEN; ctx.shadowBlur = 24;
-    ctx.fillStyle     = GREEN;
-    ctx.fillText('Clappy-Bird', x, H * 0.45);
+    // black outline for stronger contrast
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = Math.max(3, size * 0.12);
+    ctx.lineJoin = 'round';
+    ctx.strokeText('Clappy-Bird', x, H * 0.45);
 
-    // bright center
-    ctx.shadowBlur = 6; ctx.fillStyle = '#afffaf';
+    // fill without glow
+    ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+    ctx.shadowColor   = 'transparent'; ctx.shadowBlur = 0;
+    ctx.fillStyle     = GREEN;
     ctx.fillText('Clappy-Bird', x, H * 0.45);
 
     ctx.restore();
