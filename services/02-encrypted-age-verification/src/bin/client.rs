@@ -15,7 +15,7 @@ fn main() {
     let encoded_sk = general_purpose::STANDARD.encode(bincode::serialize(&server_key).unwrap());
 
     let client = Client::builder()
-        .timeout(Duration::from_secs(300))
+        .timeout(Duration::from_secs(600))
         .build()
         .expect("Failed to build client");
 
