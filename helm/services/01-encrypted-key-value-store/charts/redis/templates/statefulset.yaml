@@ -2,20 +2,20 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "redis.fullname" . }}
+  name: {{ .Values.fullnameOverride | default (printf "%s-redis" .Release.Name) }}
   namespace: {{ .Release.Namespace }}
   labels:
-    app: {{ include "redis.fullname" . }}
+    app: {{ .Values.fullnameOverride | default (printf "%s-redis" .Release.Name) }}
 spec:
-  serviceName: {{ include "redis.fullname" . }}
+  serviceName: {{ .Values.fullnameOverride | default (printf "%s-redis" .Release.Name) }}
   replicas: 1
   selector:
     matchLabels:
-      app: {{ include "redis.fullname" . }}
+      app: {{ .Values.fullnameOverride | default (printf "%s-redis" .Release.Name) }}
   template:
     metadata:
       labels:
-        app: {{ include "redis.fullname" . }}
+        app: {{ .Values.fullnameOverride | default (printf "%s-redis" .Release.Name) }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
@@ -76,7 +76,7 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: {{ include "redis.fullname" . }}-config
+            name: {{ .Values.fullnameOverride | default (printf "%s-redis" .Release.Name) }}-config
   {{- if .Values.persistence.enabled }}
   volumeClaimTemplates:
     - metadata:
