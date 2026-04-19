@@ -1,5 +1,7 @@
 enabled: true
 
+fullnameOverride: "ekv-redis"
+
 image:
   repository: redis
   tag: "7"
