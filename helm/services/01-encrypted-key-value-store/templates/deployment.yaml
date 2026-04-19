@@ -21,9 +21,9 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
             - name: REDIS_URL
-              value: "redis://:{{ .Values.redis.auth.password }}@ekv-redis-master:6379"
+              value: "redis://:{{ .Values.redis.auth.password }}@{{ .Release.Name }}-redis-master:6379"
             - name: REDIS_HOST
-              value: "ekv-redis-master"
+              value: "{{ .Release.Name }}-redis-master"
             - name: REDIS_PORT
               value: "6379"
             - name: REDIS_PASSWORD

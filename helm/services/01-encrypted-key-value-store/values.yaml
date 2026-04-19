@@ -25,14 +25,7 @@ route:
     sectionName: web
 
 redis:
-  fullnameOverride: "ekv-redis"
-  architecture: standalone
-  image:
-    registry: docker.io
-    repository: redis
-    tag: 7-alpine
+  enabled: true
   auth:
+    enabled: true
     password: "sCSm1$!s2XHQ2^Mp*#4P"
-  master:
-    persistence:
-      enabled: false

@@ -1,0 +1,79 @@
+enabled: true
+
+image:
+  repository: redis
+  tag: "7"
+  pullPolicy: IfNotPresent
+
+# Authentifizierung
+auth:
+  enabled: true
+  username: ""        # Redis 6+ ACL: leer = default user
+  password: ""
+
+# Redis-Konfiguration
+config:
+  # Speicherlimit (z.B. "256mb", "1gb", leer = kein Limit)
+  maxmemory: ""
+  # Was passiert wenn maxmemory erreicht: allkeys-lru, volatile-lru, allkeys-random, noeviction, ...
+  maxmemoryPolicy: "allkeys-lru"
+  # Verbindungs-Timeout in Sekunden (0 = deaktiviert)
+  timeout: 0
+  # TCP Keepalive in Sekunden
+  tcpKeepalive: 300
+  # Maximale gleichzeitige Clients (0 = unbegrenzt)
+  maxclients: 0
+  # Datenbank-Anzahl
+  databases: 16
+  # Persistenz (RDB Snapshots): leer = deaktiviert
+  # Format: "seconds changes" z.B. ["3600 1", "300 100"]
+  save: []
+  # Slow-Log: Queries länger als X Mikrosekunden loggen (-1 = aus)
+  slowlogLogSlowerThan: -1
+  # Zusätzliche redis.conf Zeilen
+  extraConfig: ""
+
+# Persistenz (PVC)
+persistence:
+  enabled: false
+  storageClass: ""
+  size: 1Gi
+  accessMode: ReadWriteOnce
+
+# Service
+service:
+  port: 6379
+  type: ClusterIP
+
+# Health Checks
+livenessProbe:
+  initialDelaySeconds: 10
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# Ressourcen
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# Pod-Scheduling
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Sicherheit
+podSecurityContext:
+  fsGroup: 1001
+  runAsUser: 1001
+  runAsNonRoot: true
