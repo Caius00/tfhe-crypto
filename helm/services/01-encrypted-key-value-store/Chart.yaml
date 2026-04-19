@@ -4,3 +4,8 @@ description: Encrypted Key-Value Store Service
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
+
+dependencies:
+  - name: redis
+    version: 20.11.3
+    repository: oci://registry-1.docker.io/bitnamicharts

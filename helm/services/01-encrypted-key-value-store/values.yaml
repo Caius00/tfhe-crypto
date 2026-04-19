@@ -23,3 +23,11 @@ route:
     name: traefik-gateway
     namespace: traefik
     sectionName: web
+
+redis:
+  architecture: standalone
+  auth:
+    password: "sCSm1$!s2XHQ2^Mp*#4P"
+  master:
+    persistence:
+      enabled: false

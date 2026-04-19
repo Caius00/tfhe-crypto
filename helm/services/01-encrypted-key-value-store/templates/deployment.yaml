@@ -19,6 +19,15 @@ spec:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: REDIS_URL
+              value: "redis://:{{ .Values.redis.auth.password }}@{{ .Chart.Name }}-redis-master:6379/0"
+            - name: REDIS_HOST
+              value: "{{ .Chart.Name }}-redis-master"
+            - name: REDIS_PORT
+              value: "6379"
+            - name: REDIS_PASSWORD
+              value: {{ .Values.redis.auth.password | quote }}
           ports:
             - containerPort: {{ .Values.service.port }}
           livenessProbe:
