@@ -20,7 +20,7 @@ fn main() {
         .expect("Failed to build client");
 
     let res = client
-        .post("http://127.0.0.1:8080/age-verification")
+        .post("http://127.0.0.1:8000/age-verification")
         .json(&serde_json::json!({
             "encrypted_age": encoded_age,
             "server_key": encoded_sk
@@ -28,17 +28,34 @@ fn main() {
         .send()
         .expect("Request fehlgeschlagen");
 
-    if res.status().is_success() {
-        let json: serde_json::Value = res.json().unwrap();
-        let b64_res = json["is_adult"].as_str().unwrap();
+    let status = res.status();
+    let text = res.text().unwrap();
 
-        let res_bytes = general_purpose::STANDARD.decode(b64_res).unwrap();
-        let enc_bool: FheBool = bincode::deserialize(&res_bytes).unwrap();
-        let is_adult: bool = enc_bool.decrypt(&client_key);
-
-        println!("--- Ergebnis ---");
-        println!("Ist die Person volljährig? {}", is_adult);
+    if status.is_success() {
+        match serde_json::from_str::<serde_json::Value>(&text) {
+            Ok(json) => {
+                if let Some(b64_res) = json["is_adult"].as_str() {
+                    match general_purpose::STANDARD.decode(b64_res) {
+                        Ok(res_bytes) => match bincode::deserialize::<FheBool>(&res_bytes) {
+                            Ok(enc_bool) => {
+                                let is_adult: bool = enc_bool.decrypt(&client_key);
+                                println!("--- Ergebnis ---");
+                                println!("Ist die Person volljährig? {}", is_adult);
+                            }
+                            Err(e) => println!("Fehler beim Deserialisieren der Response: {}", e),
+                        },
+                        Err(e) => println!("Fehler beim Base64-Dekodieren: {}", e),
+                    }
+                } else {
+                    println!("Ungültige Response-Struktur: {}", text);
+                }
+            }
+            Err(e) => println!(
+                "Response ist nicht gültiges JSON: {} \nResponse-Text: {}",
+                e, text
+            ),
+        }
     } else {
-        println!("Server Fehler: {}", res.text().unwrap());
+        println!("Server Fehler (Status {}): {}", status, text);
     }
 }
