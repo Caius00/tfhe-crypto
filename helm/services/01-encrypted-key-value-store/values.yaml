@@ -25,6 +25,7 @@ route:
     sectionName: web
 
 redis:
+  fullnameOverride: "ekv-redis"
   architecture: standalone
   image:
     registry: docker.io
