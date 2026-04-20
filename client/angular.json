@@ -22,6 +22,11 @@
               {
                 "glob": "**/*",
                 "input": "public"
+              },
+              {
+                "glob": "tfhe_bg.wasm",
+                "input": "node_modules/tfhe",
+                "output": "/"
               }
             ],
             "styles": [
@@ -54,6 +59,9 @@
         },
         "serve": {
           "builder": "@angular/build:dev-server",
+          "options": {
+            "proxyConfig": "proxy.conf.json"
+          },
           "configurations": {
             "production": {
               "buildTarget": "client:build:production"

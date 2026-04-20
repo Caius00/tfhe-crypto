@@ -1,1 +1,102 @@
-<h1>02 – Encrypted Age Verification</h1>
+<div class="page">
+  <h1>02 – Encrypted Age Verification</h1>
+  <p class="subtitle">
+    Das Alter wird lokal verschlüsselt. Der Server prüft, ob Alter &gt; 17,
+    ohne den Klartext zu sehen.
+  </p>
+
+  <!-- Step: init -->
+  @if (step() === 'init') {
+    <div class="card">
+      <h2>Schritt 1: Schlüssel generieren</h2>
+      <p class="hint">
+        Es werden ein Client-Key (lokal) und ein Server-Key (für das Backend)
+        erzeugt. Dies dauert <strong>30–90 Sekunden</strong>.
+      </p>
+      <app-button label="Schlüssel generieren" (clicked)="generateKeys()" />
+    </div>
+  }
+
+  <!-- Step: generating keys -->
+  @if (step() === 'generating') {
+    <div class="card loading-card">
+      <app-spinner />
+      <div>
+        <p class="loading-title">Schlüssel werden generiert …</p>
+        <p class="hint">TFHE-Schlüsselgenerierung läuft. Bitte warten.</p>
+      </div>
+    </div>
+  }
+
+  <!-- Step: enter age -->
+  @if (step() === 'enter-age') {
+    <div class="card">
+      <div class="status-badge success">Schlüssel bereit</div>
+      <h2>Schritt 2: Alter eingeben</h2>
+      <p class="hint">
+        Das Alter wird mit dem Client-Key verschlüsselt und nur der
+        verschlüsselte Wert an den Server gesendet.
+      </p>
+      <app-input
+        label="Alter"
+        type="number"
+        placeholder="z.B. 20"
+        [value]="ageInput()"
+        (valueChange)="ageInput.set($event)"
+      />
+      <div class="actions">
+        <app-button label="Alter prüfen" (clicked)="verify()" />
+        <app-button label="Zurücksetzen" type="button" (clicked)="reset()" />
+      </div>
+    </div>
+  }
+
+  <!-- Step: verifying -->
+  @if (step() === 'verifying') {
+    <div class="card loading-card">
+      <app-spinner />
+      <div>
+        <p class="loading-title">Prüfung läuft …</p>
+        <p class="hint">
+          Verschlüsselter Wert wird an den Server gesendet und das Ergebnis
+          entschlüsselt.
+        </p>
+      </div>
+    </div>
+  }
+
+  <!-- Step: result -->
+  @if (step() === 'result') {
+    <div class="card">
+      <h2>Ergebnis</h2>
+      @if (isAdult()) {
+        <div class="result result--yes">
+          <span class="result-icon">✓</span>
+          <span>Darf Vodka kaufen (Alter &gt; 17)</span>
+        </div>
+      } @else {
+        <div class="result result--no">
+          <span class="result-icon">✗</span>
+          <span>Darf keinen Vodka kaufen (Alter ≤ 17)</span>
+        </div>
+      }
+      <p class="hint">
+        Der Server hat das Ergebnis verschlüsselt zurückgegeben und der
+        Client-Key wurde lokal zur Entschlüsselung verwendet.
+      </p>
+      <div class="actions">
+        <app-button label="Weiteres Alter prüfen" (clicked)="verifyAnother()" />
+        <app-button label="Komplett zurücksetzen" type="button" (clicked)="reset()" />
+      </div>
+    </div>
+  }
+
+  <!-- Step: error -->
+  @if (step() === 'error') {
+    <div class="card error-card">
+      <h2>Fehler</h2>
+      <p>{{ errorMessage() }}</p>
+      <app-button label="Zurücksetzen" (clicked)="reset()" />
+    </div>
+  }
+</div>
