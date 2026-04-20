@@ -1,17 +1,17 @@
 use base64::{engine::general_purpose, Engine as _};
 use reqwest::blocking::Client;
+use serde_json::json;
+use std::env;
+use std::fs;
+use std::path::Path;
 use std::time::Duration;
 use tfhe::prelude::*;
 use tfhe::{generate_keys, ConfigBuilder, FheBool, FheUint8};
-use serde_json::json;
-use std::fs;
-use std::path::Path;
-use std::env;
 
 fn main() {
     let local_keys_dir = "./keys";
     let workspace_keys_dir = "../../keys";
-    
+
     let keys_dir = if Path::new(workspace_keys_dir).exists() {
         workspace_keys_dir
     } else {
@@ -35,7 +35,7 @@ fn main() {
 
         let server_key_bytes = bincode::serialize(&server_key).unwrap();
         fs::write(&server_key_path, &server_key_bytes).expect("Failed to save ServerKey");
-        
+
         return;
     }
 
@@ -46,8 +46,8 @@ fn main() {
     }
 
     let client_key_bytes = fs::read(&client_key_path).expect("Failed to read ClientKey");
-    let client_key: tfhe::ClientKey = bincode::deserialize(&client_key_bytes)
-        .expect("Failed to deserialize ClientKey");
+    let client_key: tfhe::ClientKey =
+        bincode::deserialize(&client_key_bytes).expect("Failed to deserialize ClientKey");
 
     let server_key_bytes = fs::read(&server_key_path).expect("Failed to read ServerKey");
     let encoded_sk = general_purpose::STANDARD.encode(&server_key_bytes);
@@ -83,13 +83,20 @@ fn main() {
                         Ok(json) => {
                             if let Some(b64_res) = json["is_adult"].as_str() {
                                 match general_purpose::STANDARD.decode(b64_res) {
-                                    Ok(res_bytes) => match bincode::deserialize::<FheBool>(&res_bytes) {
-                                        Ok(enc_bool) => {
-                                            let is_adult: bool = enc_bool.decrypt(&client_key);
-                                            println!("Age {}: is_adult={}", age_value, is_adult);
+                                    Ok(res_bytes) => {
+                                        match bincode::deserialize::<FheBool>(&res_bytes) {
+                                            Ok(enc_bool) => {
+                                                let is_adult: bool = enc_bool.decrypt(&client_key);
+                                                println!(
+                                                    "Age {}: is_adult={}",
+                                                    age_value, is_adult
+                                                );
+                                            }
+                                            Err(_) => {
+                                                println!("Age {}: deserialization error", age_value)
+                                            }
                                         }
-                                        Err(_) => println!("Age {}: deserialization error", age_value),
-                                    },
+                                    }
                                     Err(_) => println!("Age {}: base64 decode error", age_value),
                                 }
                             }

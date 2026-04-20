@@ -1,11 +1,11 @@
 use axum::{extract::Extension, routing::post, Json, Router};
 use base64::{engine::general_purpose, Engine as _};
+use health;
 use serde::{Deserialize, Serialize};
 use std::panic;
 use std::sync::Arc;
 use tfhe::prelude::FheOrd;
 use tfhe::ServerKey;
-use health;
 
 #[derive(Deserialize)]
 struct AgeRequest {
@@ -42,14 +42,12 @@ async fn verify_age(
         .decode(&req.encrypted_age)
         .map_err(|_| "Invalid Age Base64")?;
 
-    let enc_age: tfhe::FheUint8 = bincode::deserialize(&age_bytes)
-        .map_err(|_| "Failed to deserialize Encrypted Age")?;
+    let enc_age: tfhe::FheUint8 =
+        bincode::deserialize(&age_bytes).map_err(|_| "Failed to deserialize Encrypted Age")?;
 
     let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
         tokio::task::block_in_place(|| {
-            tfhe::with_server_key_as_context(server_key, || {
-                enc_age.ge(18u8)
-            })
+            tfhe::with_server_key_as_context(server_key, || enc_age.ge(18u8))
         })
     }));
 
@@ -58,8 +56,7 @@ async fn verify_age(
         Err(_) => return Err("TFHE operation failed".to_string()),
     };
 
-    let res_bytes =
-        bincode::serialize(&enc_result).map_err(|_| "Serialization error")?;
+    let res_bytes = bincode::serialize(&enc_result).map_err(|_| "Serialization error")?;
 
     Ok(Json(AgeResponse {
         is_adult: general_purpose::STANDARD.encode(res_bytes),
