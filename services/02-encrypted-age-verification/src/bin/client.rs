@@ -47,7 +47,7 @@ fn main() {
                     let enc_bool: FheBool = bincode::deserialize(&res_bytes).unwrap();
                     let is_adult: bool = enc_bool.decrypt(&client_key);
 
-                    println!("Input Alter: {} => Volljährig: {}", age_value, is_adult);
+                    println!("Input Alter: {} => Darf Vodka kaufen? {}", age_value, is_adult);
                 } else {
                     println!(
                         "Server Fehler bei Alter {}: {} - {}",

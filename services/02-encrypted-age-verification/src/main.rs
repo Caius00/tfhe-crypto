@@ -15,23 +15,8 @@ struct AgeRequest {
 }
 
 #[derive(Serialize)]
-struct HealthResponse {
-    status: String,
-    version: &'static str,
-    service: &'static str,
-}
-
-#[derive(Serialize)]
 struct AgeResponse {
     is_adult: String,
-}
-
-async fn health_check() -> Json<HealthResponse> {
-    Json(HealthResponse {
-        status: "UP".to_string(),
-        version: env!("CARGO_PKG_VERSION"),
-        service: env!("CARGO_PKG_NAME"),
-    })
 }
 
 #[derive(Clone)]
@@ -53,7 +38,7 @@ async fn verify_age(Json(req): Json<AgeRequest>) -> Result<Json<AgeResponse>, St
         bincode::deserialize(&age_bytes).map_err(|_| "Failed to deserialize Encrypted Age")?;
 
     let enc_result: FheBool = tokio::task::block_in_place(|| {
-        tfhe::with_server_key_as_context(server_key, || enc_age.gt(18u8))
+        tfhe::with_server_key_as_context(server_key, || enc_age.gt(17u8))
     });
 
     let res_bytes = bincode::serialize(&enc_result).map_err(|_| "Serialization error")?;
@@ -66,7 +51,6 @@ async fn verify_age(Json(req): Json<AgeRequest>) -> Result<Json<AgeResponse>, St
 #[tokio::main]
 async fn main() {
     let app = Router::new()
-        .route("/health", get(health_check))
         .route("/age-verification", post(verify_age))
         .layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024 * 1024));
 
@@ -81,7 +65,6 @@ async fn main() {
     };
 
     println!("Server läuft auf http://{}", addr);
-    println!("Health Check verfügbar unter http://{}/health", addr);
 
     axum::serve(listener, app).await.unwrap();
 }
