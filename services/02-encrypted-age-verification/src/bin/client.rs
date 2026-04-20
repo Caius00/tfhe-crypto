@@ -3,14 +3,17 @@ use reqwest::blocking::Client;
 use serde_json::json;
 use std::time::Duration;
 use tfhe::prelude::*;
-use tfhe::{generate_keys, ConfigBuilder, FheBool, FheUint8};
+use tfhe::{generate_keys, CompressedServerKey, ConfigBuilder, FheBool, FheUint8};
 
 fn main() {
     println!("Generiere Schlüssel (das kann einen Moment dauern)...");
-    let config = ConfigBuilder::default().build();
-    let (client_key, server_key) = generate_keys(config);
 
-    let server_key_bytes = bincode::serialize(&server_key).unwrap();
+    let config = ConfigBuilder::default().build();
+    let (client_key, _) = generate_keys(config);
+    let compressed_sk = CompressedServerKey::new(&client_key);
+    let server_key_bytes = bincode::serialize(&compressed_sk).unwrap();
+
+    //let server_key_bytes = bincode::serialize(&server_key).unwrap();
     let encoded_sk = general_purpose::STANDARD.encode(&server_key_bytes);
 
     let client = Client::builder()
@@ -47,7 +50,10 @@ fn main() {
                     let enc_bool: FheBool = bincode::deserialize(&res_bytes).unwrap();
                     let is_adult: bool = enc_bool.decrypt(&client_key);
 
-                    println!("Input Alter: {} => Darf Vodka kaufen? {}", age_value, is_adult);
+                    println!(
+                        "Input Alter: {} => Darf Vodka kaufen? {}",
+                        age_value, is_adult
+                    );
                 } else {
                     println!(
                         "Server Fehler bei Alter {}: {} - {}",

@@ -6,7 +6,7 @@ use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tfhe::prelude::*;
-use tfhe::{FheBool, FheUint8, ServerKey};
+use tfhe::{CompressedServerKey, FheBool, FheUint8};
 
 #[derive(Deserialize)]
 struct AgeRequest {
@@ -20,28 +20,32 @@ struct AgeResponse {
 }
 
 #[derive(Clone)]
-struct SharedServerKey(Arc<tokio::sync::Mutex<Option<ServerKey>>>);
+struct SharedServerKey(Arc<tokio::sync::Mutex<Option<CompressedServerKey>>>);
 
 async fn verify_age(Json(req): Json<AgeRequest>) -> Result<Json<AgeResponse>, String> {
     let sk_bytes = general_purpose::STANDARD
         .decode(&req.server_key)
-        .map_err(|_| "Invalid ServerKey Base64")?;
+        .map_err(|e| format!("Invalid ServerKey Base64: {}", e))?;
 
-    let server_key: ServerKey =
-        bincode::deserialize(&sk_bytes).map_err(|_| "Failed to deserialize ServerKey")?;
+    let compressed: CompressedServerKey = bincode::deserialize(&sk_bytes)
+        .map_err(|e| format!("Failed to deserialize CompressedServerKey: {}", e))?;
+
+    let server_key = compressed.decompress();
 
     let age_bytes = general_purpose::STANDARD
         .decode(&req.encrypted_age)
-        .map_err(|_| "Invalid Age Base64")?;
+        .map_err(|e| format!("Invalid Age Base64: {}", e))?;
 
-    let enc_age: FheUint8 =
-        bincode::deserialize(&age_bytes).map_err(|_| "Failed to deserialize Encrypted Age")?;
+    let enc_age: FheUint8 = bincode::deserialize(&age_bytes)
+        .map_err(|e| format!("Failed to deserialize Encrypted Age: {}", e))?;
 
     let enc_result: FheBool = tokio::task::block_in_place(|| {
-        tfhe::with_server_key_as_context(server_key, || enc_age.gt(17u8))
+        tfhe::set_server_key(server_key);
+        enc_age.gt(17u8)
     });
 
-    let res_bytes = bincode::serialize(&enc_result).map_err(|_| "Serialization error")?;
+    let res_bytes =
+        bincode::serialize(&enc_result).map_err(|e| format!("Serialization error: {}", e))?;
 
     Ok(Json(AgeResponse {
         is_adult: general_purpose::STANDARD.encode(res_bytes),
