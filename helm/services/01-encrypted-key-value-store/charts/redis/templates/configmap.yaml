@@ -1,0 +1,39 @@
+{{- if .Values.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.fullnameOverride | default (printf "%s-redis" .Release.Name) }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ .Values.fullnameOverride | default (printf "%s-redis" .Release.Name) }}
+data:
+  redis.conf: |
+    port {{ .Values.service.port }}
+    databases {{ .Values.config.databases }}
+    timeout {{ .Values.config.timeout }}
+    tcp-keepalive {{ .Values.config.tcpKeepalive }}
+    {{- if gt (.Values.config.maxclients | int) 0 }}
+    maxclients {{ .Values.config.maxclients }}
+    {{- end }}
+    {{- if .Values.config.maxmemory }}
+    maxmemory {{ .Values.config.maxmemory }}
+    maxmemory-policy {{ .Values.config.maxmemoryPolicy | default "allkeys-lru" }}
+    {{- end }}
+    {{- if .Values.config.save }}
+    {{- range .Values.config.save }}
+    save {{ . }}
+    {{- end }}
+    {{- else }}
+    save ""
+    {{- end }}
+    slowlog-log-slower-than {{ .Values.config.slowlogLogSlowerThan }}
+    {{- if .Values.auth.enabled }}
+    requirepass {{ .Values.auth.password | quote }}
+    {{- if .Values.auth.username }}
+    aclfile /etc/redis/acl.conf
+    {{- end }}
+    {{- end }}
+    {{- if .Values.config.extraConfig }}
+    {{ .Values.config.extraConfig | nindent 4 }}
+    {{- end }}
+{{- end }}
