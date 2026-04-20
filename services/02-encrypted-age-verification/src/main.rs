@@ -3,8 +3,9 @@ use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::panic;
 use std::sync::Arc;
-use tfhe::prelude::*;
+use tfhe::prelude::FheOrd;
 use tfhe::ServerKey;
+use health;
 
 #[derive(Deserialize)]
 struct AgeRequest {
@@ -24,62 +25,42 @@ async fn verify_age(
     Extension(sk): Extension<SharedServerKey>,
     Json(req): Json<AgeRequest>,
 ) -> Result<Json<AgeResponse>, String> {
-    println!("Anfrage empfangen...");
-
-    // ServerKey beim ersten Request laden
     let mut sk_guard = sk.0.lock().await;
     if sk_guard.is_none() {
-        println!("Lade ServerKey aus Request...");
         let sk_bytes = general_purpose::STANDARD
             .decode(&req.server_key)
-            .map_err(|e| format!("Base64 Decode Error: {}", e))?;
-
+            .map_err(|_| "Invalid ServerKey Base64")?;
         let server_key: ServerKey =
-            bincode::deserialize(&sk_bytes).map_err(|e| format!("Deserialization Error: {}", e))?;
+            bincode::deserialize(&sk_bytes).map_err(|_| "Failed to deserialize ServerKey")?;
         *sk_guard = Some(server_key);
-        println!("ServerKey geladen und gespeichert");
     }
 
     let server_key = sk_guard.as_ref().unwrap().clone();
-    drop(sk_guard); // Freigeben des Locks
+    drop(sk_guard);
 
     let age_bytes = general_purpose::STANDARD
         .decode(&req.encrypted_age)
         .map_err(|_| "Invalid Age Base64")?;
 
-    println!("Deserialisiere FheUint8, Länge: {}", age_bytes.len());
-    let enc_age: tfhe::FheUint8 = bincode::deserialize(&age_bytes).map_err(|e| {
-        eprintln!("FheUint8 Deserialisierung fehlgeschlagen: {}", e);
-        format!("Failed to deserialize Encrypted Age: {}", e)
-    })?;
-    println!("FheUint8 erfolgreich deserialisiert");
+    let enc_age: tfhe::FheUint8 = bincode::deserialize(&age_bytes)
+        .map_err(|_| "Failed to deserialize Encrypted Age")?;
 
-    println!("Starte Vergleich mit block_in_place...");
-
-    // Fange Panics bei der TFHE-Operation
     let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
         tokio::task::block_in_place(|| {
-            println!("In block_in_place: mit_server_key_as_context wird aufgerufen...");
             tfhe::with_server_key_as_context(server_key, || {
-                println!("In with_server_key_as_context: führe gt(17) aus...");
-                enc_age.gt(17u8)
+                enc_age.ge(18u8)
             })
         })
     }));
 
-    let result = match result {
+    let enc_result: tfhe::FheBool = match result {
         Ok(res) => res,
-        Err(e) => {
-            eprintln!("TFHE Operation panicked: {:?}", e);
-            return Err("TFHE Vergleichsoperation fehlgeschlagen".to_string());
-        }
+        Err(_) => return Err("TFHE operation failed".to_string()),
     };
 
-    println!("Vergleich abgeschlossen");
     let res_bytes =
-        bincode::serialize(&result).map_err(|e| format!("Serialization Error: {}", e))?;
+        bincode::serialize(&enc_result).map_err(|_| "Serialization error")?;
 
-    println!("Rückgabe: {} bytes", res_bytes.len());
     Ok(Json(AgeResponse {
         is_adult: general_purpose::STANDARD.encode(res_bytes),
     }))
@@ -87,6 +68,8 @@ async fn verify_age(
 
 #[tokio::main]
 async fn main() {
+    tokio::spawn(health::serve(8080, env!("CARGO_PKG_VERSION")));
+
     let sk = SharedServerKey(Arc::new(tokio::sync::Mutex::new(None)));
 
     let app = Router::new()
@@ -94,20 +77,16 @@ async fn main() {
         .layer(Extension(sk))
         .layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024 * 1024));
 
-    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 8000));
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 3000));
 
     let listener = match tokio::net::TcpListener::bind(addr).await {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("Fehler beim Binden an Port 8000: {}", e);
-            eprintln!("Port ist möglicherweise noch in TIME_WAIT-Status. Warte 5 Sekunden...");
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
-            tokio::net::TcpListener::bind(addr)
-                .await
-                .expect("Konnte nach Wartezeit nicht an Port binden")
+            eprintln!("Error binding to port 3000: {}", e);
+            std::process::exit(1);
         }
     };
 
-    println!("Server läuft auf http://127.0.0.1:8000");
+    println!("Server running on http://127.0.0.1:3000");
     axum::serve(listener, app).await.unwrap();
 }
