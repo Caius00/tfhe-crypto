@@ -387,7 +387,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-age-verification"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "axum",
  "base64",
@@ -402,7 +402,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-genomics"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "axum",
  "health",
@@ -414,7 +414,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-image-processing"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "axum",
  "health",
@@ -426,7 +426,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-key-value-store"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "axum",
  "health",
@@ -438,7 +438,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-leaderboard"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "axum",
  "health",
@@ -450,7 +450,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-program-execution"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "axum",
  "health",
@@ -462,7 +462,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-statistics-service"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "axum",
  "health",
@@ -474,7 +474,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-voting-polling"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "axum",
  "health",
@@ -1526,7 +1526,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "sealed-bid-auction"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "axum",
  "health",
