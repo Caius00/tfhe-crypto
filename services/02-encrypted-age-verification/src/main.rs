@@ -1,10 +1,6 @@
-use axum::{
-    routing::{get, post},
-    Json, Router,
-};
+use axum::{routing::post, Json, Router};
 use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use tfhe::prelude::*;
 use tfhe::{CompressedServerKey, FheBool, FheUint8};
 
@@ -18,9 +14,6 @@ struct AgeRequest {
 struct AgeResponse {
     is_adult: String,
 }
-
-#[derive(Clone)]
-struct SharedServerKey(Arc<tokio::sync::Mutex<Option<CompressedServerKey>>>);
 
 async fn verify_age(Json(req): Json<AgeRequest>) -> Result<Json<AgeResponse>, String> {
     let sk_bytes = general_purpose::STANDARD
