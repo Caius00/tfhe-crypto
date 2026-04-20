@@ -3,7 +3,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/caius00/encrypted-key-value-store
-  tag: "0.1.3"
+  tag: "0.1.4"
   pullPolicy: IfNotPresent
 
 service:
@@ -23,3 +23,9 @@ route:
     name: traefik-gateway
     namespace: traefik
     sectionName: web
+
+redis:
+  enabled: true
+  auth:
+    enabled: true
+    password: "sCSm1$!s2XHQ2^Mp*#4P"

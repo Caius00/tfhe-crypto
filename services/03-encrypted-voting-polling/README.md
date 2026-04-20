@@ -1,6 +1,6 @@
 # 🗳️ 03 · Encrypted Voting & Polling
 
-![version](https://img.shields.io/badge/version-0.1.3-blue)
+![version](https://img.shields.io/badge/version-0.1.4-blue)
 
 Tally votes and poll results while individual votes stay private.
 

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: redis
+description: Simple Redis subchart for encrypted-key-value-store
+type: application
+version: 1.0.0
+appVersion: "7"

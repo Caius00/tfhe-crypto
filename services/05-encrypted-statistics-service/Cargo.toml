@@ -1,19 +1,14 @@
 [package]
 name = "encrypted-statistics-service"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 publish = false
 description = "Encrypted Statistics Service"
 
 [dependencies]
+tfhe = { workspace = true, features = ["software-prng"] }
 axum.workspace = true
 health.workspace = true
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-
-[target.'cfg(target_arch = "x86_64")'.dependencies]
-tfhe = { workspace = true, features = ["seeder_x86_64_rdseed"] }
-
-[target.'cfg(all(not(target_arch = "x86_64"), unix))'.dependencies]
-tfhe = { workspace = true, features = ["seeder_unix"] }
