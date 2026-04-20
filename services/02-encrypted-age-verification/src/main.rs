@@ -1,4 +1,5 @@
 use axum::{routing::post, Json, Router};
+use health;
 use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use tfhe::prelude::*;
@@ -49,9 +50,10 @@ async fn verify_age(Json(req): Json<AgeRequest>) -> Result<Json<AgeResponse>, St
 async fn main() {
     let app = Router::new()
         .route("/age-verification", post(verify_age))
+        .merge(health::router(env!("CARGO_PKG_VERSION")))
         .layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024 * 1024));
 
-    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 3000));
+    let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));
 
     let listener = match tokio::net::TcpListener::bind(addr).await {
         Ok(l) => l,
