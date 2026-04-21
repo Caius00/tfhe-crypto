@@ -1,6 +1,6 @@
 # 🖼️ 07 · Encrypted Image Processing
 
-![version](https://img.shields.io/badge/version-0.1.5-blue)
+![version](https://img.shields.io/badge/version-0.1.6-blue)
 
 Apply image operations on encrypted pixel data — the server never sees the image.
 
