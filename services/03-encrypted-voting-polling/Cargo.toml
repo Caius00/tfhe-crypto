@@ -12,3 +12,19 @@ health.workspace = true
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+
+# einbinden der library
+tfhe = { version = "~1.5.4", features = ["boolean", "shortint", "integer"] }
+
+# für die Endpunkte
+axum.workspace = true
+
+# um verschlüsselte Daten über HTTP zu schicken,
+# serialisieren wir die FheUinit8 Werte mit bincode als Base64 String
+
+bincode = "1"
+base64 = "0.22"
+
+[[bin]]
+name = "test-vote"
+path = "src/bin/test_vote.rs"
