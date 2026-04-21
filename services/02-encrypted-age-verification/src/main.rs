@@ -49,7 +49,7 @@ async fn verify_age(Json(req): Json<AgeRequest>) -> Result<Json<AgeResponse>, St
 #[tokio::main]
 async fn main() {
     let app = Router::new()
-        .route("/age-verification", post(verify_age))
+        .route("/", post(verify_age))
         .merge(health::router(env!("CARGO_PKG_VERSION")))
         .layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024 * 1024));
 
