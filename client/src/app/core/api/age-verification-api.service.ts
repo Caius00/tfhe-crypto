@@ -1,8 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, map } from 'rxjs';
-
-const API_URL = '/age-verification';
+import { SERVICE_URLS } from './service-urls';
 
 interface AgeRequest {
   encrypted_age: string;
@@ -15,11 +14,14 @@ interface AgeResponse {
 
 @Injectable({ providedIn: 'root' })
 export class AgeVerificationApiService {
+  // Relative URL → wird vom Proxy (proxy.conf.js) an lokal oder remote weitergeleitet
+  private readonly url = SERVICE_URLS.ageVerification.path;
+
   constructor(private http: HttpClient) {}
 
   /**
-   * Sends encrypted age and server key to the backend.
-   * Returns the encrypted FheBool result as bytes.
+   * Sendet verschlüsseltes Alter + Server-Key ans Backend.
+   * Gibt die Base64-kodierten Bytes des verschlüsselten Ergebnisses zurück.
    */
   verify(encryptedAgeB64: string, serverKeyB64: string): Observable<string> {
     const body: AgeRequest = {
@@ -27,7 +29,7 @@ export class AgeVerificationApiService {
       server_key: serverKeyB64,
     };
     return this.http
-      .post<AgeResponse>(API_URL, body)
+      .post<AgeResponse>(this.url, body)
       .pipe(map((res) => res.is_adult));
   }
 }
