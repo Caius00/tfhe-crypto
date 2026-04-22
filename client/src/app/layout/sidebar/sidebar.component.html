@@ -1,0 +1,9 @@
+<nav>
+  @for (entry of entries; track entry.route) {
+    <app-nav-item
+      [number]="entry.number"
+      [label]="entry.label"
+      [route]="entry.route"
+    />
+  }
+</nav>

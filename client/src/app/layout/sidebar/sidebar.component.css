@@ -1,0 +1,9 @@
+nav {
+  display: flex;
+  flex-direction: column;
+  width: 220px;
+  min-height: 100vh;
+  padding: 1rem 0;
+  border-right: 1px solid #e0e0e0;
+  background: #f9f9f9;
+}
