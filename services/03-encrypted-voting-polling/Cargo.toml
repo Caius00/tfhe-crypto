@@ -1,30 +1,19 @@
 [package]
 name = "encrypted-voting-polling"
-version = "0.1.6"
+version = "0.1.6" # oder "0.1.0"
 edition = "2021"
 publish = false
 description = "Encrypted Voting / Polling"
 
 [dependencies]
-tfhe = { workspace = true, features = ["software-prng"] }
+bincode = "1.3.3"
+base64 = "0.22.1"
+uuid = { version = "1", features = ["v4"] }
 axum.workspace = true
 health.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["full"] }
 serde.workspace = true
 serde_json.workspace = true
-
-# einbinden der library
-tfhe = { version = "~1.5.4", features = ["boolean", "shortint", "integer"] }
-
-# für die Endpunkte
-axum.workspace = true
-
-# um verschlüsselte Daten über HTTP zu schicken,
-# serialisieren wir die FheUinit8 Werte mit bincode als Base64 String
-
-bincode = "1"
-base64 = "0.22"
-
-[[bin]]
-name = "test-vote"
-path = "src/bin/test_vote.rs"
+tfhe.workspace = true
+tower = { version = "0.5.3", features = ["full"] }
+tower-http = { version = "0.6.8", features = ["cors"] }

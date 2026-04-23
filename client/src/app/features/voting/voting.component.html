@@ -1,18 +1,114 @@
 <h1>03 – Encrypted Voting / Polling</h1>
 
-<app-input
-  label="Session ID"
-  placeholder="Session-ID eingeben"
-  [value]="sessionId()"
-  (valueChange)="sessionId.set($event)"
-/>
+<!-- ── Bereich: Session erstellen ────────────────────────────── -->
+<section>
+    <h2>Session erstellen</h2>
 
-<app-input
-  label="Stimme (Ganzzahl)"
-  type="number"
-  placeholder="z.B. 1"
-  [value]="vote()"
-  (valueChange)="vote.set($event)"
-/>
+    <app-input
+            label="Creator ID"
+            placeholder="z.B. alice"
+            [value]="creatorId()"
+            (valueChange)="creatorId.set($event)"
+    />
+    <app-input
+            label="Server Key (Base64)"
+            placeholder="Base64-kodierten ServerKey eingeben"
+            [value]="serverKey()"
+            (valueChange)="serverKey.set($event)"
+    />
+    <app-button label="Session erstellen" (clicked)="createSession()" />
 
-<app-button label="Stimme abgeben" (clicked)="onSubmit()" />
+    @if (createdSessionId()) {
+        <p>Session erstellt: <strong>{{ createdSessionId() }}</strong></p>
+    }
+    @if (createError()) {
+        <p>{{ createError() }}</p>
+    }
+</section>
+
+<!-- ── Bereich: Session beitreten ────────────────────────────── -->
+<section>
+    <h2>Session beitreten</h2>
+
+    <app-input
+            label="Session ID"
+            placeholder="Session-ID eingeben"
+            [value]="sessionId()"
+            (valueChange)="sessionId.set($event)"
+    />
+    <app-input
+            label="Teilnehmer ID"
+            placeholder="Deine ID eingeben"
+            [value]="participantId()"
+            (valueChange)="participantId.set($event)"
+    />
+    <app-button label="Beitreten" (clicked)="joinSession()" />
+
+    @if (joinStatus()) {
+        <p>{{ joinStatus() }}</p>
+    }
+</section>
+
+<!-- ── Bereich: Creator – Pending-Liste ──────────────────────── -->
+<section>
+    <h2>Teilnehmer verwalten (Creator)</h2>
+
+    <app-input
+            label="Creator ID"
+            placeholder="Creator-ID eingeben"
+            [value]="creatorId()"
+            (valueChange)="creatorId.set($event)"
+    />
+    <app-button label="Pending-Liste abrufen" (clicked)="getPending()" />
+
+    @if (pendingList().length > 0) {
+        <ul>
+            @for (participant of pendingList(); track participant) {
+                <li>
+                    {{ participant }}
+                    <app-button label="Genehmigen" (clicked)="approve(participant)" />
+                    <app-button label="Ablehnen" (clicked)="reject(participant)" />
+                </li>
+            }
+        </ul>
+    } @else {
+        <p>Keine ausstehenden Anfragen.</p>
+    }
+</section>
+
+<!-- ── Bereich: Abstimmen ─────────────────────────────────────── -->
+<section>
+    <h2>Abstimmen</h2>
+
+    <app-input
+            label="Verschlüsselte Stimme (Base64)"
+            placeholder="Base64-String eingeben"
+            [value]="encryptedVote()"
+            (valueChange)="encryptedVote.set($event)"
+    />
+    <app-button label="Stimme abgeben" (clicked)="submitVote()" />
+
+    @if (voteStatus()) {
+        <p>{{ voteStatus() }}</p>
+    }
+</section>
+
+<!-- ── Bereich: Ergebnisse ────────────────────────────────────── -->
+<section>
+    <h2>Ergebnisse</h2>
+
+    <app-button label="Ergebnisse abrufen" (clicked)="getResults()" />
+
+    @if (results()) {
+        @if (results()!.ready) {
+            <p>Ergebnisse bereit:</p>
+            <ul>
+                @for (result of results()!.encrypted_results; track $index) {
+                    <li>Frage {{ $index + 1 }}: {{ result }}</li>
+                }
+            </ul>
+        } @else {
+            <p>Noch nicht alle Stimmen abgegeben – bitte später nochmal abrufen.</p>
+        }
+    }
+</section>

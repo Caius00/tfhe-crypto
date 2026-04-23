@@ -1,51 +1,90 @@
-use tfhe::FheUint8;
-use serde::Serialize;
-use std::collections::HashMap;
 
-/// Die Voting Session — erstellt von Client E
-pub struct VotingSession {
+use serde::{Deserialize, Serialize};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Question {
     pub id: u32,
-    pub question: String,
-    pub options: Vec<String>,         // Optionsnamen dürfen Klartext sein
-    pub tallies: Vec<FheUint8>,       // verschlüsselte Summe pro Option
-    pub approved_voters: Vec<String>, // zugelassene Voter-IDs (Klartext)
-    pub pending_requests: Vec<PendingRequest>, // noch nicht genehmigt
-    pub votes_cast: Vec<String>,      // wer hat schon abgestimmt
+    pub text: String,
+    pub question_type: QuestionType, // "bool" oder "choice"
+    pub options: Option<Vec<String>>, // bei Multiple Choice
 }
 
-pub struct PendingRequest {
-    pub voter_id: String,
-    pub encrypted_name: FheUint8,
-}
-/// Eine abgegebene Stimme
-pub struct EncryptedBallot {
-    pub session_id: u32,              // Klartext
-    pub voter_id: String,             // Klartext
-    pub encrypted_name: FheUint8,     // verschlüsselter Name
-    pub choices: Vec<FheUint8>,       // eine FheUint8 pro Option (0 oder 1)
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum QuestionType {
+    Bool,
+    Choice,
 }
 
-/// Struct für HTTP-Antwort
+#[derive(Clone)]
+pub struct SessionState {
+    pub creator_id: String,
+    pub server_key_bytes: Vec<u8>,
+    pub questions: Vec<Question>,
+    // participant_id → approved?
+    pub participants: HashMap<String, bool>,
+    // participant_id → Vec<encrypted_vote_per_question (Base64)>
+    pub votes: HashMap<String, Vec<String>>,
+    pub finalized: bool,
+    pub encrypted_results: Option<Vec<String>>, // Base64 pro Frage
+}
+
+pub type AppState = Arc<Mutex<HashMap<String, SessionState>>>;
+
+// ─── Request / Response DTOs ─────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+pub struct CreateSessionRequest {
+    pub creator_id: String,
+    pub server_key: String, // Base64 CompressedServerKey
+    pub questions: Vec<Question>,
+}
+
 #[derive(Serialize)]
-pub struct SessionInfo {
-    pub id: u32,
-    pub question: String,
-    pub options: Vec<String>,
-    pub vote_count: usize,
-    pub approved_voters: Vec<String>,
+pub struct CreateSessionResponse {
+    pub session_id: String,
 }
 
-/// Struct für Request Body, um Voter zuzulassen
-#[derive(serde::Deserialize)]
+#[derive(Deserialize)]
+pub struct JoinRequest {
+    pub session_id: String,
+    pub participant_id: String,
+}
+
+#[derive(Serialize)]
+pub struct JoinResponse {
+    pub status: String, // "pending"
+}
+
+#[derive(Deserialize)]
 pub struct ApproveRequest {
-    pub voter_id: String,
+    pub session_id: String,
+    pub creator_id: String,
+    pub participant_id: String,
+    pub approved: bool,
 }
 
-/// Struct für Request, für verschlüsselte Antwort eines zugelassenen Voters
-#[derive(serde::Deserialize)]
-pub struct VoteRequest{
-    pub session_id: u32,
-    pub voter_id: String,
-    pub encrypted_name: String, // base64 kodiertes FheUint8
-    pub choices: Vec<String>, // base64 kodiertes FheUint8 pro Option
+#[derive(Deserialize)]
+pub struct VoteRequest {
+    pub session_id: String,
+    pub participant_id: String,
+    // Ein Base64-String pro Frage (FheUint8 oder FheBool, je nach Fragetyp)
+    pub encrypted_votes: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct VoteResponse {
+    pub status: String,
+}
+
+#[derive(Serialize)]
+pub struct ResultResponse {
+    // Base64-kodiertes verschlüsseltes Ergebnis pro Frage
+    // (FheUint8 = Summe der Stimmen pro Option ODER FheBool = Mehrheit)
+    pub encrypted_results: Vec<String>,
+    pub ready: bool,
 }
