@@ -354,7 +354,7 @@ mod integration_tests {
     #[tokio::test]
     async fn test_results_not_ready() {
         let (app, _state) = build_app();
-        let (client_key, sk_b64) = generate_fhe_keys();
+        let (_client_key, sk_b64) = generate_fhe_keys();
 
         let (_, body) = post_json(&app, "/session", json!({
             "creator_id": "alice",

@@ -1,35 +1,35 @@
 <h1>03 – Encrypted Voting / Polling</h1>
 
-<!-- ── Bereich: Session erstellen ────────────────────────────── -->
+<!-- ── Schritt 1: Keys generieren ────────────────────────────── -->
 <section>
-    <h2>Session erstellen</h2>
+    <h2>1. Keys generieren (Creator)</h2>
+    <app-button label="Keys generieren" (clicked)="generateKeys()" />
+    @if (keyStatus()) {
+        <p>{{ keyStatus() }}</p>
+    }
+</section>
 
+<!-- ── Schritt 2: Session erstellen ──────────────────────────── -->
+<section>
+    <h2>2. Session erstellen (Creator)</h2>
     <app-input
             label="Creator ID"
             placeholder="z.B. alice"
             [value]="creatorId()"
             (valueChange)="creatorId.set($event)"
     />
-    <app-input
-            label="Server Key (Base64)"
-            placeholder="Base64-kodierten ServerKey eingeben"
-            [value]="serverKey()"
-            (valueChange)="serverKey.set($event)"
-    />
     <app-button label="Session erstellen" (clicked)="createSession()" />
-
-    @if (createdSessionId()) {
-        <p>Session erstellt: <strong>{{ createdSessionId() }}</strong></p>
+    @if (createStatus()) {
+        <p>{{ createStatus() }}</p>
     }
-    @if (createError()) {
-        <p>{{ createError() }}</p>
+    @if (createdSessionId()) {
+        <p>Session ID: <strong>{{ createdSessionId() }}</strong></p>
     }
 </section>
 
-<!-- ── Bereich: Session beitreten ────────────────────────────── -->
+<!-- ── Schritt 3: Session beitreten ──────────────────────────── -->
 <section>
-    <h2>Session beitreten</h2>
-
+    <h2>3. Session beitreten (Teilnehmer)</h2>
     <app-input
             label="Session ID"
             placeholder="Session-ID eingeben"
@@ -38,29 +38,20 @@
     />
     <app-input
             label="Teilnehmer ID"
-            placeholder="Deine ID eingeben"
+            placeholder="z.B. bob"
             [value]="participantId()"
             (valueChange)="participantId.set($event)"
     />
     <app-button label="Beitreten" (clicked)="joinSession()" />
-
     @if (joinStatus()) {
         <p>{{ joinStatus() }}</p>
     }
 </section>
 
-<!-- ── Bereich: Creator – Pending-Liste ──────────────────────── -->
+<!-- ── Schritt 4: Teilnehmer verwalten ───────────────────────── -->
 <section>
-    <h2>Teilnehmer verwalten (Creator)</h2>
-
-    <app-input
-            label="Creator ID"
-            placeholder="Creator-ID eingeben"
-            [value]="creatorId()"
-            (valueChange)="creatorId.set($event)"
-    />
+    <h2>4. Teilnehmer verwalten (Creator)</h2>
     <app-button label="Pending-Liste abrufen" (clicked)="getPending()" />
-
     @if (pendingList().length > 0) {
         <ul>
             @for (participant of pendingList(); track participant) {
@@ -76,35 +67,27 @@
     }
 </section>
 
-<!-- ── Bereich: Abstimmen ─────────────────────────────────────── -->
+<!-- ── Schritt 5: Abstimmen ───────────────────────────────────── -->
 <section>
-    <h2>Abstimmen</h2>
-
-    <app-input
-            label="Verschlüsselte Stimme (Base64)"
-            placeholder="Base64-String eingeben"
-            [value]="encryptedVote()"
-            (valueChange)="encryptedVote.set($event)"
-    />
+    <h2>5. Abstimmen (Teilnehmer)</h2>
+    <p>Stimme: <strong>{{ voteValue() ? 'Ja' : 'Nein' }}</strong></p>
+    <app-button label="Ja" (clicked)="voteValue.set(true)" />
+    <app-button label="Nein" (clicked)="voteValue.set(false)" />
     <app-button label="Stimme abgeben" (clicked)="submitVote()" />
-
     @if (voteStatus()) {
         <p>{{ voteStatus() }}</p>
     }
 </section>
 
-<!-- ── Bereich: Ergebnisse ────────────────────────────────────── -->
+<!-- ── Schritt 6: Ergebnisse ──────────────────────────────────── -->
 <section>
-    <h2>Ergebnisse</h2>
-
+    <h2>6. Ergebnisse (Creator)</h2>
     <app-button label="Ergebnisse abrufen" (clicked)="getResults()" />
-
     @if (results()) {
         @if (results()!.ready) {
-            <p>Ergebnisse bereit:</p>
             <ul>
-                @for (result of results()!.encrypted_results; track $index) {
-                    <li>Frage {{ $index + 1 }}: {{ result }}</li>
+                @for (result of decryptedResults(); track $index) {
+                    <li>Frage {{ $index + 1 }}: {{ result }} Ja-Stimmen</li>
                 }
             </ul>
         } @else {
