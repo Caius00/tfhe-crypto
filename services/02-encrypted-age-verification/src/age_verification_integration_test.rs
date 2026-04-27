@@ -6,7 +6,7 @@ use axum::{
     Router,
 };
 use base64::{engine::general_purpose, Engine as _};
-use tfhe::{ClientKey, CompressedServerKey, ConfigBuilder, FheBool, FheUint8};
+use tfhe::{ClientKey, CompressedServerKey, ConfigBuilder, FheBool};
 use tower::ServiceExt;
 
 #[tokio::test(flavor = "multi_thread")]
@@ -175,4 +175,72 @@ async fn test_verify_negative_age_false() {
         !is_adult,
         "User (-17) sollte nicht als volljährig erkannt werden"
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_verify_age_corrupt_data() {
+    let app = Router::new().route("/", post(verify_age));
+
+    // Gültiges Base64, aber bincode wird beim Deserialisieren scheitern
+    let corrupt_base64 = general_purpose::STANDARD.encode(vec![1, 2, 3, 4, 5]);
+
+    let payload = AgeRequest {
+        encrypted_age: corrupt_base64.clone(),
+        server_key: corrupt_base64,
+    };
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_health_check() {
+    let app = Router::new().merge(health::router("1.0.0"));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/healthz")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_verify_age_invalid_base64() {
+    let app = Router::new().route("/", post(verify_age));
+
+    let payload = serde_json::json!({
+        "encrypted_age": "not-valid-base64",
+        "server_key": "invalid-key"
+    });
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/")
+                .header("Content-Type", "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }

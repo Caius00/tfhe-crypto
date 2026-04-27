@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod age_verification_integration_test;
+use axum::http::StatusCode;
 use axum::{routing::post, Json, Router};
 use base64::{engine::general_purpose, Engine as _};
 use health;
@@ -18,22 +19,37 @@ struct AgeResponse {
     is_adult: String,
 }
 
-pub(crate) async fn verify_age(Json(req): Json<AgeRequest>) -> Result<Json<AgeResponse>, String> {
+pub(crate) async fn verify_age(
+    Json(req): Json<AgeRequest>,
+) -> Result<Json<AgeResponse>, (StatusCode, String)> {
     let sk_bytes = general_purpose::STANDARD
         .decode(&req.server_key)
-        .map_err(|e| format!("Invalid ServerKey Base64: {}", e))?;
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid ServerKey: {}", e)))?;
 
-    let compressed: CompressedServerKey = bincode::deserialize(&sk_bytes)
-        .map_err(|e| format!("Failed to deserialize CompressedServerKey: {}", e))?;
+    let compressed: CompressedServerKey = bincode::deserialize(&sk_bytes).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("Failed to deserialize CompressedServerKey: {}", e),
+        )
+    })?;
 
     let server_key = compressed.decompress();
 
     let age_bytes = general_purpose::STANDARD
         .decode(&req.encrypted_age)
-        .map_err(|e| format!("Invalid Age Base64: {}", e))?;
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("Invalid Age Base64: {}", e),
+            )
+        })?;
 
-    let enc_age: FheInt8 = bincode::deserialize(&age_bytes)
-        .map_err(|e| format!("Failed to deserialize Encrypted Age: {}", e))?;
+    let enc_age: FheInt8 = bincode::deserialize(&age_bytes).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("Failed to deserialize Encrypted Age: {}", e),
+        )
+    })?;
 
     let enc_result: FheBool = tokio::task::block_in_place(|| {
         tfhe::set_server_key(server_key);
@@ -44,8 +60,12 @@ pub(crate) async fn verify_age(Json(req): Json<AgeRequest>) -> Result<Json<AgeRe
         is_adult & is_positive
     });
 
-    let res_bytes =
-        bincode::serialize(&enc_result).map_err(|e| format!("Serialization error: {}", e))?;
+    let res_bytes = bincode::serialize(&enc_result).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Serialization error: {}", e),
+        )
+    })?;
 
     Ok(Json(AgeResponse {
         is_adult: general_purpose::STANDARD.encode(res_bytes),
