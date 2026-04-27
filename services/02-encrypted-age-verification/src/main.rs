@@ -1,22 +1,24 @@
+#[cfg(test)]
+mod age_verification_integration_test;
 use axum::{routing::post, Json, Router};
-use health;
 use base64::{engine::general_purpose, Engine as _};
+use health;
 use serde::{Deserialize, Serialize};
 use tfhe::prelude::*;
-use tfhe::{CompressedServerKey, FheBool, FheUint8};
+use tfhe::{CompressedServerKey, FheBool, FheInt8};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct AgeRequest {
     encrypted_age: String,
     server_key: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct AgeResponse {
     is_adult: String,
 }
 
-async fn verify_age(Json(req): Json<AgeRequest>) -> Result<Json<AgeResponse>, String> {
+pub(crate) async fn verify_age(Json(req): Json<AgeRequest>) -> Result<Json<AgeResponse>, String> {
     let sk_bytes = general_purpose::STANDARD
         .decode(&req.server_key)
         .map_err(|e| format!("Invalid ServerKey Base64: {}", e))?;
@@ -30,12 +32,16 @@ async fn verify_age(Json(req): Json<AgeRequest>) -> Result<Json<AgeResponse>, St
         .decode(&req.encrypted_age)
         .map_err(|e| format!("Invalid Age Base64: {}", e))?;
 
-    let enc_age: FheUint8 = bincode::deserialize(&age_bytes)
+    let enc_age: FheInt8 = bincode::deserialize(&age_bytes)
         .map_err(|e| format!("Failed to deserialize Encrypted Age: {}", e))?;
 
     let enc_result: FheBool = tokio::task::block_in_place(|| {
         tfhe::set_server_key(server_key);
-        enc_age.gt(17u8)
+
+        let is_adult = enc_age.gt(17i8);
+        let is_positive = enc_age.ge(0i8);
+
+        is_adult & is_positive
     });
 
     let res_bytes =
