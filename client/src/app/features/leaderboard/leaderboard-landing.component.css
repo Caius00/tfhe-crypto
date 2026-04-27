@@ -1,0 +1,56 @@
+.landing {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 540px) {
+  .landing { grid-template-columns: 1fr; }
+}
+
+.l-panel {
+  background: rgba(10, 20, 30, 0.75);
+  backdrop-filter: blur(8px);
+  border: 2px solid rgba(82,183,136,0.4);
+  border-radius: 12px;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  transition: border-color 0.2s;
+}
+
+.l-panel:hover { border-color: rgba(82,183,136,0.7); }
+
+.l-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.l-icon {
+  width: 36px;
+  height: auto;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,0.5));
+}
+
+.pipe-icon { width: 22px; }
+
+.l-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.6rem;
+  color: #d8f3dc;
+  margin: 0;
+  text-shadow: 0 0 10px rgba(82,183,136,0.4);
+}
+
+.l-hint {
+  font-size: 0.65rem;
+  color: #94a3b8;
+  line-height: 1.75;
+  margin: 0;
+}
+
+.l-hint strong { color: #d8f3dc; }

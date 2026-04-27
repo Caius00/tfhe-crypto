@@ -1,0 +1,15 @@
+<div class="player-shell">
+  <div class="game-fill">
+    <app-flappy-bird (gameOver)="onGameOver($event)" />
+  </div>
+  <div class="info-overlay">
+    <div class="info-item">
+      <span class="info-label">RAUM</span>
+      <span class="info-value">{{ roomCode }}</span>
+    </div>
+    <div class="info-item">
+      <span class="info-label">ID</span>
+      <span class="info-value">{{ playerId }}</span>
+    </div>
+  </div>
+</div>

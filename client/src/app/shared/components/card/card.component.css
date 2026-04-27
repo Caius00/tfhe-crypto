@@ -1,0 +1,9 @@
+.card {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+}
+.card.elevated { border: none; box-shadow: var(--shadow-lg); }
+.card.flat     { border: none; background: var(--c-bg); }
+.card.error    { background: var(--c-error-bg); border-color: var(--c-error-border); }
