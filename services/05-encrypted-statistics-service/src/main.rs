@@ -78,32 +78,31 @@ async fn compute_statistics(
 
     // 3. Homomorphe Berechnungen – blockierend, da CPU-intensiv.
     //    block_in_place verhindert, dass der Tokio-Threadpool blockiert wird.
-    let (enc_sum, enc_min, enc_max, enc_avg, enc_median) =
-        tokio::task::block_in_place(|| {
-            // Server Key auf dem Hauptthread und auf allen Rayon-Worker-Threads setzen,
-            // damit parallele FHE-Operationen in statistics.rs korrekt funktionieren.
-            rayon::broadcast(|_| tfhe::set_server_key(server_key.clone()));
-            tfhe::set_server_key(server_key);
+    let (enc_sum, enc_min, enc_max, enc_avg, enc_median) = tokio::task::block_in_place(|| {
+        // Server Key auf dem Hauptthread und auf allen Rayon-Worker-Threads setzen,
+        // damit parallele FHE-Operationen in statistics.rs korrekt funktionieren.
+        rayon::broadcast(|_| tfhe::set_server_key(server_key.clone()));
+        tfhe::set_server_key(server_key);
 
-            // Summe und Durchschnitt intern als Int128 (kein Overflow),
-            // dann auf Int64 casten für den WASM-kompatiblen Transport.
-            let s:   FheInt64 = statistics::sum(&enc_list).cast_into();
-            let mn               = statistics::min(&enc_list);
-            let mx               = statistics::max(&enc_list);
-            let avg: FheInt64 = statistics::average(&enc_list).cast_into();
-            let med              = statistics::median(&enc_list);
+        // Summe und Durchschnitt intern als Int128 (kein Overflow),
+        // dann auf Int64 casten für den WASM-kompatiblen Transport.
+        let s: FheInt64 = statistics::sum(&enc_list).cast_into();
+        let mn = statistics::min(&enc_list);
+        let mx = statistics::max(&enc_list);
+        let avg: FheInt64 = statistics::average(&enc_list).cast_into();
+        let med = statistics::median(&enc_list);
 
-            (s, mn, mx, avg, med)
-        });
+        (s, mn, mx, avg, med)
+    });
 
     // 4. Ergebnisse serialisieren und zurücksenden
     Ok(Json(StatisticsResponse {
-        sum:     to_base64(&enc_sum)?,
+        sum: to_base64(&enc_sum)?,
         count,
-        min:     to_base64(&enc_min)?,
-        max:     to_base64(&enc_max)?,
+        min: to_base64(&enc_min)?,
+        max: to_base64(&enc_max)?,
         average: to_base64(&enc_avg)?,
-        median:  to_base64(&enc_median)?,
+        median: to_base64(&enc_median)?,
     }))
 }
 
