@@ -1,12 +1,9 @@
 import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { ButtonComponent } from '../../shared/components/button/button.component';
 import { SpinnerComponent } from '../../shared/components/spinner/spinner.component';
+import { DecryptedEntry } from './models/decrypted-entry.model';
 
-export interface DecryptedEntry {
-  rank: number;
-  score: number;
-  playerId: string;
-}
+export type { DecryptedEntry };
 
 @Component({
   selector: 'app-leaderboard-creator',
@@ -20,13 +17,6 @@ export class LeaderboardCreatorComponent {
   @Input() loading = false;
   @Input() lastUpdated: Date | null = null;
   @Output() refresh = new EventEmitter<void>();
-
-  medal(rank: number): string {
-    if (rank === 1) return '🥇';
-    if (rank === 2) return '🥈';
-    if (rank === 3) return '🥉';
-    return `#${rank}`;
-  }
 
   timeAgo(): string {
     if (!this.lastUpdated) return '';

@@ -4,8 +4,10 @@ import { LeaderboardApiService } from '../../core/api/leaderboard-api.service';
 import { KeyPair } from '../../core/crypto/key-pair.model';
 import { SpinnerComponent } from '../../shared/components/spinner/spinner.component';
 import { ButtonComponent } from '../../shared/components/button/button.component';
+import { AlertComponent } from '../../shared/components/alert/alert.component';
 import { LeaderboardLandingComponent } from './leaderboard-landing.component';
-import { LeaderboardCreatorComponent, DecryptedEntry } from './leaderboard-creator.component';
+import { LeaderboardCreatorComponent } from './leaderboard-creator.component';
+import { DecryptedEntry } from './models/decrypted-entry.model';
 import { LeaderboardPlayerComponent } from './leaderboard-player.component';
 
 type View = 'landing' | 'creating' | 'creator' | 'player' | 'error';
@@ -17,6 +19,7 @@ const POLL_INTERVAL_MS = 8_000;
   imports: [
     SpinnerComponent,
     ButtonComponent,
+    AlertComponent,
     LeaderboardLandingComponent,
     LeaderboardCreatorComponent,
     LeaderboardPlayerComponent,
@@ -38,8 +41,6 @@ export class LeaderboardComponent implements OnDestroy {
 
   // Player state
   playerId = signal('');
-  playerSubmitting = signal(false);
-  playerSubmitted = signal(false);
   private publicKeyBytes: Uint8Array | null = null;
 
   constructor(
@@ -149,9 +150,6 @@ export class LeaderboardComponent implements OnDestroy {
   // Called automatically after every game over
   async onSubmitScore(score: number): Promise<void> {
     if (!this.publicKeyBytes) return;
-    this.playerSubmitted.set(false);
-    this.playerSubmitting.set(true);
-    await new Promise((r) => setTimeout(r, 50));
 
     try {
       await this.tfhe.ensureInitialized();
@@ -165,18 +163,10 @@ export class LeaderboardComponent implements OnDestroy {
       this.api
         .submit(this.roomCode(), this.playerId(), this.tfhe.toBase64(encryptedScore), this.tfhe.toBase64(encryptedId))
         .subscribe({
-          next: () => {
-            this.playerSubmitting.set(false);
-            this.playerSubmitted.set(true);
-          },
-          error: (err) => {
-            this.playerSubmitting.set(false);
-            console.error('Submit error:', err);
-          },
+          error: (err) => console.error('Submit error:', err),
         });
     } catch (e) {
       console.error('Encrypt error:', e);
-      this.playerSubmitting.set(false);
     }
   }
 
@@ -193,8 +183,6 @@ export class LeaderboardComponent implements OnDestroy {
     this.publicKeyBytes = null;
     this.creatorEntries.set([]);
     this.lastUpdated.set(null);
-    this.playerSubmitted.set(false);
-    this.playerSubmitting.set(false);
   }
 
   private setError(msg: string): void {

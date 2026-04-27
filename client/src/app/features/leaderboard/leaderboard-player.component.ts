@@ -10,8 +10,6 @@ import { FlappyBirdComponent } from '../../shared/components/flappy-bird/flappy-
 export class LeaderboardPlayerComponent {
   @Input() roomCode = '';
   @Input() playerId = '';
-  @Input() submitting = false;
-  @Input() submitted = false;
   @Output() submitScore = new EventEmitter<number>();
 
   onGameOver(score: number): void {

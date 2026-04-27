@@ -39,20 +39,13 @@
     <app-leaderboard-player
       [roomCode]="roomCode()"
       [playerId]="playerId()"
-      [submitting]="playerSubmitting()"
-      [submitted]="playerSubmitted()"
       (submitScore)="onSubmitScore($event)"
     />
   }
 
   @if (view() === 'error') {
-    <div class="status-panel error-panel">
-      <div>
-        <p class="status-title error-title">FEHLER</p>
-        <p class="status-hint">{{ errorMessage() }}</p>
-      </div>
-      <app-button label="ZURÜCK" variant="ghost" (clicked)="goHome()" />
-    </div>
+    <app-alert variant="error" [message]="errorMessage()" />
+    <app-button label="ZURÜCK" variant="ghost" (clicked)="goHome()" />
   }
 
 </div>
