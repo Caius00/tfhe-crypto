@@ -6,16 +6,26 @@ use axum::{
 use base64::{engine::general_purpose, Engine as _};
 use tfhe::{ClientKey, CompressedServerKey, ConfigBuilder, FheBool};
 use tower::ServiceExt;
+use std::sync::OnceLock;
+
+static TEST_SETUP: OnceLock<(ClientKey, CompressedServerKey)> = OnceLock::new();
+
+fn get_test_setup() -> &'static (ClientKey, CompressedServerKey) {
+    TEST_SETUP.get_or_init(|| {
+        let config = ConfigBuilder::default().build();
+        let ck = ClientKey::generate(config);
+        let sk = CompressedServerKey::new(&ck);
+        (ck, sk)
+    })
+}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_verify_age_true() {
     // 1. Keys und Verschlüsselung
-    let config = ConfigBuilder::default().build();
-    let client_key = ClientKey::generate(config);
-    let server_key = CompressedServerKey::new(&client_key);
+    let (client_key, server_key) = get_test_setup();
 
     let age: i8 = 20;
-    let encrypted_age = FheInt8::encrypt(age, &client_key);
+    let encrypted_age = FheInt8::encrypt(age, client_key);
 
     // 2. Daten für den Request vorbereiten
     let sk_payload = general_purpose::STANDARD.encode(bincode::serialize(&server_key).unwrap());
@@ -62,12 +72,10 @@ async fn test_verify_age_true() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_verify_age_false() {
     // 1. Keys und Verschlüsselung
-    let config = ConfigBuilder::default().build();
-    let client_key = ClientKey::generate(config);
-    let server_key = CompressedServerKey::new(&client_key);
+    let (client_key, server_key) = get_test_setup();
 
     let age: i8 = 17;
-    let encrypted_age = FheInt8::encrypt(age, &client_key);
+    let encrypted_age = FheInt8::encrypt(age, client_key);
 
     // 2. Daten für den Request vorbereiten
     let sk_payload = general_purpose::STANDARD.encode(bincode::serialize(&server_key).unwrap());
@@ -117,12 +125,10 @@ async fn test_verify_age_false() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_verify_negative_age_false() {
     // 1. Keys und Verschlüsselung
-    let config = ConfigBuilder::default().build();
-    let client_key = ClientKey::generate(config);
-    let server_key = CompressedServerKey::new(&client_key);
+    let (client_key, server_key) = get_test_setup();
 
     let age: i8 = -17;
-    let encrypted_age = FheInt8::encrypt(age, &client_key);
+    let encrypted_age = FheInt8::encrypt(age, client_key);
 
     // 2. Daten für den Request vorbereiten
     let sk_payload = general_purpose::STANDARD.encode(bincode::serialize(&server_key).unwrap());
