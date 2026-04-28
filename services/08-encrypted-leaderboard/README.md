@@ -1,6 +1,6 @@
 # 🏆 08 · Encrypted Leaderboard
 
-![version](https://img.shields.io/badge/version-0.1.6-blue)
+![version](https://img.shields.io/badge/version-0.1.7-blue)
 
 Rankings and scores without revealing individual results.
 
