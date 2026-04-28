@@ -1,1 +1,120 @@
-<h1>05 – Encrypted Statistics Service</h1>
+<div class="page">
+  <h1>05 – Encrypted Statistics Service</h1>
+  <p class="subtitle">
+    Die Zahlen werden lokal verschlüsselt. Der Server berechnet alle Statistiken
+    homomorph, ohne die Klartextwerte zu kennen.
+  </p>
+
+  <!-- Step: init -->
+  @if (step() === 'init') {
+    <div class="card">
+      <h2>Schritt 1: Schlüssel generieren</h2>
+      <p class="hint">
+        Es werden ein Client-Key (lokal) und ein Server-Key (für das Backend)
+        erzeugt. Dies dauert <strong>30–90 Sekunden</strong>.
+      </p>
+      <app-button label="Schlüssel generieren" (clicked)="generateKeys()" />
+    </div>
+  }
+
+  <!-- Step: generating keys -->
+  @if (step() === 'generating') {
+    <div class="card loading-card">
+      <app-spinner />
+      <div>
+        <p class="loading-title">Schlüssel werden generiert …</p>
+        <p class="hint">TFHE-Schlüsselgenerierung läuft. Bitte warten.</p>
+      </div>
+    </div>
+  }
+
+  <!-- Step: enter list -->
+  @if (step() === 'enter-list') {
+    <div class="card">
+      <div class="status-badge success">Schlüssel bereit</div>
+      <h2>Schritt 2: Zahlen eingeben</h2>
+      <p class="hint">
+        Komma-getrennte Ganzzahlen eingeben (z.B. <code>-5, 3, -10, 7, 2</code>).
+        Die Werte werden mit dem Client-Key verschlüsselt und nur verschlüsselt
+        an den Server gesendet.
+      </p>
+      <app-input
+        label="Zahlen (komma-getrennt)"
+        type="text"
+        placeholder="z.B. -5000, 3200, -10800, 7500"
+        [value]="listInput()"
+        (valueChange)="listInput.set($event)"
+      />
+      <div class="actions">
+        <app-button label="Statistiken berechnen" (clicked)="compute()" />
+        <app-button label="Zurücksetzen" type="button" (clicked)="reset()" />
+      </div>
+    </div>
+  }
+
+  <!-- Step: computing -->
+  @if (step() === 'computing') {
+    <div class="card loading-card">
+      <app-spinner />
+      <div>
+        <p class="loading-title">Berechnung läuft …</p>
+        <p class="hint">
+          Der Server führt alle Berechnungen homomorph auf den verschlüsselten
+          Daten aus. Dies kann einige Minuten dauern.
+        </p>
+      </div>
+    </div>
+  }
+
+  <!-- Step: result -->
+  @if (step() === 'result' && result()) {
+    <div class="card">
+      <h2>Ergebnis</h2>
+      <p class="hint">
+        Der Server hat alle Statistiken verschlüsselt berechnet und zurückgegeben.
+        Die Entschlüsselung erfolgte lokal mit dem Client-Key.
+      </p>
+      <table class="result-table">
+        <tbody>
+          <tr>
+            <td class="label">Summe</td>
+            <td class="value">{{ result()!.sum }}</td>
+          </tr>
+          <tr>
+            <td class="label">Anzahl</td>
+            <td class="value">{{ result()!.count }}</td>
+          </tr>
+          <tr>
+            <td class="label">Minimum</td>
+            <td class="value">{{ result()!.min }}</td>
+          </tr>
+          <tr>
+            <td class="label">Maximum</td>
+            <td class="value">{{ result()!.max }}</td>
+          </tr>
+          <tr>
+            <td class="label">Durchschnitt</td>
+            <td class="value">{{ result()!.average }}</td>
+          </tr>
+          <tr>
+            <td class="label">Median</td>
+            <td class="value">{{ result()!.median }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="actions">
+        <app-button label="Neue Berechnung" (clicked)="computeAnother()" />
+        <app-button label="Komplett zurücksetzen" type="button" (clicked)="reset()" />
+      </div>
+    </div>
+  }
+
+  <!-- Step: error -->
+  @if (step() === 'error') {
+    <div class="card error-card">
+      <h2>Fehler</h2>
+      <p>{{ errorMessage() }}</p>
+      <app-button label="Zurücksetzen" (clicked)="reset()" />
+    </div>
+  }
+</div>
