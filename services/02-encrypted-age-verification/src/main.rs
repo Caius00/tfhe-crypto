@@ -19,6 +19,13 @@ struct AgeResponse {
     is_adult: String,
 }
 
+pub fn create_app() -> Router {
+    Router::new()
+        .route("/", post(verify_age))
+        .merge(health::router(env!("CARGO_PKG_VERSION")))
+        .layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024 * 1024))
+}
+
 pub(crate) async fn verify_age(
     Json(req): Json<AgeRequest>,
 ) -> Result<Json<AgeResponse>, (StatusCode, String)> {
@@ -74,21 +81,11 @@ pub(crate) async fn verify_age(
 
 #[tokio::main]
 async fn main() {
-    let app = Router::new()
-        .route("/", post(verify_age))
-        .merge(health::router(env!("CARGO_PKG_VERSION")))
-        .layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024 * 1024));
+    let app = create_app();
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));
 
-    let listener = match tokio::net::TcpListener::bind(addr).await {
-        Ok(l) => l,
-        Err(e) => {
-            eprintln!("Fehler beim Binden an Port 3000: {}", e);
-            std::process::exit(1);
-        }
-    };
-
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     println!("Server läuft auf http://{}", addr);
 
     axum::serve(listener, app).await.unwrap();

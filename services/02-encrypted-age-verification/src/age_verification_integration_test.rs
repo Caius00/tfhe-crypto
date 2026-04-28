@@ -29,9 +29,7 @@ async fn test_verify_age_true() {
     };
 
     // 3. Router-Setup
-    let app = Router::new()
-        .route("/", post(verify_age))
-        .layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024 * 1024));
+    let app = create_app();
 
     // 4. Request senden
     let response = app
@@ -83,9 +81,7 @@ async fn test_verify_age_false() {
     };
 
     // 3. Router-Setup
-    let app = Router::new()
-        .route("/", post(verify_age))
-        .layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024 * 1024));
+    let app = create_app();
 
     // 4. Request senden
     let response = app
@@ -140,9 +136,7 @@ async fn test_verify_negative_age_false() {
     };
 
     // 3. Router-Setup
-    let app = Router::new()
-        .route("/", post(verify_age))
-        .layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024 * 1024));
+    let app = create_app();
 
     // 4. Request senden
     let response = app
@@ -179,9 +173,8 @@ async fn test_verify_negative_age_false() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_verify_age_corrupt_data() {
-    let app = Router::new().route("/", post(verify_age));
+    let app = create_app();
 
-    // Gültiges Base64, aber bincode wird beim Deserialisieren scheitern
     let corrupt_base64 = general_purpose::STANDARD.encode(vec![1, 2, 3, 4, 5]);
 
     let payload = AgeRequest {
@@ -205,25 +198,25 @@ async fn test_verify_age_corrupt_data() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_health_check() {
-    let app = Router::new().merge(health::router("1.0.0"));
+async fn test_health_extended() {
+    let app = create_app();
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/healthz")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let endpoints = vec!["/healthz", "/readyz", "/version"];
 
-    assert_eq!(response.status(), StatusCode::OK);
+    for uri in endpoints {
+        let response = app
+            .clone()
+            .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK, "Endpoint {} failed", uri);
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_verify_age_invalid_base64() {
-    let app = Router::new().route("/", post(verify_age));
+    let app = create_app();
 
     let payload = serde_json::json!({
         "encrypted_age": "not-valid-base64",
