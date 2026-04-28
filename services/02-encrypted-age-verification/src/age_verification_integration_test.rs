@@ -2,8 +2,6 @@ use super::*;
 use axum::{
     body::Body,
     http::{Request, StatusCode},
-    routing::post,
-    Router,
 };
 use base64::{engine::general_purpose, Engine as _};
 use tfhe::{ClientKey, CompressedServerKey, ConfigBuilder, FheBool};
