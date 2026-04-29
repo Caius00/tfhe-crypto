@@ -444,8 +444,8 @@ dependencies = [
  "base64",
  "bincode",
  "health",
+ "rayon",
  "serde",
- "serde_json",
  "tfhe",
  "tokio",
 ]

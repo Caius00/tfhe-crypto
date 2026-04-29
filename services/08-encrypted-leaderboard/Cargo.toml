@@ -11,6 +11,6 @@ axum.workspace = true
 health.workspace = true
 tokio = { workspace = true, features = ["full"] }
 serde.workspace = true
-serde_json.workspace = true
 base64 = "0.22.1"
 bincode = "1.3.3"
+rayon = "1.10"

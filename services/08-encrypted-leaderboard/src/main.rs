@@ -5,6 +5,7 @@ use axum::{
     Json, Router,
 };
 use base64::{engine::general_purpose, Engine as _};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
 use tfhe::{prelude::*, CompressedServerKey, FheUint16, FheUint8};
@@ -95,9 +96,11 @@ fn generate_code() -> String {
 }
 
 // Server-Key in den thread-lokalen Speicher von tfhe-rs laden
-fn load_server_key(bytes: &[u8]) {
-    let compressed: CompressedServerKey = bincode::deserialize(bytes).unwrap();
+fn load_server_key(bytes: &[u8]) -> Result<(), String> {
+    let compressed: CompressedServerKey = bincode::deserialize(bytes)
+        .map_err(|e| format!("Invalid server key: {e}"))?;
     tfhe::set_server_key(compressed.decompress());
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -105,45 +108,124 @@ fn load_server_key(bytes: &[u8]) {
 // ---------------------------------------------------------------------------
 
 // Gibt den höheren der beiden verschlüsselten Scores zurück (+ zugehörige ID)
-fn fhe_keep_max(old_s: &[u8], old_i: &[u8], new_s: &[u8], new_i: &[u8]) -> (Vec<u8>, Vec<u8>) {
-    let old_score: FheUint16 = bincode::deserialize(old_s).unwrap();
-    let new_score: FheUint16 = bincode::deserialize(new_s).unwrap();
-    let old_id: FheUint8 = bincode::deserialize(old_i).unwrap();
-    let new_id: FheUint8 = bincode::deserialize(new_i).unwrap();
+fn fhe_keep_max(
+    old_s: &[u8],
+    old_i: &[u8],
+    new_s: &[u8],
+    new_i: &[u8],
+) -> Result<(Vec<u8>, Vec<u8>), String> {
+    let old_score: FheUint16 =
+        bincode::deserialize(old_s).map_err(|e| format!("Deserialize old_score: {e}"))?;
+    let new_score: FheUint16 =
+        bincode::deserialize(new_s).map_err(|e| format!("Deserialize new_score: {e}"))?;
+    let old_id: FheUint8 =
+        bincode::deserialize(old_i).map_err(|e| format!("Deserialize old_id: {e}"))?;
+    let new_id: FheUint8 =
+        bincode::deserialize(new_i).map_err(|e| format!("Deserialize new_id: {e}"))?;
 
     let new_is_better = old_score.lt(&new_score);
     let kept_score = new_is_better.if_then_else(&new_score, &old_score);
     let kept_id = new_is_better.if_then_else(&new_id, &old_id);
 
-    (
-        bincode::serialize(&kept_score).unwrap(),
-        bincode::serialize(&kept_id).unwrap(),
-    )
+    Ok((
+        bincode::serialize(&kept_score).map_err(|e| format!("Serialize score: {e}"))?,
+        bincode::serialize(&kept_id).map_err(|e| format!("Serialize id: {e}"))?,
+    ))
 }
 
-// Bubble-Sort (absteigend) über (Score, ID)-Paare.
-// Score und ID werden immer zusammen getauscht, damit sie zusammenpassen.
-// player_keys werden nicht mitgetauscht, weil FHE nur verschlüsselte Booleans
-// liefert — kein echter Branch möglich.
-fn fhe_sort(pairs: &mut Vec<(Vec<u8>, Vec<u8>)>) {
+// Erzeugt alle Layer eines Batcher's Odd-Even Mergesort Networks für n Elemente.
+// Jede Layer ist eine Liste unabhängiger (i, j)-Vergleichspaare die parallel laufen können.
+fn batcher_layers(n: usize) -> Vec<Vec<(usize, usize)>> {
+    let mut layers: Vec<Vec<(usize, usize)>> = Vec::new();
+
+    let mut t = 1;
+    while t < n {
+        t *= 2;
+    }
+
+    let mut p = t / 2;
+    while p > 0 {
+        let mut q = t / 2;
+        let mut r = 0;
+        let mut d = p;
+
+        loop {
+            let mut layer: Vec<(usize, usize)> = Vec::new();
+            let mut i = r;
+            while i + d < n {
+                if (i & p) == r {
+                    layer.push((i, i + d));
+                }
+                i += 1;
+            }
+            if !layer.is_empty() {
+                layers.push(layer);
+            }
+
+            if q == p {
+                break;
+            }
+            d = q - p;
+            q /= 2;
+            r = p;
+        }
+
+        p /= 2;
+    }
+
+    layers
+}
+
+// Batcher's Odd-Even Mergesort mit Rayon-Parallelismus.
+// Jede Layer wird parallel verarbeitet: alle unabhängigen Vergleiche gleichzeitig auf
+// separaten CPU-Cores. Reduziert die Zeit von O(n²) auf O(log²n) Runden × Parallelität.
+fn fhe_sort(pairs: &mut [(Vec<u8>, Vec<u8>)]) -> Result<(), String> {
     let n = pairs.len();
     if n < 2 {
-        return;
+        return Ok(());
     }
-    for _ in 0..n - 1 {
-        for j in 0..n - 1 {
-            let s_lo: FheUint16 = bincode::deserialize(&pairs[j].0).unwrap();
-            let s_hi: FheUint16 = bincode::deserialize(&pairs[j + 1].0).unwrap();
-            let i_lo: FheUint8 = bincode::deserialize(&pairs[j].1).unwrap();
-            let i_hi: FheUint8 = bincode::deserialize(&pairs[j + 1].1).unwrap();
 
-            let swap = s_lo.lt(&s_hi);
-            pairs[j].0 = bincode::serialize(&swap.if_then_else(&s_hi, &s_lo)).unwrap();
-            pairs[j + 1].0 = bincode::serialize(&swap.if_then_else(&s_lo, &s_hi)).unwrap();
-            pairs[j].1 = bincode::serialize(&swap.if_then_else(&i_hi, &i_lo)).unwrap();
-            pairs[j + 1].1 = bincode::serialize(&swap.if_then_else(&i_lo, &i_hi)).unwrap();
+    let layers = batcher_layers(n);
+
+    type SwapEntry = (usize, usize, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>);
+
+    for layer in layers {
+
+        // Alle Vergleiche dieser Layer parallel berechnen; Fehler werden gesammelt
+        let swapped: Result<Vec<SwapEntry>, String> = layer
+                .par_iter()
+                .map(|&(i, j)| {
+                    let s_i: FheUint16 = bincode::deserialize(&pairs[i].0)
+                        .map_err(|e| format!("Deserialize score[{i}]: {e}"))?;
+                    let s_j: FheUint16 = bincode::deserialize(&pairs[j].0)
+                        .map_err(|e| format!("Deserialize score[{j}]: {e}"))?;
+                    let id_i: FheUint8 = bincode::deserialize(&pairs[i].1)
+                        .map_err(|e| format!("Deserialize id[{i}]: {e}"))?;
+                    let id_j: FheUint8 = bincode::deserialize(&pairs[j].1)
+                        .map_err(|e| format!("Deserialize id[{j}]: {e}"))?;
+
+                    let swap = s_i.lt(&s_j);
+                    let new_s_i = bincode::serialize(&swap.if_then_else(&s_j, &s_i))
+                        .map_err(|e| format!("Serialize score[{i}]: {e}"))?;
+                    let new_s_j = bincode::serialize(&swap.if_then_else(&s_i, &s_j))
+                        .map_err(|e| format!("Serialize score[{j}]: {e}"))?;
+                    let new_id_i = bincode::serialize(&swap.if_then_else(&id_j, &id_i))
+                        .map_err(|e| format!("Serialize id[{i}]: {e}"))?;
+                    let new_id_j = bincode::serialize(&swap.if_then_else(&id_i, &id_j))
+                        .map_err(|e| format!("Serialize id[{j}]: {e}"))?;
+
+                    Ok((i, j, new_s_i, new_s_j, new_id_i, new_id_j))
+                })
+                .collect();
+
+        // Ergebnisse sequenziell zurückschreiben (keine Überlappung zwischen Paaren garantiert)
+        for (i, j, new_s_i, new_s_j, new_id_i, new_id_j) in swapped? {
+            pairs[i] = (new_s_i, new_id_i);
+            pairs[j] = (new_s_j, new_id_j);
         }
     }
+
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -217,9 +299,11 @@ async fn submit_score(
     // FHE-Vergleich für bekannte Spieler; neue Spieler überspringen
     let (kept_s, kept_i) = match old_entry {
         Some((old_s, old_i)) => tokio::task::block_in_place(|| {
-            load_server_key(&server_key_bytes);
+            load_server_key(&server_key_bytes)
+                .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
             fhe_keep_max(&old_s, &old_i, &new_s, &new_i)
-        }),
+                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
+        })?,
         None => (new_s, new_i),
     };
 
@@ -268,14 +352,20 @@ async fn submit_score(
                 .unwrap_or_default()
         };
 
-        tokio::task::block_in_place(|| {
-            load_server_key(&server_key_bytes);
-            fhe_sort(&mut pairs);
+        let sort_ok = tokio::task::block_in_place(|| {
+            load_server_key(&server_key_bytes)
+                .map_err(|e| eprintln!("Sort: failed to load server key: {e}"))
+                .and_then(|_| {
+                    fhe_sort(&mut pairs).map_err(|e| eprintln!("Sort failed: {e}"))
+                })
+                .is_ok()
         });
 
-        let mut sessions = state_clone.write().await;
-        if let Some(session) = sessions.get_mut(&code) {
-            session.sorted = pairs;
+        if sort_ok {
+            let mut sessions = state_clone.write().await;
+            if let Some(session) = sessions.get_mut(&code) {
+                session.sorted = pairs;
+            }
         }
     });
 
