@@ -7,7 +7,7 @@ use axum::{
 use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
-use tfhe::{prelude::*, CompressedServerKey, FheUint16, FheUint32};
+use tfhe::{prelude::*, CompressedServerKey, FheUint16, FheUint8};
 use tokio::sync::RwLock;
 
 // ---------------------------------------------------------------------------
@@ -18,17 +18,17 @@ use tokio::sync::RwLock;
 type AppState = Arc<RwLock<HashMap<String, Session>>>;
 
 struct Session {
-    server_key_bytes: Vec<u8>,          // erlaubt FHE-Ops, aber kein Entschlüsseln
-    public_key_bytes: Vec<u8>,          // wird an Spieler weitergegeben zum Verschlüsseln
-    entries: Vec<Entry>,                // Quelle der Wahrheit: player_key ↔ Score immer gepaart
-    sorted: Vec<(Vec<u8>, Vec<u8>)>,   // Anzeigereihenfolge, vom Hintergrund-Sort befüllt
+    server_key_bytes: Vec<u8>,       // erlaubt FHE-Ops, aber kein Entschlüsseln
+    public_key_bytes: Vec<u8>,       // wird an Spieler weitergegeben zum Verschlüsseln
+    entries: Vec<Entry>,             // Quelle der Wahrheit: player_key ↔ Score immer gepaart
+    sorted: Vec<(Vec<u8>, Vec<u8>)>, // Anzeigereihenfolge, vom Hintergrund-Sort befüllt
 }
 
 #[derive(Clone)]
 struct Entry {
-    player_key: String,  // Klartext-ID, nur für Deduplizierung
-    enc_score: Vec<u8>,  // verschlüsselter Score (FheUint16)
-    enc_id: Vec<u8>,     // verschlüsselte Spieler-ID (FheUint32)
+    player_key: String, // Klartext-ID, nur für Deduplizierung
+    enc_score: Vec<u8>, // verschlüsselter Score (FheUint16)
+    enc_id: Vec<u8>,    // verschlüsselte Spieler-ID (FheUint32)
 }
 
 // ---------------------------------------------------------------------------
@@ -108,14 +108,17 @@ fn load_server_key(bytes: &[u8]) {
 fn fhe_keep_max(old_s: &[u8], old_i: &[u8], new_s: &[u8], new_i: &[u8]) -> (Vec<u8>, Vec<u8>) {
     let old_score: FheUint16 = bincode::deserialize(old_s).unwrap();
     let new_score: FheUint16 = bincode::deserialize(new_s).unwrap();
-    let old_id: FheUint32 = bincode::deserialize(old_i).unwrap();
-    let new_id: FheUint32 = bincode::deserialize(new_i).unwrap();
+    let old_id: FheUint8 = bincode::deserialize(old_i).unwrap();
+    let new_id: FheUint8 = bincode::deserialize(new_i).unwrap();
 
     let new_is_better = old_score.lt(&new_score);
     let kept_score = new_is_better.if_then_else(&new_score, &old_score);
     let kept_id = new_is_better.if_then_else(&new_id, &old_id);
 
-    (bincode::serialize(&kept_score).unwrap(), bincode::serialize(&kept_id).unwrap())
+    (
+        bincode::serialize(&kept_score).unwrap(),
+        bincode::serialize(&kept_id).unwrap(),
+    )
 }
 
 // Bubble-Sort (absteigend) über (Score, ID)-Paare.
@@ -131,8 +134,8 @@ fn fhe_sort(pairs: &mut Vec<(Vec<u8>, Vec<u8>)>) {
         for j in 0..n - 1 {
             let s_lo: FheUint16 = bincode::deserialize(&pairs[j].0).unwrap();
             let s_hi: FheUint16 = bincode::deserialize(&pairs[j + 1].0).unwrap();
-            let i_lo: FheUint32 = bincode::deserialize(&pairs[j].1).unwrap();
-            let i_hi: FheUint32 = bincode::deserialize(&pairs[j + 1].1).unwrap();
+            let i_lo: FheUint8 = bincode::deserialize(&pairs[j].1).unwrap();
+            let i_hi: FheUint8 = bincode::deserialize(&pairs[j + 1].1).unwrap();
 
             let swap = s_lo.lt(&s_hi);
             pairs[j].0 = bincode::serialize(&swap.if_then_else(&s_hi, &s_lo)).unwrap();
@@ -161,7 +164,12 @@ async fn create_session(
     let code = generate_code();
     state.write().await.insert(
         code.clone(),
-        Session { server_key_bytes, public_key_bytes, entries: vec![], sorted: vec![] },
+        Session {
+            server_key_bytes,
+            public_key_bytes,
+            entries: vec![],
+            sorted: vec![],
+        },
     );
     Ok(Json(CreateResponse { code }))
 }
@@ -172,8 +180,12 @@ async fn get_public_key(
     Path(code): Path<String>,
 ) -> Result<Json<PublicKeyResponse>, ApiError> {
     let sessions = state.read().await;
-    let s = sessions.get(&code).ok_or((StatusCode::NOT_FOUND, "Session not found".into()))?;
-    Ok(Json(PublicKeyResponse { public_key: b64_encode(&s.public_key_bytes) }))
+    let s = sessions
+        .get(&code)
+        .ok_or((StatusCode::NOT_FOUND, "Session not found".into()))?;
+    Ok(Json(PublicKeyResponse {
+        public_key: b64_encode(&s.public_key_bytes),
+    }))
 }
 
 // Spieler reicht verschlüsselten Score ein:
@@ -191,8 +203,9 @@ async fn submit_score(
     // Aktuellen Score des Spielers lesen
     let (old_entry, server_key_bytes) = {
         let sessions = state.read().await;
-        let session =
-            sessions.get(&code).ok_or((StatusCode::NOT_FOUND, "Session not found".into()))?;
+        let session = sessions
+            .get(&code)
+            .ok_or((StatusCode::NOT_FOUND, "Session not found".into()))?;
         let old = session
             .entries
             .iter()
@@ -217,7 +230,11 @@ async fn submit_score(
             .get_mut(&code)
             .ok_or((StatusCode::NOT_FOUND, "Session not found".into()))?;
 
-        match session.entries.iter_mut().find(|e| e.player_key == req.player_key) {
+        match session
+            .entries
+            .iter_mut()
+            .find(|e| e.player_key == req.player_key)
+        {
             Some(e) => {
                 e.enc_score = kept_s;
                 e.enc_id = kept_i;
@@ -242,7 +259,12 @@ async fn submit_score(
             let sessions = state_clone.read().await;
             sessions
                 .get(&code)
-                .map(|s| s.entries.iter().map(|e| (e.enc_score.clone(), e.enc_id.clone())).collect())
+                .map(|s| {
+                    s.entries
+                        .iter()
+                        .map(|e| (e.enc_score.clone(), e.enc_id.clone()))
+                        .collect()
+                })
                 .unwrap_or_default()
         };
 
@@ -266,18 +288,30 @@ async fn get_entries(
     Path(code): Path<String>,
 ) -> Result<Json<EntriesResponse>, ApiError> {
     let sessions = state.read().await;
-    let session =
-        sessions.get(&code).ok_or((StatusCode::NOT_FOUND, "Session not found".into()))?;
+    let session = sessions
+        .get(&code)
+        .ok_or((StatusCode::NOT_FOUND, "Session not found".into()))?;
 
     let pairs: Vec<(&[u8], &[u8])> = if !session.sorted.is_empty() {
-        session.sorted.iter().map(|(s, i)| (s.as_slice(), i.as_slice())).collect()
+        session
+            .sorted
+            .iter()
+            .map(|(s, i)| (s.as_slice(), i.as_slice()))
+            .collect()
     } else {
-        session.entries.iter().map(|e| (e.enc_score.as_slice(), e.enc_id.as_slice())).collect()
+        session
+            .entries
+            .iter()
+            .map(|e| (e.enc_score.as_slice(), e.enc_id.as_slice()))
+            .collect()
     };
 
     let entries = pairs
         .into_iter()
-        .map(|(s, i)| EntryDto { encrypted_score: b64_encode(s), encrypted_id: b64_encode(i) })
+        .map(|(s, i)| EntryDto {
+            encrypted_score: b64_encode(s),
+            encrypted_id: b64_encode(i),
+        })
         .collect();
 
     Ok(Json(EntriesResponse { entries }))

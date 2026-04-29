@@ -94,11 +94,11 @@ export class LeaderboardComponent implements OnDestroy {
           const scoreBytes = this.tfhe.fromBase64(e.encrypted_score);
           const idBytes = this.tfhe.fromBase64(e.encrypted_id);
           const score = this.tfhe.decryptUint16(scoreBytes, this.keyPair!.clientKey);
-          const id = this.tfhe.decryptUint32(idBytes, this.keyPair!.clientKey);
+          const id = this.tfhe.decryptUint8(idBytes, this.keyPair!.clientKey);
           return {
             rank: i + 1,
             score,
-            playerId: id.toString(16).padStart(8, '0').toUpperCase(),
+            playerId: id.toString(16).padStart(2, '0').toUpperCase(),
           };
         });
         this.creatorEntries.set(entries);
@@ -132,7 +132,7 @@ export class LeaderboardComponent implements OnDestroy {
     const STORAGE_KEY = 'lb_player_id';
     const stored = localStorage.getItem(STORAGE_KEY);
     const hexId = stored ?? (() => {
-      const id = Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, '0').toUpperCase();
+      const id = Math.floor(Math.random() * 0xff).toString(16).padStart(2, '0').toUpperCase();
       localStorage.setItem(STORAGE_KEY, id);
       return id;
     })();

@@ -364,12 +364,12 @@ export class TfheService {
     const pk = TfheCompactPublicKey.deserialize(publicKeyBytes);
     const builder = CompactCiphertextList.builder(pk);
     builder.push_u16(score);
-    builder.push_u32(playerId);
+    builder.push_u8(playerId);
     const list = builder.build();
     const expander = list.expand();
 
     const scoreEnc = expander.get_uint16(0);
-    const idEnc = expander.get_uint32(1);
+    const idEnc = expander.get_uint8(1);
     const encryptedScore = scoreEnc.serialize();
     const encryptedId = idEnc.serialize();
 
