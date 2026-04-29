@@ -97,8 +97,8 @@ fn generate_code() -> String {
 
 // Server-Key in den thread-lokalen Speicher von tfhe-rs laden
 fn load_server_key(bytes: &[u8]) -> Result<(), String> {
-    let compressed: CompressedServerKey = bincode::deserialize(bytes)
-        .map_err(|e| format!("Invalid server key: {e}"))?;
+    let compressed: CompressedServerKey =
+        bincode::deserialize(bytes).map_err(|e| format!("Invalid server key: {e}"))?;
     tfhe::set_server_key(compressed.decompress());
     Ok(())
 }
@@ -190,33 +190,32 @@ fn fhe_sort(pairs: &mut [(Vec<u8>, Vec<u8>)]) -> Result<(), String> {
     type SwapEntry = (usize, usize, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>);
 
     for layer in layers {
-
         // Alle Vergleiche dieser Layer parallel berechnen; Fehler werden gesammelt
         let swapped: Result<Vec<SwapEntry>, String> = layer
-                .par_iter()
-                .map(|&(i, j)| {
-                    let s_i: FheUint16 = bincode::deserialize(&pairs[i].0)
-                        .map_err(|e| format!("Deserialize score[{i}]: {e}"))?;
-                    let s_j: FheUint16 = bincode::deserialize(&pairs[j].0)
-                        .map_err(|e| format!("Deserialize score[{j}]: {e}"))?;
-                    let id_i: FheUint8 = bincode::deserialize(&pairs[i].1)
-                        .map_err(|e| format!("Deserialize id[{i}]: {e}"))?;
-                    let id_j: FheUint8 = bincode::deserialize(&pairs[j].1)
-                        .map_err(|e| format!("Deserialize id[{j}]: {e}"))?;
+            .par_iter()
+            .map(|&(i, j)| {
+                let s_i: FheUint16 = bincode::deserialize(&pairs[i].0)
+                    .map_err(|e| format!("Deserialize score[{i}]: {e}"))?;
+                let s_j: FheUint16 = bincode::deserialize(&pairs[j].0)
+                    .map_err(|e| format!("Deserialize score[{j}]: {e}"))?;
+                let id_i: FheUint8 = bincode::deserialize(&pairs[i].1)
+                    .map_err(|e| format!("Deserialize id[{i}]: {e}"))?;
+                let id_j: FheUint8 = bincode::deserialize(&pairs[j].1)
+                    .map_err(|e| format!("Deserialize id[{j}]: {e}"))?;
 
-                    let swap = s_i.lt(&s_j);
-                    let new_s_i = bincode::serialize(&swap.if_then_else(&s_j, &s_i))
-                        .map_err(|e| format!("Serialize score[{i}]: {e}"))?;
-                    let new_s_j = bincode::serialize(&swap.if_then_else(&s_i, &s_j))
-                        .map_err(|e| format!("Serialize score[{j}]: {e}"))?;
-                    let new_id_i = bincode::serialize(&swap.if_then_else(&id_j, &id_i))
-                        .map_err(|e| format!("Serialize id[{i}]: {e}"))?;
-                    let new_id_j = bincode::serialize(&swap.if_then_else(&id_i, &id_j))
-                        .map_err(|e| format!("Serialize id[{j}]: {e}"))?;
+                let swap = s_i.lt(&s_j);
+                let new_s_i = bincode::serialize(&swap.if_then_else(&s_j, &s_i))
+                    .map_err(|e| format!("Serialize score[{i}]: {e}"))?;
+                let new_s_j = bincode::serialize(&swap.if_then_else(&s_i, &s_j))
+                    .map_err(|e| format!("Serialize score[{j}]: {e}"))?;
+                let new_id_i = bincode::serialize(&swap.if_then_else(&id_j, &id_i))
+                    .map_err(|e| format!("Serialize id[{i}]: {e}"))?;
+                let new_id_j = bincode::serialize(&swap.if_then_else(&id_i, &id_j))
+                    .map_err(|e| format!("Serialize id[{j}]: {e}"))?;
 
-                    Ok((i, j, new_s_i, new_s_j, new_id_i, new_id_j))
-                })
-                .collect();
+                Ok((i, j, new_s_i, new_s_j, new_id_i, new_id_j))
+            })
+            .collect();
 
         // Ergebnisse sequenziell zurückschreiben (keine Überlappung zwischen Paaren garantiert)
         for (i, j, new_s_i, new_s_j, new_id_i, new_id_j) in swapped? {
@@ -299,8 +298,7 @@ async fn submit_score(
     // FHE-Vergleich für bekannte Spieler; neue Spieler überspringen
     let (kept_s, kept_i) = match old_entry {
         Some((old_s, old_i)) => tokio::task::block_in_place(|| {
-            load_server_key(&server_key_bytes)
-                .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+            load_server_key(&server_key_bytes).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
             fhe_keep_max(&old_s, &old_i, &new_s, &new_i)
                 .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
         })?,
@@ -355,9 +353,7 @@ async fn submit_score(
         let sort_ok = tokio::task::block_in_place(|| {
             load_server_key(&server_key_bytes)
                 .map_err(|e| eprintln!("Sort: failed to load server key: {e}"))
-                .and_then(|_| {
-                    fhe_sort(&mut pairs).map_err(|e| eprintln!("Sort failed: {e}"))
-                })
+                .and_then(|_| fhe_sort(&mut pairs).map_err(|e| eprintln!("Sort failed: {e}")))
                 .is_ok()
         });
 
