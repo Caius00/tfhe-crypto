@@ -4,9 +4,9 @@ use axum::{
     http::{Request, StatusCode},
 };
 use base64::{engine::general_purpose, Engine as _};
+use std::sync::OnceLock;
 use tfhe::{ClientKey, CompressedServerKey, ConfigBuilder, FheBool};
 use tower::ServiceExt;
-use std::sync::OnceLock;
 
 static TEST_SETUP: OnceLock<(ClientKey, CompressedServerKey)> = OnceLock::new();
 
