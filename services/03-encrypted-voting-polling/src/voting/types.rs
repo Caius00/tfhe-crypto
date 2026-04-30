@@ -1,4 +1,3 @@
-
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
@@ -9,28 +8,36 @@ use std::{
 pub struct Question {
     pub id: u32,
     pub text: String,
-    pub question_type: QuestionType, // "bool" oder "choice"
-    pub options: Option<Vec<String>>, // bei Multiple Choice
+    pub question_type: QuestionType,
+    pub options: Option<Vec<String>>,
+    pub multiple: Option<bool>, // optional, falls Frontend dieses Feld nutzt
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum QuestionType {
     Bool,
-    Choice,
+    Single,
+    Multiple,
+    Numeric,
 }
 
-#[derive(Clone)]
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ParticipantState {
+    pub approved: bool,
+    pub enc_name_chunks: Option<Vec<String>>, // optional, wird beim Join übergeben
+}
+
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SessionState {
     pub creator_id: String,
     pub server_key_bytes: Vec<u8>,
+    pub public_key: Option<String>, // Base64 public key
     pub questions: Vec<Question>,
-    // participant_id → approved?
-    pub participants: HashMap<String, bool>,
-    // participant_id → Vec<encrypted_vote_per_question (Base64)>
+    pub participants: HashMap<String, ParticipantState>,
     pub votes: HashMap<String, Vec<String>>,
     pub finalized: bool,
-    pub encrypted_results: Option<Vec<String>>, // Base64 pro Frage
+    pub encrypted_results: Option<Vec<String>>,
 }
 
 pub type AppState = Arc<Mutex<HashMap<String, SessionState>>>;
@@ -41,6 +48,7 @@ pub type AppState = Arc<Mutex<HashMap<String, SessionState>>>;
 pub struct CreateSessionRequest {
     pub creator_id: String,
     pub server_key: String, // Base64 CompressedServerKey
+    pub public_key: Option<String>, // optional: Base64 public key (für Teilnehmer)
     pub questions: Vec<Question>,
 }
 
@@ -53,6 +61,7 @@ pub struct CreateSessionResponse {
 pub struct JoinRequest {
     pub session_id: String,
     pub participant_id: String,
+    pub enc_name_chunks: Option<Vec<String>>, // optional: array of Base64 chunks
 }
 
 #[derive(Serialize)]
@@ -84,7 +93,21 @@ pub struct VoteResponse {
 #[derive(Serialize)]
 pub struct ResultResponse {
     // Base64-kodiertes verschlüsseltes Ergebnis pro Frage
-    // (FheUint8 = Summe der Stimmen pro Option ODER FheBool = Mehrheit)
     pub encrypted_results: Vec<String>,
     pub ready: bool,
+}
+
+// ─── zusätzliche DTOs für Endpunkte ───────────────────────────────────────────
+
+#[derive(Serialize, Deserialize)]
+pub struct PendingEntry {
+    pub participant_id: String,
+    pub enc_name_chunks: Option<Vec<String>>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SessionMetadata {
+    pub session_id: String,
+    pub questions: Vec<Question>,
+    pub public_key: Option<String>,
 }

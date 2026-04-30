@@ -1,0 +1,49 @@
+<h2>Abstimmen</h2>
+
+<div *ngIf="questions().length === 0">
+  <p>Fragen werden geladen…</p>
+</div>
+
+<form *ngIf="questions().length > 0" (ngSubmit)="submit(); $event.preventDefault()">
+  <div *ngFor="let q of questions(); let i = index" style="margin-bottom:12px;">
+    <p><b>{{ q.text }}</b></p>
+
+    <!-- Bool -->
+    <div *ngIf="q.question_type === 'bool'">
+      <label><input type="checkbox" [checked]="voteValue()[i]" (change)="toggleBool(i)" /> Ja</label>
+    </div>
+
+    <!-- Single -->
+    <div *ngIf="q.question_type === 'single'">
+      <div *ngFor="let opt of q.options; let oi = index">
+        <label>
+          <input type="radio" name="q{{i}}" [checked]="voteValue()[i] === oi" (change)="selectSingle(i, oi)" />
+          {{ opt }}
+        </label>
+      </div>
+    </div>
+
+    <!-- Multiple -->
+    <div *ngIf="q.question_type === 'multiple'">
+      <div *ngFor="let opt of q.options; let oi = index">
+        <label>
+          <input type="checkbox"
+       (change)="toggleMultiple(i, oi)"
+       [checked]="isOptionChecked(i, oi)" />
+
+          {{ opt }}
+        </label>
+      </div>
+    </div>
+
+    <!-- Numeric -->
+    <div *ngIf="q.question_type === 'numeric'">
+     <input type="number" #numInput (input)="onNumericInput(i, numInput.value)" />
+    </div>
+  </div>
+
+  <div style="margin-top:12px;">
+    <button type="submit">Abstimmen</button>
+    <span style="margin-left:12px;">{{ voteStatus() }}</span>
+  </div>
+</form>

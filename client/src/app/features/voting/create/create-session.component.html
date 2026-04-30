@@ -1,0 +1,55 @@
+<h2>Session erstellen</h2>
+
+<input placeholder="Creator ID" (input)="creatorId.set($any($event.target).value)" />
+
+<div style="margin-top:8px;">
+  <button (click)="generateKeys()">Keys generieren</button>
+  <span style="margin-left:12px;">{{ status() }}</span>
+</div>
+
+<!-- Public / Server Key anzeigen (falls vorhanden) -->
+<div *ngIf="sessionId() === null && hasKeyPair">
+  <p><b>Public Key (Base64)</b></p>
+  <textarea readonly rows="3" style="width:100%;">{{ publicKeyBase64 }}</textarea>
+  <p><b>Server Key (Base64)</b></p>
+  <textarea readonly rows="3" style="width:100%;">{{ serverKeyBase64 }}</textarea>
+</div>
+
+<hr />
+
+<div *ngFor="let q of questions(); let i = index" style="margin-bottom:12px;">
+  <input
+    placeholder="Fragetext"
+    [value]="q.text"
+    (input)="updateQuestion(i, $any($event.target).value)"
+    style="width:60%;"
+  />
+
+ <select [value]="q.question_type" (change)="onQuestionTypeChange(i, $any($event.target).value)">
+  <option value="bool">Ja/Nein</option>
+  <option value="single">Single Choice</option>
+  <option value="multiple">Multiple Choice</option>
+  <option value="numeric">Numeric</option>
+</select>
+
+  <label style="margin-left:8px;">
+    <input type="checkbox" [checked]="q.multiple" (change)="toggleMultiple(i)" />
+    Mehrfachauswahl
+  </label>
+
+  <div *ngIf="q.question_type === 'single' || q.question_type === 'multiple'" style="margin-top:8px;">
+    <div *ngFor="let opt of (q.options || []); let oi = index" style="display:flex; gap:8px; align-items:center; margin-bottom:4px;">
+      <input [value]="opt" (input)="updateOption(i, oi, $any($event.target).value)" placeholder="Option" />
+    </div>
+    <button (click)="addOption(i)">Option hinzufügen</button>
+  </div>
+</div>
+
+<button (click)="addQuestion()">Frage hinzufügen</button>
+<button (click)="create()">Session erstellen</button>
+
+<p>{{ status() }}</p>
+
+<div *ngIf="sessionId()">
+  <b>Session ID:</b> {{ sessionId() }}
+</div>
