@@ -52,6 +52,17 @@ export class VotingService {
     );
   }
 
+  storeClientKey(sessionId: string, clientKeyB64: string): Observable<any> {
+    return this.http.post(`${this.baseUrl}/store-key`, {
+      session_id: sessionId,
+      client_key: clientKeyB64
+    });
+  }
+
+  loadClientKey(sessionId: string): Observable<{ client_key: string }> {
+    return this.http.get<{ client_key: string }>(`${this.baseUrl}/load-key/${sessionId}`);
+  }
+
   /**
    * Participant joins a session.
    * - encNameChunks: array of Base64 strings (chunks) representing encrypted name

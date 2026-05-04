@@ -25,6 +25,8 @@ use crate::voting::logic::{
     get_status,
     get_session,
     finalize_session,
+    store_client_key,
+    load_client_key,
 };
 
 
@@ -47,6 +49,10 @@ async fn main() {
         // Session-Daten abrufen (Fragen + Optionen)
         .route("/session/{session_id}", get(get_session))
 
+        // Key Storage in Redis
+        .route("/store-key", post(store_client_key))
+        .route("/load-key/{session_id}", get(load_client_key))
+        
         // Join
         .route("/join", post(join_session))
 

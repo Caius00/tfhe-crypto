@@ -29,6 +29,7 @@ export class WaitingComponent implements OnInit, OnDestroy {
           next: res => {
             if (res.status === 'approved') {
               clearInterval(this.intervalId);
+              this.intervalId = null;
               this.router.navigate(['/voting/vote', this.sessionId]);
             }
           },

@@ -16,6 +16,7 @@ use crate::voting::types::{
     JoinRequest, JoinResponse, QuestionType, ResultResponse, SessionState,
     VoteRequest, VoteResponse, ParticipantState, Question,
 };
+use redis::AsyncCommands;
 
 
 type ApiError = (StatusCode, String);
@@ -322,7 +323,7 @@ pub async fn get_status(
 
 
 //
-// GET SESSION (🔥 NEU -> WICHTIG FÜR FRONTEND)
+// GET SESSION
 //
 pub async fn get_session(
     State(state): State<AppState>,
@@ -339,4 +340,45 @@ pub async fn get_session(
         "questions": session.questions,
         "public_key": session.public_key, // neu
     })))
+}
+
+// Endpunkte für den Datenbankzugriff und die Verwaltung des private Keys
+async fn get_redis() -> Result<redis::aio::MultiplexedConnection, ApiError> {
+    let client = redis::Client::open("redis://localhost:6379")
+        .map_err(|e| err(&format!("Redis Verbindung fehlgeschlagen: {}", e)))?;
+    client.get_multiplexed_async_connection().await
+        .map_err(|e| err(&format!("Redis Connection fehlgeschlagen: {}", e)))
+}
+
+/// POST /store-key – speichert den ClientKey in Redis
+pub async fn store_client_key(
+    Json(req): Json<serde_json::Value>,
+) -> ApiResult<serde_json::Value> {
+    let session_id = req["session_id"].as_str().ok_or(err("session_id fehlt"))?;
+    let client_key_b64 = req["client_key"].as_str().ok_or(err("client_key fehlt"))?;
+
+    let mut con = get_redis().await?;
+    let key = format!("voting:clientkey:{}", session_id);
+
+    // 24 Stunden TTL
+    con.set_ex::<_, _, ()>(&key, client_key_b64, 86400).await
+        .map_err(|e| err(&format!("Redis SET fehlgeschlagen: {}", e)))?;
+
+    Ok(Json(serde_json::json!({ "status": "ok" })))
+}
+
+/// GET /load-key/:session_id – lädt den ClientKey aus Redis
+pub async fn load_client_key(
+    Path(session_id): Path<String>,
+) -> ApiResult<serde_json::Value> {
+    let mut con = get_redis().await?;
+    let key = format!("voting:clientkey:{}", session_id);
+
+    let value: Option<String> = con.get(&key).await
+        .map_err(|e| err(&format!("Redis GET fehlgeschlagen: {}", e)))?;
+
+    match value {
+        Some(client_key_b64) => Ok(Json(serde_json::json!({ "client_key": client_key_b64 }))),
+        None => Err(err("Kein ClientKey gefunden")),
+    }
 }

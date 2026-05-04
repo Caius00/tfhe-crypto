@@ -94,62 +94,89 @@ export class VoteComponent implements OnInit {
   }
 
   async submit() {
-  if (!this.publicKeyB64) {
-    this.voteStatus.set('Kein Public Key verfügbar');
-    return;
-  }
+    if (!this.publicKeyB64) {
+      this.voteStatus.set('Kein Public Key verfügbar');
+      return;
+    }
 
-  const participantId = localStorage.getItem('participantId') || this.generateParticipantId();
-  localStorage.setItem('participantId', participantId);
+    const participantId = localStorage.getItem('participantId') || this.generateParticipantId();
+    localStorage.setItem('participantId', participantId);
 
-  // 1) Name verschlüsseln -> Array von Base64-Chunks (string[])
-  const name = prompt('Gib deinen Namen ein') || participantId;
-  const encNameChunks = this.tfhe.encryptStringWithPublic(this.publicKeyB64, name);
-  // encNameChunks ist bereits string[] (Base64)
+    // 1) Name verschlüsseln -> Array von Base64-Chunks (string[])
+    const name = prompt('Gib deinen Namen ein') || participantId;
+    const encNameChunks = this.tfhe.encryptStringWithPublic(this.publicKeyB64, name);
+    // encNameChunks ist bereits string[] (Base64)
 
-  // 2) Antworten verschlüsseln -> array of Base64 strings
-  const encryptedVotes: string[] = this.questions().map((q, i) => {
-    if (q.question_type === 'bool') {
-      const value = !!this.voteValue()[i];
-      const encBytes = this.tfhe.encryptBoolWithPublic(this.publicKeyB64!, value);
-      return this.tfhe.toBase64(encBytes);
-    } else if (q.question_type === 'single') {
-  const val = this.voteValue()[i];
-  const sel = typeof val === 'number' ? val : 0;
-  const encBytes = this.tfhe.encryptUint8WithPublic(this.publicKeyB64!, sel);
-  return this.tfhe.toBase64(encBytes);
-} else if (q.question_type === 'multiple') {
-  const set = this.voteValue()[i] as Set<number> | undefined;
-  let mask = 0;
-  if (set) {
-    for (const idx of Array.from(set)) mask |= (1 << idx);
-  }
-  const encBytes = this.tfhe.encryptUint8WithPublic(this.publicKeyB64!, mask);
-  return this.tfhe.toBase64(encBytes);
-} else if (q.question_type === 'numeric') {
-  const val = this.voteValue()[i];
-  const num = typeof val === 'number' ? val : Number(val) || 0;
-  const encBytes = this.tfhe.encryptUint8WithPublic(this.publicKeyB64!, num);
-  return this.tfhe.toBase64(encBytes);
-}
-    return '';
-  });
-
-  // 3) Join mit verschlüsseltem Namen (encNameChunks: string[])
-  this.votingService.joinSession(this.sessionId, participantId, encNameChunks)
-    .subscribe({
-      next: () => {
-        // Nach erfolgreichem Join Votes senden
-        this.votingService.submitVote(this.sessionId, participantId, encryptedVotes)
-          .subscribe({
-            next: () => this.voteStatus.set('✅ Vote erfolgreich gesendet'),
-            error: err => { console.error(err); this.voteStatus.set('❌ Vote fehlgeschlagen'); }
-          });
-      },
-      error: err => {
-        console.error('JOIN ERROR', err);
-        this.voteStatus.set('❌ Join fehlgeschlagen');
+    // 2) Antworten verschlüsseln -> array of Base64 strings
+    const encryptedVotes: string[] = this.questions().map((q, i) => {
+      if (q.question_type === 'bool') {
+        const value = !!this.voteValue()[i];
+        const encBytes = this.tfhe.encryptBoolWithPublic(this.publicKeyB64!, value);
+        return this.tfhe.toBase64(encBytes);
+      } else if (q.question_type === 'single') {
+        const val = this.voteValue()[i];
+        const sel = typeof val === 'number' ? val : 0;
+        const encBytes = this.tfhe.encryptUint8WithPublic(this.publicKeyB64!, sel);
+        return this.tfhe.toBase64(encBytes);
+      } else if (q.question_type === 'multiple') {
+        const set = this.voteValue()[i] as Set<number> | undefined;
+        let mask = 0;
+        if (set) {
+          for (const idx of Array.from(set)) mask |= 1 << idx;
+        }
+        const encBytes = this.tfhe.encryptUint8WithPublic(this.publicKeyB64!, mask);
+        return this.tfhe.toBase64(encBytes);
+      } else if (q.question_type === 'numeric') {
+        const val = this.voteValue()[i];
+        const num = typeof val === 'number' ? val : Number(val) || 0;
+        const encBytes = this.tfhe.encryptUint8WithPublic(this.publicKeyB64!, num);
+        return this.tfhe.toBase64(encBytes);
       }
+      return '';
     });
+
+    // 3) Join mit verschlüsseltem Namen (encNameChunks: string[])
+    this.voteStatus.set(' Warte auf Genehmigung...');
+    this.votingService.joinSession(this.sessionId, participantId, encNameChunks).subscribe({
+      next: () => {
+        // 2) Pollen bis genehmigt
+        this.pollUntilApproved(participantId, encryptedVotes);
+      },
+      error: (err) => {
+        console.error('JOIN ERROR', err);
+        this.voteStatus.set('Join fehlgeschlagen');
+      },
+    });
+  }
+
+  private pollUntilApproved(participantId: string, encryptedVotes: string[]) {
+    const interval = setInterval(() => {
+      this.votingService.getStatus(this.sessionId, participantId).subscribe({
+        next: (res) => {
+          if (res.status === 'approved') {
+            clearInterval(interval);
+            this.voteStatus.set('Genehmigt – sende Stimme...');
+            this.sendVote(participantId, encryptedVotes);
+          } else if (res.status === 'not_found') {
+            clearInterval(interval);
+            this.voteStatus.set('Teilnehmer nicht gefunden');
+          }
+          // 'pending' → weiter warten
+        },
+        error: () => clearInterval(interval)
+      });
+    }, 2000); // alle 2 Sekunden prüfen
+  }
+
+  private sendVote(participantId: string, encryptedVotes: string[]) {
+    this.votingService.submitVote(this.sessionId, participantId, encryptedVotes)
+      .subscribe({
+        next: () => this.voteStatus.set('Stimme erfolgreich abgegeben!'),
+        error: err => {
+          console.error(err);
+          this.voteStatus.set('Stimme fehlgeschlagen');
+        }
+      });
+  }
 }
-}
+
