@@ -12,7 +12,6 @@ use base64::{engine::general_purpose, Engine as _};
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tfhe::prelude::*;
 use tfhe::{CompressedServerKey, FheUint8};
 use uuid::Uuid;
 
@@ -179,8 +178,8 @@ pub async fn submit_vote(
 }
 
 pub fn aggregate_votes_ciphertext_only(
-    votes: &Vec<Vec<Vec<String>>>,
-    questions: &Vec<Question>,
+    votes: &[Vec<Vec<String>>],
+    questions: &[Question],
     server_key_bytes: &[u8],
 ) -> Vec<Vec<String>> {
     let compressed_key: CompressedServerKey =
