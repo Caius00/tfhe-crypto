@@ -3,6 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Question } from './voting.types';
 import { Observable } from 'rxjs';
+import { SERVICE_URLS } from '../../core/api/service-urls';
 
 export interface CreateSessionResponse {
   session_id: string;
@@ -33,7 +34,7 @@ export interface ResultsResponse {
 @Injectable({ providedIn: 'root' })
 export class VotingService {
   private http = inject(HttpClient);
-  private baseUrl = 'http://localhost:8080';
+  private baseUrl = SERVICE_URLS.voting.path;
 
   /**
    * Create a new session.
