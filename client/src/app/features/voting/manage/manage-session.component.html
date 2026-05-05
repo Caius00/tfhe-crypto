@@ -37,7 +37,7 @@
 <div *ngIf="results() && results().length > 0">
   <h3>Auswertung:</h3>
   <div *ngFor="let r of results(); let i = index" style="margin-bottom:12px;">
-    <p><b>Frage {{ i + 1 }}:</b></p>
+    <p><b>{{ questions()[i]?.text }}</b></p>
 
     <!-- Wenn Ergebnis ein Array (z. B. mehrere Werte) -->
     <ng-container *ngIf="isArray(r); else singleValue">
