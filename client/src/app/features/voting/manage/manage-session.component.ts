@@ -16,11 +16,13 @@ export class ManageSessionComponent implements OnInit, OnDestroy {
   private votingService = inject(VotingService);
   private tfhe = inject(TfheService);
 
+  questions = signal<any[]>([]);
+
   sessionId = '';
   creatorId = localStorage.getItem('creatorId') || '';
 
   pending = signal<{ participant_id: string; enc_name_chunks: string[] }[]>([]);
-  results = signal<string[]>([]);
+  results = signal<(string | string[])[]>([]);
   status = signal<string>('bereit');
 
   private intervalId: any;
@@ -29,6 +31,16 @@ export class ManageSessionComponent implements OnInit, OnDestroy {
   async ngOnInit() {
     this.sessionId = this.route.snapshot.paramMap.get('sessionId') || '';
     await this.tfhe.ensureInitialized();
+
+    // Session laden (FRAGEN!)
+this.votingService.getSession(this.sessionId).subscribe({
+  next: (res) => {
+    this.questions.set(res.questions || []);
+  },
+  error: (err) => {
+    console.error('Failed to load session', err);
+  }
+});
 
     // ClientKey aus Redis laden
     this.votingService.loadClientKey(this.sessionId).subscribe({
@@ -49,10 +61,9 @@ export class ManageSessionComponent implements OnInit, OnDestroy {
     clearInterval(this.intervalId);
   }
 
-  // in ManageSessionComponent
-  isArray(value: any): boolean {
-    return Array.isArray(value);
-  }
+  isArray(value: any): value is string[] {
+  return Array.isArray(value);
+}
 
   getPending() {
     this.votingService.getPending(this.sessionId, this.creatorId).subscribe(
@@ -117,7 +128,7 @@ export class ManageSessionComponent implements OnInit, OnDestroy {
         console.log('Anzahl:', res.encrypted_results.length);
         res.encrypted_results.forEach((r, i) => {
           console.log(`Ergebnis ${i} Länge:`, r.length);
-          console.log(`Ergebnis ${i} Anfang:`, r.substring(0, 50));
+          console.log(`Ergebnis ${i}:`, r);
         });
         this.results.set(res.encrypted_results);
         this.status.set(res.ready ? 'Fertig' : '⏳ Waiting');
@@ -130,36 +141,58 @@ export class ManageSessionComponent implements OnInit, OnDestroy {
   }
 
   decryptFinalResults() {
-    if (!this.privateKey) return;
-    const clientKey = this.privateKey;
+  if (!this.privateKey) return;
 
-    console.log('=== RESULTS DEBUG ===');
-    console.log('Rohdaten:', this.results());
+  const clientKey = this.privateKey;
+  const questions = this.questions();
 
-    const decrypted = this.results().map((enc, i) => {
-      console.log(`Ergebnis ${i}:`, enc.substring(0, 100));
-      const raw = this.tfhe.fromBase64(enc);
-      console.log(`Byte-Länge ${i}:`, raw.length);
+  const decrypted = this.results().map((questionResult: string | string[], qIndex: number) => {
+    const question = questions[qIndex];
 
+    if (!question) return '(Frage fehlt)';
+    if (!questionResult || questionResult.length === 0) return '(keine Daten)';
+
+    // BOOL / NUMERIC
+    if (question.question_type === 'bool' || question.question_type === 'numeric') {
       try {
+        const raw = this.tfhe.fromBase64(questionResult[0]);
         const num = this.tfhe.decryptUint8(raw, clientKey);
-        console.log(`decryptUint8 ${i}:`, num);
-        return num.toString();
-      } catch (e1) {
-        console.error(`decryptUint8 Fehler ${i}:`, e1);
-        try {
-          const bool = this.tfhe.decryptBool(raw, clientKey);
-          console.log(`decryptBool ${i}:`, bool);
-          return bool ? 'Ja' : 'Nein';
-        } catch (e2) {
-          console.error(`decryptBool Fehler ${i}:`, e2);
-          return '(Fehler)';
-        }
-      }
-    });
 
-    this.results.set(decrypted);
-  }
+        return question.question_type === 'bool'
+          ? `Ja: ${num}`
+          : num.toString();
+
+      } catch (e) {
+        console.error('Decrypt Fehler:', e);
+        return '(Fehler)';
+      }
+    }
+
+    // SINGLE / MULTIPLE
+    if (question.question_type === 'single' || question.question_type === 'multiple') {
+      const options = question.options || [];
+
+      return options.map((opt: string, i: number) => {
+        try {
+          const enc = questionResult[i];
+          if (!enc) return `${opt}: 0`;
+
+          const raw = this.tfhe.fromBase64(enc);
+          const count = this.tfhe.decryptUint8(raw, clientKey);
+
+          return `${opt}: ${count}`;
+        } catch (e) {
+          console.error(`Fehler bei Option ${i}`, e);
+          return `${opt}: (Fehler)`;
+        }
+      });
+    }
+
+    return '(Unbekannter Typ)';
+  });
+
+  this.results.set(decrypted);
+}
 
   finalize() {
     this.votingService.finalizeSession(this.sessionId, this.creatorId).subscribe({

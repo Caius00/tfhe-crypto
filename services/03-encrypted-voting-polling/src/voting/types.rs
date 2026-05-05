@@ -35,7 +35,7 @@ pub struct SessionState {
     pub public_key: Option<String>, // Base64 public key
     pub questions: Vec<Question>,
     pub participants: HashMap<String, ParticipantState>,
-    pub votes: HashMap<String, Vec<String>>,
+    pub votes: HashMap<String, Vec<Vec<String>>>, 
     pub finalized: bool,
     pub encrypted_results: Option<Vec<String>>,
 }
@@ -81,8 +81,7 @@ pub struct ApproveRequest {
 pub struct VoteRequest {
     pub session_id: String,
     pub participant_id: String,
-    // Ein Base64-String pro Frage (FheUint8 oder FheBool, je nach Fragetyp)
-    pub encrypted_votes: Vec<String>,
+    pub encrypted_votes: Vec<Vec<String>>,
 }
 
 #[derive(Serialize)]
@@ -92,8 +91,7 @@ pub struct VoteResponse {
 
 #[derive(Serialize)]
 pub struct ResultResponse {
-    // Base64-kodiertes verschlüsseltes Ergebnis pro Frage
-    pub encrypted_results: Vec<String>,
+    pub encrypted_results: Vec<Vec<String>>,
     pub ready: bool,
 }
 

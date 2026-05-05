@@ -93,48 +93,82 @@ export class VoteComponent implements OnInit {
     return 'p-' + Math.random().toString(36).slice(2, 10);
   }
 
-  async submit() {
-    if (!this.publicKeyB64) {
-      this.voteStatus.set('Kein Public Key verfügbar');
-      return;
-    }
-
-    const participantId = localStorage.getItem('participantId');
-    if (!participantId) {
-      this.voteStatus.set('Keine Teilnehmer-ID gefunden');
-      return;
-    }
-
-    // Votes verschlüsseln
-    const encryptedVotes: string[] = this.questions().map((q, i) => {
-      if (q.question_type === 'bool') {
-        const value = !!this.voteValue()[i];
-        return this.tfhe.toBase64(this.tfhe.encryptBoolWithPublic(this.publicKeyB64!, value));
-      } else if (q.question_type === 'single') {
-        const val = typeof this.voteValue()[i] === 'number' ? this.voteValue()[i] as number : 0;
-        return this.tfhe.toBase64(this.tfhe.encryptUint8WithPublic(this.publicKeyB64!, val));
-      } else if (q.question_type === 'multiple') {
-        const set = this.voteValue()[i] as Set<number> | undefined;
-        let mask = 0;
-        if (set) for (const idx of Array.from(set)) mask |= 1 << idx;
-        return this.tfhe.toBase64(this.tfhe.encryptUint8WithPublic(this.publicKeyB64!, mask));
-      } else if (q.question_type === 'numeric') {
-        const num = typeof this.voteValue()[i] === 'number' ? this.voteValue()[i] as number : 0;
-        return this.tfhe.toBase64(this.tfhe.encryptUint8WithPublic(this.publicKeyB64!, num));
-      }
-      return '';
-    });
-
-    // Direkt abstimmen – Teilnehmer ist bereits genehmigt
-    this.voteStatus.set('Stimme wird gesendet...');
-    this.votingService.submitVote(this.sessionId, participantId, encryptedVotes)
-      .subscribe({
-        next: () => this.voteStatus.set('Stimme erfolgreich abgegeben!'),
-        error: err => {
-          console.error(err);
-          this.voteStatus.set('Stimme fehlgeschlagen');
-        }
-      });
+ async submit() {
+  if (!this.publicKeyB64) {
+    this.voteStatus.set('Kein Public Key verfügbar');
+    return;
   }
+
+  const participantId = localStorage.getItem('participantId');
+  if (!participantId) {
+    this.voteStatus.set('Keine Teilnehmer-ID gefunden');
+    return;
+  }
+
+  const encryptedVotes: any[] = this.questions().map((q, i) => {
+
+    // BOOL 
+    if (q.question_type === 'bool') {
+      const value = !!this.voteValue()[i];
+      return [
+        this.tfhe.toBase64(
+          this.tfhe.encryptUint8WithPublic(this.publicKeyB64!, value ? 1 : 0)
+        )
+      ];
+    }
+
+    //  SINGLE → ONE HOT
+    if (q.question_type === 'single') {
+      const selected = this.voteValue()[i] as number;
+      const options = q.options || [];
+
+      return options.map((_: any, idx: number) => {
+        const v = idx === selected ? 1 : 0;
+        return this.tfhe.toBase64(
+          this.tfhe.encryptUint8WithPublic(this.publicKeyB64!, v)
+        );
+      });
+    }
+
+    //  MULTIPLE → MULTI HOT
+    if (q.question_type === 'multiple') {
+      const set = this.voteValue()[i] as Set<number> | undefined;
+      const options = q.options || [];
+
+      return options.map((_: any, idx: number) => {
+        const v = set && set.has(idx) ? 1 : 0;
+        return this.tfhe.toBase64(
+          this.tfhe.encryptUint8WithPublic(this.publicKeyB64!, v)
+        );
+      });
+    }
+
+    // NUMERIC 
+    if (q.question_type === 'numeric') {
+      const num = typeof this.voteValue()[i] === 'number'
+        ? this.voteValue()[i] as number
+        : 0;
+
+      return [
+        this.tfhe.toBase64(
+          this.tfhe.encryptUint8WithPublic(this.publicKeyB64!, num)
+        )
+      ];
+    }
+
+    return [];
+  });
+
+  this.voteStatus.set('Stimme wird gesendet...');
+
+  this.votingService.submitVote(this.sessionId, participantId, encryptedVotes)
+    .subscribe({
+      next: () => this.voteStatus.set('Stimme erfolgreich abgegeben!'),
+      error: err => {
+        console.error(err);
+        this.voteStatus.set('Stimme fehlgeschlagen');
+      }
+    });
+}
 }
 

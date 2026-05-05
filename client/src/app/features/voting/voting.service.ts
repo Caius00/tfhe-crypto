@@ -105,7 +105,7 @@ export class VotingService {
    * Submit encrypted votes.
    * encryptedVotes: array of Base64 strings (one per question, or per question-encoding)
    */
-  submitVote(sessionId: string, participantId: string, encryptedVotes: string[]) {
+  submitVote(sessionId: string, participantId: string, encryptedVotes: string[][]) {
     return this.http.post<{ status: string }>(
       `${this.baseUrl}/vote`,
       { session_id: sessionId, participant_id: participantId, encrypted_votes: encryptedVotes }

@@ -187,53 +187,66 @@ pub async fn submit_vote(
 
 
 pub fn aggregate_votes_ciphertext_only(
-    votes: &Vec<Vec<String>>,
+    votes: &Vec<Vec<Vec<String>>>,
     questions: &Vec<Question>,
     server_key_bytes: &[u8],
-) -> Vec<String> {
+) -> Vec<Vec<String>> {
     let compressed_key: CompressedServerKey =
         bincode::deserialize(server_key_bytes).expect("Failed to deserialize server key");
     let server_key = compressed_key.decompress();
     tfhe::set_server_key(server_key);
 
-    let mut results = vec![];
+    let mut results: Vec<Vec<String>> = vec![];
 
     for (q_idx, question) in questions.iter().enumerate() {
-        let mut acc_uint: Option<FheUint8> = None;
 
-        for v in votes {
-            let bytes = general_purpose::STANDARD
-                .decode(&v[q_idx])
-                .expect("Failed to base64-decode vote");
+        match question.question_type {
 
-            match question.question_type {
-                QuestionType::Bool => {
-                    // deserialize as FheBool, cast to FheUint8 (0/1) and add
-                    let vote_bool: FheBool = bincode::deserialize(&bytes)
-                        .expect("Failed to deserialize FheBool");
-                    let vote_uint: FheUint8 = vote_bool.cast_into();
-                    acc_uint = Some(match acc_uint {
-                        None => vote_uint,
-                        Some(prev) => prev + vote_uint,
+            //  BOOL / NUMERIC → einzelne Summe
+            QuestionType::Bool | QuestionType::Numeric => {
+                let mut acc: Option<FheUint8> = None;
+
+                for v in votes {
+                    let bytes = general_purpose::STANDARD
+                        .decode(&v[q_idx][0])
+                        .unwrap();
+
+                    let vote: FheUint8 = bincode::deserialize(&bytes).unwrap();
+
+                    acc = Some(match acc {
+                        None => vote,
+                        Some(prev) => prev + vote,
                     });
                 }
-                QuestionType::Single | QuestionType::Multiple | QuestionType::Numeric => {
-                    // numeric/choice stored as FheUint8
-                    let vote_uint: FheUint8 = bincode::deserialize(&bytes)
-                        .expect("Failed to deserialize FheUint8");
-                    acc_uint = Some(match acc_uint {
-                        None => vote_uint,
-                        Some(prev) => prev + vote_uint,
-                    });
-                }
+
+                let serialized = bincode::serialize(&acc.unwrap()).unwrap();
+                results.push(vec![general_purpose::STANDARD.encode(serialized)]);
             }
-        }
 
-        if let Some(sum_uint) = acc_uint {
-            let serialized = bincode::serialize(&sum_uint).expect("Failed to serialize sum");
-            results.push(general_purpose::STANDARD.encode(serialized));
-        } else {
-            results.push(String::new());
+            // SINGLE / MULTIPLE → Vektor
+            QuestionType::Single | QuestionType::Multiple => {
+                let option_count = votes[0][q_idx].len();
+                let mut acc_vec: Vec<Option<FheUint8>> = vec![None; option_count];
+
+                for v in votes {
+                    for (opt_idx, enc) in v[q_idx].iter().enumerate() {
+                        let bytes = general_purpose::STANDARD.decode(enc).unwrap();
+                        let vote: FheUint8 = bincode::deserialize(&bytes).unwrap();
+
+                        acc_vec[opt_idx] = Some(match &acc_vec[opt_idx] {
+                            None => vote,
+                            Some(prev) => prev + vote,
+                        });
+                    }
+                }
+
+                let serialized_vec: Vec<String> = acc_vec.into_iter().map(|v| {
+                    let ser = bincode::serialize(&v.unwrap()).unwrap();
+                    general_purpose::STANDARD.encode(ser)
+                }).collect();
+
+                results.push(serialized_vec);
+            }
         }
     }
 
@@ -270,7 +283,7 @@ pub async fn get_results(
             ready: false,
         }));
     }
-    let votes: Vec<Vec<String>> =
+    let votes: Vec<Vec<Vec<String>>> =
         session.votes.values().cloned().collect();
 
     let results = aggregate_votes_ciphertext_only(
@@ -281,9 +294,9 @@ pub async fn get_results(
 
 
     Ok(Json(ResultResponse {
-        encrypted_results: results,
-        ready: true,
-    }))
+    encrypted_results: results,
+    ready: true,
+}))
 }
 
 pub async fn finalize_session(
