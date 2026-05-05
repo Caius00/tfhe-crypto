@@ -256,7 +256,20 @@ pub async fn get_results(
     if session.creator_id != creator_id {
         return Err(err("Nicht autorisiert"));
     }
+    let approved_count = session.participants.values().filter(|p| p.approved).count();
+    let voted_count = session.votes.len();
 
+    println!("=== GET RESULTS DEBUG ===");
+    println!("approved_count: {}", approved_count);
+    println!("voted_count: {}", voted_count);
+
+    if voted_count == 0 || voted_count < approved_count {
+        println!("→ ready: false");
+        return Ok(Json(ResultResponse {
+            encrypted_results: vec![],
+            ready: false,
+        }));
+    }
     let votes: Vec<Vec<String>> =
         session.votes.values().cloned().collect();
 

@@ -97,17 +97,3 @@ pub struct ResultResponse {
     pub ready: bool,
 }
 
-// ─── zusätzliche DTOs für Endpunkte ───────────────────────────────────────────
-
-#[derive(Serialize, Deserialize)]
-pub struct PendingEntry {
-    pub participant_id: String,
-    pub enc_name_chunks: Option<Vec<String>>,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct SessionMetadata {
-    pub session_id: String,
-    pub questions: Vec<Question>,
-    pub public_key: Option<String>,
-}
