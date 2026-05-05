@@ -14,23 +14,13 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::voting::types::AppState;
 use crate::voting::logic::{
-    create_session,
-    join_session,
-    get_pending,
-    approve_participant,
-    submit_vote,
-    get_results,
-    get_status,
-    get_session,
-    finalize_session,
-    store_client_key,
-    load_client_key,
+    approve_participant, create_session, finalize_session, get_pending, get_results, get_session,
+    get_status, join_session, load_client_key, store_client_key, submit_vote,
 };
+use crate::voting::types::AppState;
 
-
-use tower_http::cors::{CorsLayer, Any};
+use tower_http::cors::{Any, CorsLayer};
 
 #[tokio::main]
 async fn main() {
@@ -45,44 +35,30 @@ async fn main() {
     let app = Router::new()
         // Session erstellen
         .route("/session", post(create_session))
-
         // Session-Daten abrufen (Fragen + Optionen)
         .route("/session/{session_id}", get(get_session))
-
         // Key Storage in Redis
         .route("/store-key", post(store_client_key))
         .route("/load-key/{session_id}", get(load_client_key))
-        
         // Join
         .route("/join", post(join_session))
-
         // Pending Teilnehmer
         .route("/pending/{session_id}/{creator_id}", get(get_pending))
-
         // Approval
         .route("/approve", post(approve_participant))
-
         // Vote
         .route("/vote", post(submit_vote))
-
         // Status für Teilnehmer
         .route("/status/{session_id}/{participant_id}", get(get_status))
-
         // Ergebnisse
         .route("/results/{session_id}/{creator_id}", get(get_results))
-
-        .route("/finalize/{session_id}/{creator_id}", post(finalize_session))
-
-        .with_state(state)
-
-        .merge(health::router(env!("CARGO_PKG_VERSION")))
-
-        .layer(
-            axum::extract::DefaultBodyLimit::max(
-                2 * 1024 * 1024 * 1024
-            )
+        .route(
+            "/finalize/{session_id}/{creator_id}",
+            post(finalize_session),
         )
-
+        .with_state(state)
+        .merge(health::router(env!("CARGO_PKG_VERSION")))
+        .layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024 * 1024))
         .layer(cors);
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));
@@ -97,7 +73,5 @@ async fn main() {
 
     println!("Voting-Server läuft auf http://{}", addr);
 
-    axum::serve(listener, app)
-        .await
-        .unwrap();
+    axum::serve(listener, app).await.unwrap();
 }

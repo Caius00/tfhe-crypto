@@ -6,23 +6,18 @@ mod integration_tests {
     use axum::{
         body::Body,
         http::{Request, StatusCode},
-        Router,
         routing::{get, post},
+        Router,
     };
     use base64::{engine::general_purpose, Engine as _};
     use serde_json::{json, Value};
+    use tfhe::{generate_keys, prelude::*, CompressedServerKey, ConfigBuilder, FheBool, FheUint8};
     use tower::util::ServiceExt;
-    use tfhe::{
-        generate_keys, ConfigBuilder,
-        prelude::*,
-        CompressedServerKey, FheBool, FheUint8,
-    };
 
-    use encrypted_voting_polling::voting::types::AppState;
     use encrypted_voting_polling::voting::logic::{
-        create_session, join_session, get_pending,
-        approve_participant, submit_vote, get_results,
+        approve_participant, create_session, get_pending, get_results, join_session, submit_vote,
     };
+    use encrypted_voting_polling::voting::types::AppState;
 
     fn build_app() -> (Router, AppState) {
         let state: AppState = Arc::new(Mutex::new(HashMap::new()));
@@ -47,7 +42,9 @@ mod integration_tests {
             .unwrap();
         let res = app.clone().oneshot(req).await.unwrap();
         let status = res.status();
-        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let json: Value = serde_json::from_slice(&bytes)
             .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).to_string()));
         (status, json)
@@ -61,7 +58,9 @@ mod integration_tests {
             .unwrap();
         let res = app.clone().oneshot(req).await.unwrap();
         let status = res.status();
-        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let json: Value = serde_json::from_slice(&bytes)
             .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).to_string()));
         (status, json)
@@ -103,38 +102,45 @@ mod integration_tests {
         let (client_key, sk_b64) = generate_fhe_keys();
 
         // 1. Session erstellen
-        let (status, body) = post_json(&app, "/session", json!({
-            "creator_id": "alice",
-            "server_key": sk_b64,
-            "questions": [{
-                "id": 1,
-                "text": "Soll das Projekt fortgesetzt werden?",
-                "question_type": "bool",
-                "options": null,
-                "multiple": null
-            }]
-        })).await;
+        let (status, body) = post_json(
+            &app,
+            "/session",
+            json!({
+                "creator_id": "alice",
+                "server_key": sk_b64,
+                "questions": [{
+                    "id": 1,
+                    "text": "Soll das Projekt fortgesetzt werden?",
+                    "question_type": "bool",
+                    "options": null,
+                    "multiple": null
+                }]
+            }),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK, "Session erstellen fehlgeschlagen");
         let session_id = body["session_id"].as_str().unwrap().to_string();
         println!("Session erstellt: {}", session_id);
 
         // 2. Teilnehmer beitreten – mit optionalem enc_name_chunks
         for participant in ["bob", "carol"] {
-            let (status, body) = post_json(&app, "/join", json!({
-                "session_id": session_id,
-                "participant_id": participant,
-                "enc_name_chunks": null
-            })).await;
+            let (status, body) = post_json(
+                &app,
+                "/join",
+                json!({
+                    "session_id": session_id,
+                    "participant_id": participant,
+                    "enc_name_chunks": null
+                }),
+            )
+            .await;
             assert_eq!(status, StatusCode::OK);
             assert_eq!(body["status"], "pending");
             println!("{} ist beigetreten (pending)", participant);
         }
 
         // 3. Pending-Liste prüfen – jetzt PendingEntry statt String
-        let (status, body) = get_json(
-            &app,
-            &format!("/pending/{}/alice", session_id)
-        ).await;
+        let (status, body) = get_json(&app, &format!("/pending/{}/alice", session_id)).await;
         assert_eq!(status, StatusCode::OK);
         let pending = body.as_array().unwrap();
         assert_eq!(pending.len(), 2);
@@ -142,49 +148,58 @@ mod integration_tests {
 
         // 4. Beide Teilnehmer genehmigen
         for participant in ["bob", "carol"] {
-            let (status, _) = post_json(&app, "/approve", json!({
-                "session_id": session_id,
-                "creator_id": "alice",
-                "participant_id": participant,
-                "approved": true
-            })).await;
+            let (status, _) = post_json(
+                &app,
+                "/approve",
+                json!({
+                    "session_id": session_id,
+                    "creator_id": "alice",
+                    "participant_id": participant,
+                    "approved": true
+                }),
+            )
+            .await;
             assert_eq!(status, StatusCode::OK);
             println!("{} genehmigt", participant);
         }
 
         // 5. Pending-Liste leer
-        let (status, body) = get_json(
-            &app,
-            &format!("/pending/{}/alice", session_id)
-        ).await;
+        let (status, body) = get_json(&app, &format!("/pending/{}/alice", session_id)).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body.as_array().unwrap().len(), 0);
         println!("Pending-Liste ist leer");
 
         // 6. Stimmen abgeben
         let bob_vote = encrypt_bool(true, &client_key);
-        let (status, _) = post_json(&app, "/vote", json!({
-            "session_id": session_id,
-            "participant_id": "bob",
-            "encrypted_votes": [bob_vote]
-        })).await;
+        let (status, _) = post_json(
+            &app,
+            "/vote",
+            json!({
+                "session_id": session_id,
+                "participant_id": "bob",
+                "encrypted_votes": [bob_vote]
+            }),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         println!("Bob hat abgestimmt (Ja)");
 
         let carol_vote = encrypt_bool(false, &client_key);
-        let (status, _) = post_json(&app, "/vote", json!({
-            "session_id": session_id,
-            "participant_id": "carol",
-            "encrypted_votes": [carol_vote]
-        })).await;
+        let (status, _) = post_json(
+            &app,
+            "/vote",
+            json!({
+                "session_id": session_id,
+                "participant_id": "carol",
+                "encrypted_votes": [carol_vote]
+            }),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         println!("Carol hat abgestimmt (Nein)");
 
         // 7. Ergebnisse abrufen
-        let (status, body) = get_json(
-            &app,
-            &format!("/results/{}/alice", session_id)
-        ).await;
+        let (status, body) = get_json(&app, &format!("/results/{}/alice", session_id)).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["ready"], true);
 
@@ -207,54 +222,71 @@ mod integration_tests {
         let (client_key, sk_b64) = generate_fhe_keys();
 
         // 1. Session mit Single-Frage erstellen
-        let (status, body) = post_json(&app, "/session", json!({
-            "creator_id": "alice",
-            "server_key": sk_b64,
-            "questions": [{
-                "id": 1,
-                "text": "Welches Framework?",
-                "question_type": "single",
-                "options": ["Axum", "Actix", "Warp"],
-                "multiple": null
-            }]
-        })).await;
+        let (status, body) = post_json(
+            &app,
+            "/session",
+            json!({
+                "creator_id": "alice",
+                "server_key": sk_b64,
+                "questions": [{
+                    "id": 1,
+                    "text": "Welches Framework?",
+                    "question_type": "single",
+                    "options": ["Axum", "Actix", "Warp"],
+                    "multiple": null
+                }]
+            }),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         let session_id = body["session_id"].as_str().unwrap().to_string();
         println!("Session erstellt: {}", session_id);
 
         // 2. Teilnehmer beitreten + genehmigen
         for participant in ["bob", "carol", "dave"] {
-            post_json(&app, "/join", json!({
-                "session_id": session_id,
-                "participant_id": participant,
-                "enc_name_chunks": null
-            })).await;
-            post_json(&app, "/approve", json!({
-                "session_id": session_id,
-                "creator_id": "alice",
-                "participant_id": participant,
-                "approved": true
-            })).await;
+            post_json(
+                &app,
+                "/join",
+                json!({
+                    "session_id": session_id,
+                    "participant_id": participant,
+                    "enc_name_chunks": null
+                }),
+            )
+            .await;
+            post_json(
+                &app,
+                "/approve",
+                json!({
+                    "session_id": session_id,
+                    "creator_id": "alice",
+                    "participant_id": participant,
+                    "approved": true
+                }),
+            )
+            .await;
         }
         println!("Alle Teilnehmer genehmigt");
 
         // 3. Stimmen: bob=0(Axum), carol=0(Axum), dave=1(Actix)
         for (participant, option) in [("bob", 0u8), ("carol", 0u8), ("dave", 1u8)] {
             let encrypted = encrypt_uint8(option, &client_key);
-            let (status, _) = post_json(&app, "/vote", json!({
-                "session_id": session_id,
-                "participant_id": participant,
-                "encrypted_votes": [encrypted]
-            })).await;
+            let (status, _) = post_json(
+                &app,
+                "/vote",
+                json!({
+                    "session_id": session_id,
+                    "participant_id": participant,
+                    "encrypted_votes": [encrypted]
+                }),
+            )
+            .await;
             assert_eq!(status, StatusCode::OK);
             println!("{} hat Option {} gewählt", participant, option);
         }
 
         // 4. Ergebnisse abrufen
-        let (status, body) = get_json(
-            &app,
-            &format!("/results/{}/alice", session_id)
-        ).await;
+        let (status, body) = get_json(&app, &format!("/results/{}/alice", session_id)).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["ready"], true);
 
@@ -276,66 +308,98 @@ mod integration_tests {
         let (app, _state) = build_app();
         let (client_key, sk_b64) = generate_fhe_keys();
 
-        let (_, body) = post_json(&app, "/session", json!({
-            "creator_id": "alice",
-            "server_key": sk_b64,
-            "questions": [{
-                "id": 1, "text": "Test?", "question_type": "bool",
-                "options": null, "multiple": null
-            }]
-        })).await;
+        let (_, body) = post_json(
+            &app,
+            "/session",
+            json!({
+                "creator_id": "alice",
+                "server_key": sk_b64,
+                "questions": [{
+                    "id": 1, "text": "Test?", "question_type": "bool",
+                    "options": null, "multiple": null
+                }]
+            }),
+        )
+        .await;
         let session_id = body["session_id"].as_str().unwrap().to_string();
 
         // Ungültige Session-ID
         let (status, err_body) = get_json(&app, "/pending/ungueltige-id/alice").await;
         assert!(
-            status == StatusCode::INTERNAL_SERVER_ERROR ||
-                err_body.as_str().map(|s| s.contains("nicht gefunden")).unwrap_or(false),
-            "Erwarte Fehler für ungültige Session-ID, got status={} body={}", status, err_body
+            status == StatusCode::INTERNAL_SERVER_ERROR
+                || err_body
+                    .as_str()
+                    .map(|s| s.contains("nicht gefunden"))
+                    .unwrap_or(false),
+            "Erwarte Fehler für ungültige Session-ID, got status={} body={}",
+            status,
+            err_body
         );
         println!("Ungültige Session-ID wird abgelehnt");
 
         // Falscher Creator
-        let (status, err_body) = get_json(
-            &app,
-            &format!("/pending/{}/eve", session_id)
-        ).await;
+        let (status, err_body) = get_json(&app, &format!("/pending/{}/eve", session_id)).await;
         assert!(
-            status == StatusCode::INTERNAL_SERVER_ERROR ||
-                err_body.as_str().map(|s| s.contains("autorisiert")).unwrap_or(false),
-            "Erwarte Fehler für falschen Creator, got status={} body={}", status, err_body
+            status == StatusCode::INTERNAL_SERVER_ERROR
+                || err_body
+                    .as_str()
+                    .map(|s| s.contains("autorisiert"))
+                    .unwrap_or(false),
+            "Erwarte Fehler für falschen Creator, got status={} body={}",
+            status,
+            err_body
         );
         println!("Falscher Creator wird abgelehnt");
 
         // Nicht genehmigter Teilnehmer
-        post_json(&app, "/join", json!({
-            "session_id": session_id,
-            "participant_id": "mallory",
-            "enc_name_chunks": null
-        })).await;
+        post_json(
+            &app,
+            "/join",
+            json!({
+                "session_id": session_id,
+                "participant_id": "mallory",
+                "enc_name_chunks": null
+            }),
+        )
+        .await;
 
         let vote = encrypt_bool(true, &client_key);
-        let (status, _) = post_json(&app, "/vote", json!({
-            "session_id": session_id,
-            "participant_id": "mallory",
-            "encrypted_votes": [vote]
-        })).await;
+        let (status, _) = post_json(
+            &app,
+            "/vote",
+            json!({
+                "session_id": session_id,
+                "participant_id": "mallory",
+                "encrypted_votes": [vote]
+            }),
+        )
+        .await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         println!("Nicht genehmigter Teilnehmer kann nicht abstimmen");
 
         // Falsche Stimmenanzahl
-        post_json(&app, "/approve", json!({
-            "session_id": session_id,
-            "creator_id": "alice",
-            "participant_id": "mallory",
-            "approved": true
-        })).await;
+        post_json(
+            &app,
+            "/approve",
+            json!({
+                "session_id": session_id,
+                "creator_id": "alice",
+                "participant_id": "mallory",
+                "approved": true
+            }),
+        )
+        .await;
 
-        let (status, _) = post_json(&app, "/vote", json!({
-            "session_id": session_id,
-            "participant_id": "mallory",
-            "encrypted_votes": []
-        })).await;
+        let (status, _) = post_json(
+            &app,
+            "/vote",
+            json!({
+                "session_id": session_id,
+                "participant_id": "mallory",
+                "encrypted_votes": []
+            }),
+        )
+        .await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         println!("Falsche Stimmenanzahl wird abgelehnt");
     }
@@ -348,32 +412,44 @@ mod integration_tests {
         let (app, _state) = build_app();
         let (_client_key, sk_b64) = generate_fhe_keys();
 
-        let (_, body) = post_json(&app, "/session", json!({
-            "creator_id": "alice",
-            "server_key": sk_b64,
-            "questions": [{
-                "id": 1, "text": "Test?", "question_type": "bool",
-                "options": null, "multiple": null
-            }]
-        })).await;
+        let (_, body) = post_json(
+            &app,
+            "/session",
+            json!({
+                "creator_id": "alice",
+                "server_key": sk_b64,
+                "questions": [{
+                    "id": 1, "text": "Test?", "question_type": "bool",
+                    "options": null, "multiple": null
+                }]
+            }),
+        )
+        .await;
         let session_id = body["session_id"].as_str().unwrap().to_string();
 
-        post_json(&app, "/join", json!({
-            "session_id": session_id,
-            "participant_id": "bob",
-            "enc_name_chunks": null
-        })).await;
-        post_json(&app, "/approve", json!({
-            "session_id": session_id,
-            "creator_id": "alice",
-            "participant_id": "bob",
-            "approved": true
-        })).await;
-
-        let (status, body) = get_json(
+        post_json(
             &app,
-            &format!("/results/{}/alice", session_id)
-        ).await;
+            "/join",
+            json!({
+                "session_id": session_id,
+                "participant_id": "bob",
+                "enc_name_chunks": null
+            }),
+        )
+        .await;
+        post_json(
+            &app,
+            "/approve",
+            json!({
+                "session_id": session_id,
+                "creator_id": "alice",
+                "participant_id": "bob",
+                "approved": true
+            }),
+        )
+        .await;
+
+        let (status, body) = get_json(&app, &format!("/results/{}/alice", session_id)).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["ready"], false);
         println!("Ergebnisse sind noch nicht bereit");

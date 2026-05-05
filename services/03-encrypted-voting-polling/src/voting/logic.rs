@@ -1,23 +1,20 @@
+use crate::voting::types::{
+    AppState, ApproveRequest, CreateSessionRequest, CreateSessionResponse, JoinRequest,
+    JoinResponse, ParticipantState, Question, QuestionType, ResultResponse, SessionState,
+    VoteRequest, VoteResponse,
+};
 use axum::http::StatusCode;
 use axum::{
     extract::{Path, State},
     Json,
 };
 use base64::{engine::general_purpose, Engine as _};
-use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashMap,
-};
-use tfhe::prelude::*;
-use tfhe::{CompressedServerKey, FheBool, FheUint8};
-use uuid::Uuid;
-use crate::voting::types::{
-    AppState, ApproveRequest, CreateSessionRequest, CreateSessionResponse,
-    JoinRequest, JoinResponse, QuestionType, ResultResponse, SessionState,
-    VoteRequest, VoteResponse, ParticipantState, Question,
-};
 use redis::AsyncCommands;
-
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use tfhe::prelude::*;
+use tfhe::{CompressedServerKey, FheUint8};
+use uuid::Uuid;
 
 type ApiError = (StatusCode, String);
 type ApiResult<T> = Result<Json<T>, ApiError>;
@@ -41,17 +38,16 @@ pub async fn create_session(
 
     let session_id = Uuid::new_v4().to_string();
     // im Handler
-let session = SessionState {
-    creator_id: req.creator_id,
-    server_key_bytes: sk_bytes,
-    public_key: req.public_key.clone(), // neu
-    questions: req.questions,
-    participants: HashMap::new(),
-    votes: HashMap::new(),
-    finalized: false,
-    encrypted_results: None,
-};
-
+    let session = SessionState {
+        creator_id: req.creator_id,
+        server_key_bytes: sk_bytes,
+        public_key: req.public_key.clone(), // neu
+        questions: req.questions,
+        participants: HashMap::new(),
+        votes: HashMap::new(),
+        finalized: false,
+        encrypted_results: None,
+    };
 
     state.lock().unwrap().insert(session_id.clone(), session);
     Ok(Json(CreateSessionResponse { session_id }))
@@ -85,7 +81,6 @@ pub async fn join_session(
     }))
 }
 
-
 #[derive(Serialize, Deserialize)]
 pub struct PendingEntry {
     pub participant_id: String,
@@ -97,9 +92,7 @@ pub async fn get_pending(
     Path((session_id, creator_id)): Path<(String, String)>,
 ) -> ApiResult<Vec<PendingEntry>> {
     let map = state.lock().unwrap();
-    let session = map
-        .get(&session_id)
-        .ok_or(err("Session nicht gefunden"))?;
+    let session = map.get(&session_id).ok_or(err("Session nicht gefunden"))?;
 
     if session.creator_id != creator_id {
         return Err(err("Nicht autorisiert"));
@@ -118,7 +111,6 @@ pub async fn get_pending(
     Ok(Json(pending))
 }
 
-
 /// POST /approve – Ersteller genehmigt oder lehnt Teilnehmer ab
 pub async fn approve_participant(
     State(state): State<AppState>,
@@ -134,13 +126,12 @@ pub async fn approve_participant(
     }
 
     if req.approved {
-    if let Some(p) = session.participants.get_mut(&req.participant_id) {
-        p.approved = true;
+        if let Some(p) = session.participants.get_mut(&req.participant_id) {
+            p.approved = true;
+        }
+    } else {
+        session.participants.remove(&req.participant_id);
     }
-} else {
-    session.participants.remove(&req.participant_id);
-}
-
 
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
@@ -173,7 +164,9 @@ pub async fn submit_vote(
         return Err(err("Anzahl der Stimmen stimmt nicht mit Fragen überein"));
     }
 
-    session.votes.insert(req.participant_id.clone(), req.encrypted_votes);
+    session
+        .votes
+        .insert(req.participant_id.clone(), req.encrypted_votes);
 
     println!("=== VOTE STORED ===");
     println!("participant: {}", req.participant_id);
@@ -184,7 +177,6 @@ pub async fn submit_vote(
         status: "vote received".to_string(),
     }))
 }
-
 
 pub fn aggregate_votes_ciphertext_only(
     votes: &Vec<Vec<Vec<String>>>,
@@ -199,17 +191,13 @@ pub fn aggregate_votes_ciphertext_only(
     let mut results: Vec<Vec<String>> = vec![];
 
     for (q_idx, question) in questions.iter().enumerate() {
-
         match question.question_type {
-
             //  BOOL / NUMERIC → einzelne Summe
             QuestionType::Bool | QuestionType::Numeric => {
                 let mut acc: Option<FheUint8> = None;
 
                 for v in votes {
-                    let bytes = general_purpose::STANDARD
-                        .decode(&v[q_idx][0])
-                        .unwrap();
+                    let bytes = general_purpose::STANDARD.decode(&v[q_idx][0]).unwrap();
 
                     let vote: FheUint8 = bincode::deserialize(&bytes).unwrap();
 
@@ -240,10 +228,13 @@ pub fn aggregate_votes_ciphertext_only(
                     }
                 }
 
-                let serialized_vec: Vec<String> = acc_vec.into_iter().map(|v| {
-                    let ser = bincode::serialize(&v.unwrap()).unwrap();
-                    general_purpose::STANDARD.encode(ser)
-                }).collect();
+                let serialized_vec: Vec<String> = acc_vec
+                    .into_iter()
+                    .map(|v| {
+                        let ser = bincode::serialize(&v.unwrap()).unwrap();
+                        general_purpose::STANDARD.encode(ser)
+                    })
+                    .collect();
 
                 results.push(serialized_vec);
             }
@@ -253,8 +244,6 @@ pub fn aggregate_votes_ciphertext_only(
     results
 }
 
-
-
 /// GET /results/:session_id/:creator_id – Ersteller pollt das verschlüsselte Ergebnis
 pub async fn get_results(
     State(state): State<AppState>,
@@ -262,9 +251,7 @@ pub async fn get_results(
 ) -> ApiResult<ResultResponse> {
     let map = state.lock().unwrap();
 
-    let session = map
-        .get(&session_id)
-        .ok_or(err("Session nicht gefunden"))?;
+    let session = map.get(&session_id).ok_or(err("Session nicht gefunden"))?;
 
     if session.creator_id != creator_id {
         return Err(err("Nicht autorisiert"));
@@ -283,20 +270,15 @@ pub async fn get_results(
             ready: false,
         }));
     }
-    let votes: Vec<Vec<Vec<String>>> =
-        session.votes.values().cloned().collect();
+    let votes: Vec<Vec<Vec<String>>> = session.votes.values().cloned().collect();
 
-    let results = aggregate_votes_ciphertext_only(
-    &votes,
-    &session.questions,
-    &session.server_key_bytes,
-);
-
+    let results =
+        aggregate_votes_ciphertext_only(&votes, &session.questions, &session.server_key_bytes);
 
     Ok(Json(ResultResponse {
-    encrypted_results: results,
-    ready: true,
-}))
+        encrypted_results: results,
+        ready: true,
+    }))
 }
 
 pub async fn finalize_session(
@@ -347,7 +329,6 @@ pub async fn get_status(
     })))
 }
 
-
 //
 // GET SESSION
 //
@@ -357,9 +338,7 @@ pub async fn get_session(
 ) -> ApiResult<serde_json::Value> {
     let map = state.lock().unwrap();
 
-    let session = map
-        .get(&session_id)
-        .ok_or(err("Session nicht gefunden"))?;
+    let session = map.get(&session_id).ok_or(err("Session nicht gefunden"))?;
 
     Ok(Json(serde_json::json!({
         "session_id": session_id,
@@ -372,14 +351,14 @@ pub async fn get_session(
 async fn get_redis() -> Result<redis::aio::MultiplexedConnection, ApiError> {
     let client = redis::Client::open("redis://localhost:6379")
         .map_err(|e| err(&format!("Redis Verbindung fehlgeschlagen: {}", e)))?;
-    client.get_multiplexed_async_connection().await
+    client
+        .get_multiplexed_async_connection()
+        .await
         .map_err(|e| err(&format!("Redis Connection fehlgeschlagen: {}", e)))
 }
 
 /// POST /store-key – speichert den ClientKey in Redis
-pub async fn store_client_key(
-    Json(req): Json<serde_json::Value>,
-) -> ApiResult<serde_json::Value> {
+pub async fn store_client_key(Json(req): Json<serde_json::Value>) -> ApiResult<serde_json::Value> {
     let session_id = req["session_id"].as_str().ok_or(err("session_id fehlt"))?;
     let client_key_b64 = req["client_key"].as_str().ok_or(err("client_key fehlt"))?;
 
@@ -387,20 +366,21 @@ pub async fn store_client_key(
     let key = format!("voting:clientkey:{}", session_id);
 
     // 24 Stunden TTL
-    con.set_ex::<_, _, ()>(&key, client_key_b64, 86400).await
+    con.set_ex::<_, _, ()>(&key, client_key_b64, 86400)
+        .await
         .map_err(|e| err(&format!("Redis SET fehlgeschlagen: {}", e)))?;
 
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
 
 /// GET /load-key/:session_id – lädt den ClientKey aus Redis
-pub async fn load_client_key(
-    Path(session_id): Path<String>,
-) -> ApiResult<serde_json::Value> {
+pub async fn load_client_key(Path(session_id): Path<String>) -> ApiResult<serde_json::Value> {
     let mut con = get_redis().await?;
     let key = format!("voting:clientkey:{}", session_id);
 
-    let value: Option<String> = con.get(&key).await
+    let value: Option<String> = con
+        .get(&key)
+        .await
         .map_err(|e| err(&format!("Redis GET fehlgeschlagen: {}", e)))?;
 
     match value {

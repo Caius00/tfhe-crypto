@@ -35,7 +35,7 @@ pub struct SessionState {
     pub public_key: Option<String>, // Base64 public key
     pub questions: Vec<Question>,
     pub participants: HashMap<String, ParticipantState>,
-    pub votes: HashMap<String, Vec<Vec<String>>>, 
+    pub votes: HashMap<String, Vec<Vec<String>>>,
     pub finalized: bool,
     pub encrypted_results: Option<Vec<String>>,
 }
@@ -47,7 +47,7 @@ pub type AppState = Arc<Mutex<HashMap<String, SessionState>>>;
 #[derive(Deserialize)]
 pub struct CreateSessionRequest {
     pub creator_id: String,
-    pub server_key: String, // Base64 CompressedServerKey
+    pub server_key: String,         // Base64 CompressedServerKey
     pub public_key: Option<String>, // optional: Base64 public key (für Teilnehmer)
     pub questions: Vec<Question>,
 }
@@ -94,4 +94,3 @@ pub struct ResultResponse {
     pub encrypted_results: Vec<Vec<String>>,
     pub ready: bool,
 }
-
