@@ -79,6 +79,7 @@ export class CreateSessionComponent {
     try {
       await this.tfhe.ensureInitialized();
       this.keyPair = this.tfhe.generateKeyPair();
+      this.keyPair.publicKeyBytes = this.tfhe.generateCompressedPublicKey(this.keyPair.clientKey);
       this.status.set('Keys ready');
     } catch (e) {
       console.error('Key error:', e);

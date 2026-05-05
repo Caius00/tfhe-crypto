@@ -54,21 +54,18 @@ export class TfheService {
    */
   generateKeyPair(): KeyPair {
     const config = TfheConfigBuilder.default().build();
-
-    // 1) Client-Key (privat, bleibt im Browser)
     const clientKey = TfheClientKey.generate(config);
-
-    // 2) Server-Key (für Backend-Berechnungen)
     const compressedServerKey = TfheCompressedServerKey.new(clientKey);
     const serverKeyBytes = compressedServerKey.serialize();
     compressedServerKey.free();
+    return { clientKey, serverKeyBytes };
+  }
 
-    // 3) Public-Key (für andere Clients)
-    const compressedPublicKey = TfheCompressedPublicKey.new(clientKey);
-    const publicKeyBytes = compressedPublicKey.serialize();
-    compressedPublicKey.free();
-
-    return { clientKey, serverKeyBytes, publicKeyBytes };
+  generateCompressedPublicKey(clientKey: TfheClientKey): Uint8Array {
+    const pk = TfheCompressedPublicKey.new(clientKey);
+    const bytes = pk.serialize();
+    pk.free();
+    return bytes;
   }
 
   private deserializePublicKeyFromB64(publicKeyB64: string): TfheCompressedPublicKey {
@@ -96,7 +93,7 @@ export class TfheService {
     return result;
   }
 
-  // String -> Base64-Chunks (string[])
+// String -> Base64-Chunks (string[])
   encryptStringWithPublic(publicKeyB64: string, text: string): string[] {
     const bytes = this.fromBase64(publicKeyB64);
     const pk = TfheCompressedPublicKey.deserialize(bytes);
@@ -127,10 +124,7 @@ export class TfheService {
     const compressedServerKey = TfheCompressedServerKey.new(clientKey);
     const serverKeyBytes = compressedServerKey.serialize();
     compressedServerKey.free();
-    const publicKey = TfheCompressedPublicKey.new(clientKey);
-    const publicKeyBytes = publicKey.serialize();
-    publicKey.free();
-    return { clientKey, serverKeyBytes, publicKeyBytes };
+    return { clientKey, serverKeyBytes };
   }
 
   // ---------------------------------------------------------------------------
@@ -147,7 +141,9 @@ export class TfheService {
     const clientKeyBytes = keyPair.clientKey.serialize();
     sessionStorage.setItem(SESSION_KEY_CLIENT, this.toBase64(clientKeyBytes));
     sessionStorage.setItem(SESSION_KEY_SERVER, this.toBase64(keyPair.serverKeyBytes));
-    sessionStorage.setItem('tfhe_public_key', this.toBase64(keyPair.publicKeyBytes));
+    if (keyPair.publicKeyBytes) {
+      sessionStorage.setItem('tfhe_public_key', this.toBase64(keyPair.publicKeyBytes));
+    }
   }
 
   /**
