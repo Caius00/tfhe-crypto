@@ -14,6 +14,7 @@ import init, {
   TfheCompactPublicKey,
   TfheCompressedServerKey,
   TfheConfigBuilder,
+  TfheCompressedPublicKey, // anstelle des PublicKeys
 } from 'tfhe';
 import { KeyPair } from './key-pair.model';
 
@@ -53,11 +54,64 @@ export class TfheService {
    */
   generateKeyPair(): KeyPair {
     const config = TfheConfigBuilder.default().build();
+
+    // 1) Client-Key (privat, bleibt im Browser)
     const clientKey = TfheClientKey.generate(config);
+
+    // 2) Server-Key (für Backend-Berechnungen)
     const compressedServerKey = TfheCompressedServerKey.new(clientKey);
     const serverKeyBytes = compressedServerKey.serialize();
     compressedServerKey.free();
-    return { clientKey, serverKeyBytes };
+
+    // 3) Public-Key (für andere Clients)
+    const compressedPublicKey = TfheCompressedPublicKey.new(clientKey);
+    const publicKeyBytes = compressedPublicKey.serialize();
+    compressedPublicKey.free();
+
+    return { clientKey, serverKeyBytes, publicKeyBytes };
+  }
+
+  private deserializePublicKeyFromB64(publicKeyB64: string): TfheCompressedPublicKey {
+    const bytes = this.fromBase64(publicKeyB64);
+    return TfheCompressedPublicKey.deserialize(bytes);
+  }
+
+  encryptBoolWithPublic(publicKeyB64: string, value: boolean): Uint8Array {
+    const bytes = this.fromBase64(publicKeyB64);
+    const pk = TfheCompressedPublicKey.deserialize(bytes);
+    const enc = FheBool.encrypt_with_compressed_public_key(value, pk);
+    const result = enc.serialize();
+    enc.free();
+    pk.free();
+    return result;
+  }
+
+  encryptUint8WithPublic(publicKeyB64: string, value: number): Uint8Array {
+    const bytes = this.fromBase64(publicKeyB64);
+    const pk = TfheCompressedPublicKey.deserialize(bytes);
+    const enc = FheUint8.encrypt_with_compressed_public_key(value, pk);
+    const result = enc.serialize();
+    enc.free();
+    pk.free();
+    return result;
+  }
+
+  // String -> Base64-Chunks (string[])
+  encryptStringWithPublic(publicKeyB64: string, text: string): string[] {
+    const bytes = this.fromBase64(publicKeyB64);
+    const pk = TfheCompressedPublicKey.deserialize(bytes);
+    const chunks: string[] = [];
+
+    for (const ch of text) {
+      const code = ch.charCodeAt(0);
+      const enc = FheUint8.encrypt_with_compressed_public_key(code, pk);
+      const encBytes = enc.serialize();
+      chunks.push(this.toBase64(encBytes));
+      enc.free();
+    }
+
+    pk.free();
+    return chunks;
   }
 
   /**
@@ -73,7 +127,10 @@ export class TfheService {
     const compressedServerKey = TfheCompressedServerKey.new(clientKey);
     const serverKeyBytes = compressedServerKey.serialize();
     compressedServerKey.free();
-    return { clientKey, serverKeyBytes };
+    const publicKey = TfheCompressedPublicKey.new(clientKey);
+    const publicKeyBytes = publicKey.serialize();
+    publicKey.free();
+    return { clientKey, serverKeyBytes, publicKeyBytes };
   }
 
   // ---------------------------------------------------------------------------
@@ -90,6 +147,7 @@ export class TfheService {
     const clientKeyBytes = keyPair.clientKey.serialize();
     sessionStorage.setItem(SESSION_KEY_CLIENT, this.toBase64(clientKeyBytes));
     sessionStorage.setItem(SESSION_KEY_SERVER, this.toBase64(keyPair.serverKeyBytes));
+    sessionStorage.setItem('tfhe_public_key', this.toBase64(keyPair.publicKeyBytes));
   }
 
   /**
@@ -99,11 +157,15 @@ export class TfheService {
   loadKeyPairFromSession(): KeyPair | null {
     const clientB64 = sessionStorage.getItem(SESSION_KEY_CLIENT);
     const serverB64 = sessionStorage.getItem(SESSION_KEY_SERVER);
-    if (!clientB64 || !serverB64) return null;
+    const publicB64 = sessionStorage.getItem('tfhe_public_key');
+
+    if (!clientB64 || !serverB64 || !publicB64) return null;
 
     const clientKey = TfheClientKey.deserialize(this.fromBase64(clientB64));
     const serverKeyBytes = this.fromBase64(serverB64);
-    return { clientKey, serverKeyBytes };
+    const publicKeyBytes = this.fromBase64(publicB64);
+
+    return { clientKey, serverKeyBytes, publicKeyBytes };
   }
 
   /**
@@ -112,6 +174,7 @@ export class TfheService {
   clearKeyPairFromSession(): void {
     sessionStorage.removeItem(SESSION_KEY_CLIENT);
     sessionStorage.removeItem(SESSION_KEY_SERVER);
+    sessionStorage.removeItem('tfhe_public_key');
   }
 
   // ---------------------------------------------------------------------------

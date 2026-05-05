@@ -1,0 +1,55 @@
+<h2>Session verwalten</h2>
+
+<p>Session ID: <b>{{ sessionId }}</b></p>
+<hr />
+
+<h3>Teilnehmer-Anfragen</h3>
+
+<ul>
+  <li *ngFor="let p of pending()">
+    <div style="display:flex; gap:12px; align-items:center;">
+      <div>
+        <b>{{ p.participant_id }}</b>
+        <div style="font-size:0.95em; color:gray;">
+          {{ decryptName(p.enc_name_chunks) }}
+        </div>
+      </div>
+
+      <div style="margin-left:auto; display:flex; gap:8px;">
+        <app-button label="✔" (clicked)="approve(p.participant_id)"></app-button>
+        <app-button label="✖" (clicked)="reject(p.participant_id)"></app-button>
+      </div>
+    </div>
+  </li>
+</ul>
+
+<p *ngIf="pending().length === 0">Keine offenen Anfragen</p>
+
+<hr />
+
+<button (click)="finalize()">Voting beenden</button>
+
+<h3>Ergebnisse</h3>
+<button (click)="loadResults()">Ergebnisse laden</button>
+<p>{{ status() }}</p>
+<button (click)="decryptFinalResults()">Ergebnisse entschlüsseln</button>
+
+<div *ngIf="results() && results().length > 0">
+  <h3>Auswertung:</h3>
+  <div *ngFor="let r of results(); let i = index" style="margin-bottom:12px;">
+    <p><b>{{ questions()[i]?.text }}</b></p>
+
+    <!-- Wenn Ergebnis ein Array (z. B. mehrere Werte) -->
+    <ng-container *ngIf="isArray(r); else singleValue">
+      <ul>
+        <li *ngFor="let x of r">{{ x }}</li>
+      </ul>
+    </ng-container>
+
+    <ng-template #singleValue>
+      <span>{{ r }}</span>
+    </ng-template>
+  </div>
+</div>
+
+<p *ngIf="results() && results().length === 0">Noch keine Ergebnisse verfügbar</p>
