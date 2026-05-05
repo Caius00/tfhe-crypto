@@ -99,76 +99,34 @@ export class VoteComponent implements OnInit {
       return;
     }
 
-    const participantId = localStorage.getItem('participantId') || this.generateParticipantId();
-    localStorage.setItem('participantId', participantId);
+    const participantId = localStorage.getItem('participantId');
+    if (!participantId) {
+      this.voteStatus.set('Keine Teilnehmer-ID gefunden');
+      return;
+    }
 
-    // 1) Name verschlüsseln -> Array von Base64-Chunks (string[])
-    const name = prompt('Gib deinen Namen ein') || participantId;
-    const encNameChunks = this.tfhe.encryptStringWithPublic(this.publicKeyB64, name);
-    // encNameChunks ist bereits string[] (Base64)
-
-    // 2) Antworten verschlüsseln -> array of Base64 strings
+    // Votes verschlüsseln
     const encryptedVotes: string[] = this.questions().map((q, i) => {
       if (q.question_type === 'bool') {
         const value = !!this.voteValue()[i];
-        const encBytes = this.tfhe.encryptBoolWithPublic(this.publicKeyB64!, value);
-        return this.tfhe.toBase64(encBytes);
+        return this.tfhe.toBase64(this.tfhe.encryptBoolWithPublic(this.publicKeyB64!, value));
       } else if (q.question_type === 'single') {
-        const val = this.voteValue()[i];
-        const sel = typeof val === 'number' ? val : 0;
-        const encBytes = this.tfhe.encryptUint8WithPublic(this.publicKeyB64!, sel);
-        return this.tfhe.toBase64(encBytes);
+        const val = typeof this.voteValue()[i] === 'number' ? this.voteValue()[i] as number : 0;
+        return this.tfhe.toBase64(this.tfhe.encryptUint8WithPublic(this.publicKeyB64!, val));
       } else if (q.question_type === 'multiple') {
         const set = this.voteValue()[i] as Set<number> | undefined;
         let mask = 0;
-        if (set) {
-          for (const idx of Array.from(set)) mask |= 1 << idx;
-        }
-        const encBytes = this.tfhe.encryptUint8WithPublic(this.publicKeyB64!, mask);
-        return this.tfhe.toBase64(encBytes);
+        if (set) for (const idx of Array.from(set)) mask |= 1 << idx;
+        return this.tfhe.toBase64(this.tfhe.encryptUint8WithPublic(this.publicKeyB64!, mask));
       } else if (q.question_type === 'numeric') {
-        const val = this.voteValue()[i];
-        const num = typeof val === 'number' ? val : Number(val) || 0;
-        const encBytes = this.tfhe.encryptUint8WithPublic(this.publicKeyB64!, num);
-        return this.tfhe.toBase64(encBytes);
+        const num = typeof this.voteValue()[i] === 'number' ? this.voteValue()[i] as number : 0;
+        return this.tfhe.toBase64(this.tfhe.encryptUint8WithPublic(this.publicKeyB64!, num));
       }
       return '';
     });
 
-    // 3) Join mit verschlüsseltem Namen (encNameChunks: string[])
-    this.voteStatus.set(' Warte auf Genehmigung...');
-    this.votingService.joinSession(this.sessionId, participantId, encNameChunks).subscribe({
-      next: () => {
-        // 2) Pollen bis genehmigt
-        this.pollUntilApproved(participantId, encryptedVotes);
-      },
-      error: (err) => {
-        console.error('JOIN ERROR', err);
-        this.voteStatus.set('Join fehlgeschlagen');
-      },
-    });
-  }
-
-  private pollUntilApproved(participantId: string, encryptedVotes: string[]) {
-    const interval = setInterval(() => {
-      this.votingService.getStatus(this.sessionId, participantId).subscribe({
-        next: (res) => {
-          if (res.status === 'approved') {
-            clearInterval(interval);
-            this.voteStatus.set('Genehmigt – sende Stimme...');
-            this.sendVote(participantId, encryptedVotes);
-          } else if (res.status === 'not_found') {
-            clearInterval(interval);
-            this.voteStatus.set('Teilnehmer nicht gefunden');
-          }
-          // 'pending' → weiter warten
-        },
-        error: () => clearInterval(interval)
-      });
-    }, 2000); // alle 2 Sekunden prüfen
-  }
-
-  private sendVote(participantId: string, encryptedVotes: string[]) {
+    // Direkt abstimmen – Teilnehmer ist bereits genehmigt
+    this.voteStatus.set('Stimme wird gesendet...');
     this.votingService.submitVote(this.sessionId, participantId, encryptedVotes)
       .subscribe({
         next: () => this.voteStatus.set('Stimme erfolgreich abgegeben!'),
