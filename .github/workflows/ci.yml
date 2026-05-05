@@ -120,6 +120,9 @@ jobs:
         id: clippy
         run: cargo clippy -p ${{ matrix.service }} -- -D warnings
 
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
       - name: Test
         id: test
         run: cargo nextest run -p ${{ matrix.service }} --no-tests=pass

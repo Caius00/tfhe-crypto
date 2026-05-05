@@ -1,0 +1,202 @@
+.creator { display: flex; flex-direction: column; gap: 1.25rem; }
+
+/* Code Panel */
+.code-panel {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  background: linear-gradient(135deg, #1a472a 0%, #2d6a4f 50%, #1a472a 100%);
+  border-radius: 12px;
+  padding: 1rem 1.5rem;
+  border: 3px solid #52b788;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.1);
+  position: relative;
+  overflow: hidden;
+}
+
+.code-bird {
+  width: 48px;
+  height: auto;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 2px 8px rgba(0,0,0,0.4));
+  flex-shrink: 0;
+}
+
+.code-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.code-label {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.42rem;
+  color: #95d5b2;
+  letter-spacing: 0.12em;
+}
+
+.code-value {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 1.8rem;
+  color: #ffffff;
+  letter-spacing: 0.3em;
+  text-shadow: 0 0 20px rgba(82,183,136,0.6), 2px 2px 0 rgba(0,0,0,0.4);
+}
+
+.code-sub {
+  font-size: 0.6rem;
+  color: #95d5b2;
+}
+
+.code-pipe {
+  width: 28px;
+  height: auto;
+  image-rendering: pixelated;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+/* Leaderboard Container */
+.lb-container {
+  background: #0f1923;
+  border-radius: 12px;
+  border: 2px solid #1e3a2f;
+  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+}
+
+.lb-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.25rem;
+  background: linear-gradient(90deg, #1a472a, #2d6a4f, #1a472a);
+  border-bottom: 2px solid #52b788;
+}
+
+.lb-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.6rem;
+  color: #d8f3dc;
+  text-shadow: 0 0 10px rgba(82,183,136,0.5);
+  letter-spacing: 0.1em;
+}
+
+.lb-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.lb-updated {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.38rem;
+  color: #52b788;
+}
+
+/* Empty state */
+.lb-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 2.5rem 1rem;
+}
+
+.empty-bird {
+  width: 56px;
+  height: auto;
+  image-rendering: pixelated;
+  animation: bob 1.4s ease-in-out infinite;
+  filter: drop-shadow(0 4px 12px rgba(82,183,136,0.4));
+}
+
+@keyframes bob {
+  0%, 100% { transform: translateY(0) rotate(-5deg); }
+  50%       { transform: translateY(-10px) rotate(5deg); }
+}
+
+.empty-label {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.5rem;
+  color: #52b788;
+  margin: 0;
+  letter-spacing: 0.08em;
+}
+
+/* Rows */
+.lb-body { padding: 0.5rem 0; }
+
+.lb-row {
+  display: grid;
+  grid-template-columns: 3rem 1fr 100px;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 1.25rem;
+  border-bottom: 1px solid #1e3a2f;
+  transition: background 0.15s;
+}
+
+.lb-row:hover { background: rgba(82,183,136,0.05); }
+.lb-row:last-child { border-bottom: none; }
+.lb-row.is-first { background: rgba(255,215,0,0.05); }
+
+.lb-rank {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.65rem;
+  color: #4b5563;
+  text-align: center;
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid #1e3a2f;
+}
+
+.lb-rank.rank-1 { color: #fbbf24; border-color: #f59e0b; background: rgba(251,191,36,0.1); font-size: 0.8rem; }
+.lb-rank.rank-2 { color: #94a3b8; border-color: #64748b; background: rgba(148,163,184,0.1); }
+.lb-rank.rank-3 { color: #d97706; border-color: #b45309; background: rgba(217,119,6,0.1); }
+
+.lb-info { display: flex; flex-direction: column; gap: 0.2rem; }
+
+.lb-score {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.7rem;
+  color: #d8f3dc;
+}
+
+.lb-id {
+  font-family: 'Courier New', monospace;
+  font-size: 0.6rem;
+  color: #4b5563;
+}
+
+.lb-bar-track {
+  height: 6px;
+  background: #1e3a2f;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.lb-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #52b788, #95d5b2);
+  border-radius: 3px;
+  transition: width 0.5s ease;
+  min-width: 3px;
+}
+
+/* Footer */
+.lb-footer {
+  padding: 0.6rem 1.25rem;
+  font-size: 0.55rem;
+  color: #374151;
+  background: #0a1015;
+  border-top: 1px solid #1e3a2f;
+  text-align: center;
+  font-family: 'Press Start 2P', monospace;
+  line-height: 1.8;
+}

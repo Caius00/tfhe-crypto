@@ -468,9 +468,11 @@ name = "encrypted-leaderboard"
 version = "0.1.8"
 dependencies = [
  "axum",
+ "base64",
+ "bincode",
  "health",
+ "rayon",
  "serde",
- "serde_json",
  "tfhe",
  "tokio",
 ]

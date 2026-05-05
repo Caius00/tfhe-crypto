@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import init, {
+  CompactCiphertextList,
   FheBool,
   FheInt8,
   FheInt16,
@@ -10,6 +11,7 @@ import init, {
   FheUint32,
   FheUint64,
   TfheClientKey,
+  TfheCompactPublicKey,
   TfheCompressedServerKey,
   TfheConfigBuilder,
   TfheCompressedPublicKey, // anstelle des PublicKeys
@@ -52,21 +54,18 @@ export class TfheService {
    */
   generateKeyPair(): KeyPair {
     const config = TfheConfigBuilder.default().build();
-
-    // 1) Client-Key (privat, bleibt im Browser)
     const clientKey = TfheClientKey.generate(config);
-
-    // 2) Server-Key (für Backend-Berechnungen)
     const compressedServerKey = TfheCompressedServerKey.new(clientKey);
     const serverKeyBytes = compressedServerKey.serialize();
     compressedServerKey.free();
+    return { clientKey, serverKeyBytes };
+  }
 
-    // 3) Public-Key (für andere Clients)
-    const compressedPublicKey = TfheCompressedPublicKey.new(clientKey);
-    const publicKeyBytes = compressedPublicKey.serialize();
-    compressedPublicKey.free();
-
-    return { clientKey, serverKeyBytes, publicKeyBytes };
+  generateCompressedPublicKey(clientKey: TfheClientKey): Uint8Array {
+    const pk = TfheCompressedPublicKey.new(clientKey);
+    const bytes = pk.serialize();
+    pk.free();
+    return bytes;
   }
 
   private deserializePublicKeyFromB64(publicKeyB64: string): TfheCompressedPublicKey {
@@ -94,7 +93,7 @@ export class TfheService {
     return result;
   }
 
-  // String -> Base64-Chunks (string[])
+// String -> Base64-Chunks (string[])
   encryptStringWithPublic(publicKeyB64: string, text: string): string[] {
     const bytes = this.fromBase64(publicKeyB64);
     const pk = TfheCompressedPublicKey.deserialize(bytes);
@@ -125,10 +124,7 @@ export class TfheService {
     const compressedServerKey = TfheCompressedServerKey.new(clientKey);
     const serverKeyBytes = compressedServerKey.serialize();
     compressedServerKey.free();
-    const publicKey = TfheCompressedPublicKey.new(clientKey);
-    const publicKeyBytes = publicKey.serialize();
-    publicKey.free();
-    return { clientKey, serverKeyBytes, publicKeyBytes };
+    return { clientKey, serverKeyBytes };
   }
 
   // ---------------------------------------------------------------------------
@@ -145,7 +141,9 @@ export class TfheService {
     const clientKeyBytes = keyPair.clientKey.serialize();
     sessionStorage.setItem(SESSION_KEY_CLIENT, this.toBase64(clientKeyBytes));
     sessionStorage.setItem(SESSION_KEY_SERVER, this.toBase64(keyPair.serverKeyBytes));
-    sessionStorage.setItem('tfhe_public_key', this.toBase64(keyPair.publicKeyBytes));
+    if (keyPair.publicKeyBytes) {
+      sessionStorage.setItem('tfhe_public_key', this.toBase64(keyPair.publicKeyBytes));
+    }
   }
 
   /**
@@ -386,6 +384,62 @@ export class TfheService {
   // Base64 ist KEINE Verschlüsselung, nur eine Textkodierung für Binärdaten.
   // Der eigentliche Ciphertext (FHE) steckt in den kodierten Bytes drin.
   // ---------------------------------------------------------------------------
+
+  // ---------------------------------------------------------------------------
+  // Compact-Public-Key-Verschlüsselung
+  // Ermöglicht Dritten, Werte zu verschlüsseln die nur E (Besitzer des Client-Key)
+  // entschlüsseln kann. Der Public-Key verlässt das Gerät, der Client-Key nie.
+  //
+  // Verwendung: TfheCompactPublicKey (WASM-kompatibel, kleinere Parameter als
+  // TfhePublicKey). Werte werden als CompactCiphertextList gebaut, auf
+  // Client-Seite expandiert und als Standard-Ciphertexts weitergesendet.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Erzeugt einen Compact-Public-Key aus dem Client-Key.
+   * Kann sicher an Spieler weitergegeben werden – Entschlüsselung ist damit
+   * nicht möglich, nur Verschlüsselung.
+   */
+  generatePublicKey(clientKey: TfheClientKey): Uint8Array {
+    const pk = TfheCompactPublicKey.new(clientKey);
+    const bytes = pk.serialize();
+    pk.free();
+    return bytes;
+  }
+
+  /**
+   * Verschlüsselt Score (uint16) und Spieler-ID (uint32) gemeinsam mit dem
+   * Compact-Public-Key und gibt beide als separate Ciphertext-Bytes zurück.
+   *
+   * Das Compact-Format wird clientseitig sofort wieder expandiert, sodass der
+   * Server Standard-FheUint16/FheUint32-Bytes erhält (identisch mit dem
+   * client-key-verschlüsselten Format).
+   */
+  encryptScoreAndId(
+    score: number,
+    playerId: number,
+    publicKeyBytes: Uint8Array,
+  ): { encryptedScore: Uint8Array; encryptedId: Uint8Array } {
+    const pk = TfheCompactPublicKey.deserialize(publicKeyBytes);
+    const builder = CompactCiphertextList.builder(pk);
+    builder.push_u16(score);
+    builder.push_u8(playerId);
+    const list = builder.build();
+    const expander = list.expand();
+
+    const scoreEnc = expander.get_uint16(0);
+    const idEnc = expander.get_uint8(1);
+    const encryptedScore = scoreEnc.serialize();
+    const encryptedId = idEnc.serialize();
+
+    scoreEnc.free();
+    idEnc.free();
+    expander.free();
+    list.free();
+    pk.free();
+
+    return { encryptedScore, encryptedId };
+  }
 
   /** Kodiert Bytes als Base64-String für den HTTP-Transport. Chunk-sicher für große Puffer. */
   toBase64(bytes: Uint8Array): string {

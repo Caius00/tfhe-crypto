@@ -1,6 +1,6 @@
 use axum::{routing::post, Json, Router};
-use health;
 use base64::{engine::general_purpose, Engine as _};
+use health;
 use serde::{Deserialize, Serialize};
 use tfhe::prelude::*;
 use tfhe::{CompressedServerKey, FheBool, FheUint8};

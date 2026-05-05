@@ -45,7 +45,7 @@ module.exports = Object.fromEntries(
       target,
       changeOrigin: true,
       ...(target === LOCAL && {
-        rewrite: (p) => p.replace(new RegExp(`^${path}`), '/'),
+        rewrite: (p) => p.replace(new RegExp(`^${path}`), '') || '/',
       }),
     },
   ])
