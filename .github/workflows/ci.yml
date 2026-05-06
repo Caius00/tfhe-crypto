@@ -17,7 +17,7 @@ env:
 
 jobs:
   changes:
-    runs-on: ubuntu-latest
+    runs-on: arc-runners
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
       any: ${{ steps.matrix.outputs.any }}
@@ -99,7 +99,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.any == 'true'
     name: "${{ matrix.nr }} ${{ matrix.service }}"
-    runs-on: ubuntu-latest
+    runs-on: arc-runners
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.changes.outputs.matrix) }}
@@ -144,7 +144,7 @@ jobs:
   summary:
     needs: check
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: arc-runners
     steps:
       - uses: actions/download-artifact@v4
         with:
