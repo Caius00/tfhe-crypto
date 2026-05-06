@@ -3,7 +3,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/caius00/encrypted-genomics
-  tag: "0.1.7"
+  tag: "0.1.9"
   pullPolicy: IfNotPresent
 
 service:
