@@ -63,7 +63,9 @@ mod integration_tests {
             .unwrap();
         let res = app.clone().oneshot(req).await.unwrap();
         let status = res.status();
-        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let json: Value = serde_json::from_slice(&bytes)
             .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).to_string()));
         (status, json)
@@ -77,7 +79,9 @@ mod integration_tests {
             .unwrap();
         let res = app.clone().oneshot(req).await.unwrap();
         let status = res.status();
-        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let json: Value = serde_json::from_slice(&bytes)
             .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).to_string()));
         (status, json)
@@ -114,14 +118,19 @@ mod integration_tests {
 
     // ── Session erstellen (Hilfsfunktion) ────────────────────────────────────
     async fn create_test_session(app: &Router, sk_b64: &str) -> String {
-        let (_, body) = post_json(app, "/session", json!({
-            "creator_id": "alice",
-            "server_key": sk_b64,
-            "questions": [{
-                "id": 1, "text": "Test?", "question_type": "bool",
-                "options": null, "multiple": null
-            }]
-        })).await;
+        let (_, body) = post_json(
+            app,
+            "/session",
+            json!({
+                "creator_id": "alice",
+                "server_key": sk_b64,
+                "questions": [{
+                    "id": 1, "text": "Test?", "question_type": "bool",
+                    "options": null, "multiple": null
+                }]
+            }),
+        )
+        .await;
         body["session_id"].as_str().unwrap().to_string()
     }
 
@@ -133,27 +142,37 @@ mod integration_tests {
         let (app, _) = build_app();
         let (client_key, sk_b64) = generate_fhe_keys();
 
-        let (status, body) = post_json(&app, "/session", json!({
-            "creator_id": "alice",
-            "server_key": sk_b64,
-            "questions": [{
-                "id": 1,
-                "text": "Soll das Projekt fortgesetzt werden?",
-                "question_type": "bool",
-                "options": null,
-                "multiple": null
-            }]
-        })).await;
+        let (status, body) = post_json(
+            &app,
+            "/session",
+            json!({
+                "creator_id": "alice",
+                "server_key": sk_b64,
+                "questions": [{
+                    "id": 1,
+                    "text": "Soll das Projekt fortgesetzt werden?",
+                    "question_type": "bool",
+                    "options": null,
+                    "multiple": null
+                }]
+            }),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         let session_id = body["session_id"].as_str().unwrap().to_string();
         println!("✅ Session erstellt: {}", session_id);
 
         for participant in ["bob", "carol"] {
-            let (status, body) = post_json(&app, "/join", json!({
-                "session_id": session_id,
-                "participant_id": participant,
-                "enc_name_chunks": null
-            })).await;
+            let (status, body) = post_json(
+                &app,
+                "/join",
+                json!({
+                    "session_id": session_id,
+                    "participant_id": participant,
+                    "enc_name_chunks": null
+                }),
+            )
+            .await;
             assert_eq!(status, StatusCode::OK);
             assert_eq!(body["status"], "pending");
         }
@@ -165,12 +184,17 @@ mod integration_tests {
         println!("✅ Pending-Liste: 2 Einträge");
 
         for participant in ["bob", "carol"] {
-            let (status, _) = post_json(&app, "/approve", json!({
-                "session_id": session_id,
-                "creator_id": "alice",
-                "participant_id": participant,
-                "approved": true
-            })).await;
+            let (status, _) = post_json(
+                &app,
+                "/approve",
+                json!({
+                    "session_id": session_id,
+                    "creator_id": "alice",
+                    "participant_id": participant,
+                    "approved": true
+                }),
+            )
+            .await;
             assert_eq!(status, StatusCode::OK);
         }
         println!("✅ Teilnehmer genehmigt");
@@ -181,19 +205,29 @@ mod integration_tests {
         println!("✅ Pending-Liste leer");
 
         let bob_vote = encrypt_bool_as_uint8(true, &client_key);
-        let (status, _) = post_json(&app, "/vote", json!({
-            "session_id": session_id,
-            "participant_id": "bob",
-            "encrypted_votes": [[bob_vote]]
-        })).await;
+        let (status, _) = post_json(
+            &app,
+            "/vote",
+            json!({
+                "session_id": session_id,
+                "participant_id": "bob",
+                "encrypted_votes": [[bob_vote]]
+            }),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
 
         let carol_vote = encrypt_bool_as_uint8(false, &client_key);
-        let (status, _) = post_json(&app, "/vote", json!({
-            "session_id": session_id,
-            "participant_id": "carol",
-            "encrypted_votes": [[carol_vote]]
-        })).await;
+        let (status, _) = post_json(
+            &app,
+            "/vote",
+            json!({
+                "session_id": session_id,
+                "participant_id": "carol",
+                "encrypted_votes": [[carol_vote]]
+            }),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         println!("✅ Stimmen abgegeben");
 
@@ -216,49 +250,70 @@ mod integration_tests {
         let (app, _) = build_app();
         let (client_key, sk_b64) = generate_fhe_keys();
 
-        let (status, body) = post_json(&app, "/session", json!({
-            "creator_id": "alice",
-            "server_key": sk_b64,
-            "questions": [{
-                "id": 1,
-                "text": "Welches Framework?",
-                "question_type": "single",
-                "options": ["Axum", "Actix", "Warp"],
-                "multiple": null
-            }]
-        })).await;
+        let (status, body) = post_json(
+            &app,
+            "/session",
+            json!({
+                "creator_id": "alice",
+                "server_key": sk_b64,
+                "questions": [{
+                    "id": 1,
+                    "text": "Welches Framework?",
+                    "question_type": "single",
+                    "options": ["Axum", "Actix", "Warp"],
+                    "multiple": null
+                }]
+            }),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         let session_id = body["session_id"].as_str().unwrap().to_string();
         println!("✅ Session erstellt: {}", session_id);
 
         for participant in ["bob", "carol", "dave"] {
-            post_json(&app, "/join", json!({
-                "session_id": session_id,
-                "participant_id": participant,
-                "enc_name_chunks": null
-            })).await;
-            post_json(&app, "/approve", json!({
-                "session_id": session_id,
-                "creator_id": "alice",
-                "participant_id": participant,
-                "approved": true
-            })).await;
+            post_json(
+                &app,
+                "/join",
+                json!({
+                    "session_id": session_id,
+                    "participant_id": participant,
+                    "enc_name_chunks": null
+                }),
+            )
+            .await;
+            post_json(
+                &app,
+                "/approve",
+                json!({
+                    "session_id": session_id,
+                    "creator_id": "alice",
+                    "participant_id": participant,
+                    "approved": true
+                }),
+            )
+            .await;
         }
         println!("✅ Alle Teilnehmer genehmigt");
 
         for (participant, votes) in [
-            ("bob",   vec![1u8, 0u8, 0u8]),
+            ("bob", vec![1u8, 0u8, 0u8]),
             ("carol", vec![1u8, 0u8, 0u8]),
-            ("dave",  vec![0u8, 1u8, 0u8]),
+            ("dave", vec![0u8, 1u8, 0u8]),
         ] {
-            let enc_votes: Vec<String> = votes.iter()
+            let enc_votes: Vec<String> = votes
+                .iter()
                 .map(|&v| encrypt_uint8(v, &client_key))
                 .collect();
-            let (status, _) = post_json(&app, "/vote", json!({
-                "session_id": session_id,
-                "participant_id": participant,
-                "encrypted_votes": [enc_votes]
-            })).await;
+            let (status, _) = post_json(
+                &app,
+                "/vote",
+                json!({
+                    "session_id": session_id,
+                    "participant_id": participant,
+                    "encrypted_votes": [enc_votes]
+                }),
+            )
+            .await;
             assert_eq!(status, StatusCode::OK);
         }
         println!("✅ Stimmen abgegeben");
@@ -270,14 +325,17 @@ mod integration_tests {
         let results = body["encrypted_results"].as_array().unwrap();
         let option_results = results[0].as_array().unwrap();
 
-        let axum_votes  = decrypt_uint8(option_results[0].as_str().unwrap(), &client_key);
+        let axum_votes = decrypt_uint8(option_results[0].as_str().unwrap(), &client_key);
         let actix_votes = decrypt_uint8(option_results[1].as_str().unwrap(), &client_key);
-        let warp_votes  = decrypt_uint8(option_results[2].as_str().unwrap(), &client_key);
+        let warp_votes = decrypt_uint8(option_results[2].as_str().unwrap(), &client_key);
 
-        assert_eq!(axum_votes,  2);
+        assert_eq!(axum_votes, 2);
         assert_eq!(actix_votes, 1);
-        assert_eq!(warp_votes,  0);
-        println!("✅ Axum={}, Actix={}, Warp={}", axum_votes, actix_votes, warp_votes);
+        assert_eq!(warp_votes, 0);
+        println!(
+            "✅ Axum={}, Actix={}, Warp={}",
+            axum_votes, actix_votes, warp_votes
+        );
     }
 
     // =========================================================================
@@ -294,16 +352,22 @@ mod integration_tests {
         // Ungültige Session-ID
         let (status, err_body) = get_json(&app, "/pending/ungueltige-id/alice").await;
         assert!(
-            status == StatusCode::INTERNAL_SERVER_ERROR ||
-                err_body.as_str().map(|s| s.contains("nicht gefunden")).unwrap_or(false)
+            status == StatusCode::INTERNAL_SERVER_ERROR
+                || err_body
+                    .as_str()
+                    .map(|s| s.contains("nicht gefunden"))
+                    .unwrap_or(false)
         );
         println!("✅ Ungültige Session-ID wird abgelehnt");
 
         // Falscher Creator bei pending
         let (status, err_body) = get_json(&app, &format!("/pending/{}/eve", session_id)).await;
         assert!(
-            status == StatusCode::INTERNAL_SERVER_ERROR ||
-                err_body.as_str().map(|s| s.contains("autorisiert")).unwrap_or(false)
+            status == StatusCode::INTERNAL_SERVER_ERROR
+                || err_body
+                    .as_str()
+                    .map(|s| s.contains("autorisiert"))
+                    .unwrap_or(false)
         );
         println!("✅ Falscher Creator bei pending wird abgelehnt");
 
@@ -313,34 +377,54 @@ mod integration_tests {
         println!("✅ Falscher Creator bei results wird abgelehnt");
 
         // Nicht genehmigter Teilnehmer
-        post_json(&app, "/join", json!({
-            "session_id": session_id,
-            "participant_id": "mallory",
-            "enc_name_chunks": null
-        })).await;
+        post_json(
+            &app,
+            "/join",
+            json!({
+                "session_id": session_id,
+                "participant_id": "mallory",
+                "enc_name_chunks": null
+            }),
+        )
+        .await;
 
         let vote = encrypt_bool_as_uint8(true, &client_key);
-        let (status, _) = post_json(&app, "/vote", json!({
-            "session_id": session_id,
-            "participant_id": "mallory",
-            "encrypted_votes": [[vote]]
-        })).await;
+        let (status, _) = post_json(
+            &app,
+            "/vote",
+            json!({
+                "session_id": session_id,
+                "participant_id": "mallory",
+                "encrypted_votes": [[vote]]
+            }),
+        )
+        .await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         println!("✅ Nicht genehmigter Teilnehmer kann nicht abstimmen");
 
         // Falsche Stimmenanzahl
-        post_json(&app, "/approve", json!({
-            "session_id": session_id,
-            "creator_id": "alice",
-            "participant_id": "mallory",
-            "approved": true
-        })).await;
+        post_json(
+            &app,
+            "/approve",
+            json!({
+                "session_id": session_id,
+                "creator_id": "alice",
+                "participant_id": "mallory",
+                "approved": true
+            }),
+        )
+        .await;
 
-        let (status, _) = post_json(&app, "/vote", json!({
-            "session_id": session_id,
-            "participant_id": "mallory",
-            "encrypted_votes": []
-        })).await;
+        let (status, _) = post_json(
+            &app,
+            "/vote",
+            json!({
+                "session_id": session_id,
+                "participant_id": "mallory",
+                "encrypted_votes": []
+            }),
+        )
+        .await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         println!("✅ Falsche Stimmenanzahl wird abgelehnt");
     }
@@ -355,17 +439,27 @@ mod integration_tests {
 
         let session_id = create_test_session(&app, &sk_b64).await;
 
-        post_json(&app, "/join", json!({
-            "session_id": session_id,
-            "participant_id": "bob",
-            "enc_name_chunks": null
-        })).await;
-        post_json(&app, "/approve", json!({
-            "session_id": session_id,
-            "creator_id": "alice",
-            "participant_id": "bob",
-            "approved": true
-        })).await;
+        post_json(
+            &app,
+            "/join",
+            json!({
+                "session_id": session_id,
+                "participant_id": "bob",
+                "enc_name_chunks": null
+            }),
+        )
+        .await;
+        post_json(
+            &app,
+            "/approve",
+            json!({
+                "session_id": session_id,
+                "creator_id": "alice",
+                "participant_id": "bob",
+                "approved": true
+            }),
+        )
+        .await;
 
         let (status, body) = get_json(&app, &format!("/results/{}/alice", session_id)).await;
         assert_eq!(status, StatusCode::OK);
@@ -422,23 +516,33 @@ mod integration_tests {
         println!("✅ Unbekannter Teilnehmer gibt not_found");
 
         // Teilnehmer beitreten → pending
-        post_json(&app, "/join", json!({
-            "session_id": session_id,
-            "participant_id": "bob",
-            "enc_name_chunks": null
-        })).await;
+        post_json(
+            &app,
+            "/join",
+            json!({
+                "session_id": session_id,
+                "participant_id": "bob",
+                "enc_name_chunks": null
+            }),
+        )
+        .await;
         let (status, body) = get_json(&app, &format!("/status/{}/bob", session_id)).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["status"], "pending");
         println!("✅ Teilnehmer ist pending");
 
         // Teilnehmer genehmigen → approved
-        post_json(&app, "/approve", json!({
-            "session_id": session_id,
-            "creator_id": "alice",
-            "participant_id": "bob",
-            "approved": true
-        })).await;
+        post_json(
+            &app,
+            "/approve",
+            json!({
+                "session_id": session_id,
+                "creator_id": "alice",
+                "participant_id": "bob",
+                "approved": true
+            }),
+        )
+        .await;
         let (status, body) = get_json(&app, &format!("/status/{}/bob", session_id)).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["status"], "approved");
@@ -475,20 +579,30 @@ mod integration_tests {
         let (app, _) = build_app();
 
         // Ungültiger Base64
-        let (status, _) = post_json(&app, "/session", json!({
-            "creator_id": "alice",
-            "server_key": "!!!ungültiger-base64!!!",
-            "questions": []
-        })).await;
+        let (status, _) = post_json(
+            &app,
+            "/session",
+            json!({
+                "creator_id": "alice",
+                "server_key": "!!!ungültiger-base64!!!",
+                "questions": []
+            }),
+        )
+        .await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         println!("✅ Ungültiger Base64 wird abgelehnt");
 
         // Gültiger Base64 aber kein gültiger ServerKey
-        let (status, _) = post_json(&app, "/session", json!({
-            "creator_id": "alice",
-            "server_key": "dGVzdA==",
-            "questions": []
-        })).await;
+        let (status, _) = post_json(
+            &app,
+            "/session",
+            json!({
+                "creator_id": "alice",
+                "server_key": "dGVzdA==",
+                "questions": []
+            }),
+        )
+        .await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         println!("✅ Ungültiger ServerKey wird abgelehnt");
     }
@@ -502,11 +616,16 @@ mod integration_tests {
         let sk_b64 = get_server_key_b64();
 
         // Ungültige Session-ID beim Join
-        let (status, _) = post_json(&app, "/join", json!({
-            "session_id": "ungueltig",
-            "participant_id": "bob",
-            "enc_name_chunks": null
-        })).await;
+        let (status, _) = post_json(
+            &app,
+            "/join",
+            json!({
+                "session_id": "ungueltig",
+                "participant_id": "bob",
+                "enc_name_chunks": null
+            }),
+        )
+        .await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         println!("✅ Ungültige Session-ID beim Join wird abgelehnt");
 
@@ -516,11 +635,16 @@ mod integration_tests {
         get_json(&app, &format!("/finalize/{}/alice", session_id)).await;
 
         // Join nach Finalisierung
-        let (status, _) = post_json(&app, "/join", json!({
-            "session_id": session_id,
-            "participant_id": "bob",
-            "enc_name_chunks": null
-        })).await;
+        let (status, _) = post_json(
+            &app,
+            "/join",
+            json!({
+                "session_id": session_id,
+                "participant_id": "bob",
+                "enc_name_chunks": null
+            }),
+        )
+        .await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         println!("✅ Join nach Finalisierung wird abgelehnt");
     }
@@ -536,39 +660,59 @@ mod integration_tests {
         let session_id = create_test_session(&app, &sk_b64).await;
 
         // Teilnehmer beitreten
-        post_json(&app, "/join", json!({
-        "session_id": session_id,
-        "participant_id": "bob",
-        "enc_name_chunks": null
-    })).await;
+        post_json(
+            &app,
+            "/join",
+            json!({
+                "session_id": session_id,
+                "participant_id": "bob",
+                "enc_name_chunks": null
+            }),
+        )
+        .await;
 
         // Ungültige Session-ID bei approve
-        let (status, _) = post_json(&app, "/approve", json!({
-        "session_id": "ungueltig",
-        "creator_id": "alice",
-        "participant_id": "bob",
-        "approved": true
-    })).await;
+        let (status, _) = post_json(
+            &app,
+            "/approve",
+            json!({
+                "session_id": "ungueltig",
+                "creator_id": "alice",
+                "participant_id": "bob",
+                "approved": true
+            }),
+        )
+        .await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         println!("✅ Ungültige Session-ID bei approve wird abgelehnt");
 
         // Falscher Creator bei approve
-        let (status, _) = post_json(&app, "/approve", json!({
-        "session_id": session_id,
-        "creator_id": "eve",
-        "participant_id": "bob",
-        "approved": true
-    })).await;
+        let (status, _) = post_json(
+            &app,
+            "/approve",
+            json!({
+                "session_id": session_id,
+                "creator_id": "eve",
+                "participant_id": "bob",
+                "approved": true
+            }),
+        )
+        .await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         println!("✅ Falscher Creator bei approve wird abgelehnt");
 
         // Teilnehmer ablehnen (approved: false)
-        let (status, body) = post_json(&app, "/approve", json!({
-        "session_id": session_id,
-        "creator_id": "alice",
-        "participant_id": "bob",
-        "approved": false
-    })).await;
+        let (status, body) = post_json(
+            &app,
+            "/approve",
+            json!({
+                "session_id": session_id,
+                "creator_id": "alice",
+                "participant_id": "bob",
+                "approved": false
+            }),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["status"], "ok");
         println!("✅ Teilnehmer erfolgreich abgelehnt");
@@ -592,28 +736,43 @@ mod integration_tests {
         let session_id = create_test_session(&app, &sk_b64).await;
 
         // Teilnehmer beitreten + genehmigen
-        post_json(&app, "/join", json!({
-        "session_id": session_id,
-        "participant_id": "bob",
-        "enc_name_chunks": null
-    })).await;
-        post_json(&app, "/approve", json!({
-        "session_id": session_id,
-        "creator_id": "alice",
-        "participant_id": "bob",
-        "approved": true
-    })).await;
+        post_json(
+            &app,
+            "/join",
+            json!({
+                "session_id": session_id,
+                "participant_id": "bob",
+                "enc_name_chunks": null
+            }),
+        )
+        .await;
+        post_json(
+            &app,
+            "/approve",
+            json!({
+                "session_id": session_id,
+                "creator_id": "alice",
+                "participant_id": "bob",
+                "approved": true
+            }),
+        )
+        .await;
 
         // Session finalisieren
         get_json(&app, &format!("/finalize/{}/alice", session_id)).await;
 
         // Vote nach Finalisierung → Fehler
         let vote = encrypt_bool_as_uint8(true, &client_key);
-        let (status, _) = post_json(&app, "/vote", json!({
-        "session_id": session_id,
-        "participant_id": "bob",
-        "encrypted_votes": [[vote]]
-    })).await;
+        let (status, _) = post_json(
+            &app,
+            "/vote",
+            json!({
+                "session_id": session_id,
+                "participant_id": "bob",
+                "encrypted_votes": [[vote]]
+            }),
+        )
+        .await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         println!("✅ Vote nach Finalisierung wird abgelehnt");
     }
