@@ -94,12 +94,11 @@ pub async fn create_session(
     b64_decode(&req.public_key).map_err(bad_req)?;
 
     // ServerKey-Decompress ist teuer (~hunderte MB, mehrere Sekunden) → blocking pool
-    let engine = tokio::task::spawn_blocking(move || {
-        FheEngine::from_compressed_bytes(&server_key_bytes)
-    })
-    .await
-    .map_err(server_err)?
-    .map_err(bad_req)?;
+    let engine =
+        tokio::task::spawn_blocking(move || FheEngine::from_compressed_bytes(&server_key_bytes))
+            .await
+            .map_err(server_err)?
+            .map_err(bad_req)?;
 
     let session = Arc::new(Session {
         engine: Arc::new(engine),
@@ -241,7 +240,10 @@ pub async fn query_rank(
     let snapshot: Vec<(Vec<u8>, Vec<u8>)> = {
         let sorted = session.sorted.read().await;
         if !sorted.is_empty() {
-            sorted.iter().map(|e| (e.score.clone(), e.id.clone())).collect()
+            sorted
+                .iter()
+                .map(|e| (e.score.clone(), e.id.clone()))
+                .collect()
         } else {
             drop(sorted);
             session
@@ -259,11 +261,10 @@ pub async fn query_rank(
     }
 
     let engine = Arc::clone(&session.engine);
-    let bool_bytes =
-        tokio::task::spawn_blocking(move || engine.rank_matches(&snapshot, &target))
-            .await
-            .map_err(server_err)?
-            .map_err(server_err)?;
+    let bool_bytes = tokio::task::spawn_blocking(move || engine.rank_matches(&snapshot, &target))
+        .await
+        .map_err(server_err)?
+        .map_err(server_err)?;
 
     Ok(Json(RankResponse {
         matches: bool_bytes.iter().map(|b| b64_encode(b)).collect(),

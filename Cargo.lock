@@ -473,8 +473,10 @@ dependencies = [
  "health",
  "rayon",
  "serde",
+ "serde_json",
  "tfhe",
  "tokio",
+ "tower",
 ]
 
 [[package]]

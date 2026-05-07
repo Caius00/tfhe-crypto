@@ -58,14 +58,14 @@ impl FheEngine {
         new_id: &[u8],
     ) -> Result<(Vec<u8>, Vec<u8>), String> {
         self.install(|| {
-            let os: FheUint16 = bincode::deserialize(old_score)
-                .map_err(|e| format!("Deser old_score: {e}"))?;
-            let ns: FheUint16 = bincode::deserialize(new_score)
-                .map_err(|e| format!("Deser new_score: {e}"))?;
-            let oi: FheUint8 = bincode::deserialize(old_id)
-                .map_err(|e| format!("Deser old_id: {e}"))?;
-            let ni: FheUint8 = bincode::deserialize(new_id)
-                .map_err(|e| format!("Deser new_id: {e}"))?;
+            let os: FheUint16 =
+                bincode::deserialize(old_score).map_err(|e| format!("Deser old_score: {e}"))?;
+            let ns: FheUint16 =
+                bincode::deserialize(new_score).map_err(|e| format!("Deser new_score: {e}"))?;
+            let oi: FheUint8 =
+                bincode::deserialize(old_id).map_err(|e| format!("Deser old_id: {e}"))?;
+            let ni: FheUint8 =
+                bincode::deserialize(new_id).map_err(|e| format!("Deser new_id: {e}"))?;
 
             let new_wins = os.lt(&ns);
             let kept_s = new_wins.if_then_else(&ns, &os);
@@ -82,10 +82,7 @@ impl FheEngine {
     // Pro Layer laufen die Compare-and-Swap-Paare echt parallel auf dem Pool —
     // Latenz O(log² n) statt O(n²). Ciphertexts werden nur einmal deserialisiert
     // und am Ende einmal serialisiert (Layer-Schritte arbeiten in-memory).
-    pub fn sort_by_score_desc(
-        &self,
-        pairs: &mut [(Vec<u8>, Vec<u8>)],
-    ) -> Result<(), String> {
+    pub fn sort_by_score_desc(&self, pairs: &mut [(Vec<u8>, Vec<u8>)]) -> Result<(), String> {
         let n = pairs.len();
         if n < 2 {
             return Ok(());
@@ -96,15 +93,13 @@ impl FheEngine {
             let mut scores: Vec<FheUint16> = pairs
                 .par_iter()
                 .map(|(s, _)| {
-                    bincode::deserialize::<FheUint16>(s)
-                        .map_err(|e| format!("Deser score: {e}"))
+                    bincode::deserialize::<FheUint16>(s).map_err(|e| format!("Deser score: {e}"))
                 })
                 .collect::<Result<_, _>>()?;
             let mut ids: Vec<FheUint8> = pairs
                 .par_iter()
                 .map(|(_, i)| {
-                    bincode::deserialize::<FheUint8>(i)
-                        .map_err(|e| format!("Deser id: {e}"))
+                    bincode::deserialize::<FheUint8>(i).map_err(|e| format!("Deser id: {e}"))
                 })
                 .collect::<Result<_, _>>()?;
 
@@ -143,10 +138,8 @@ impl FheEngine {
 
             // 3) Sortiertes Ergebnis zurückserialisieren
             for (idx, pair) in pairs.iter_mut().enumerate() {
-                pair.0 = bincode::serialize(&scores[idx])
-                    .map_err(|e| format!("Ser score: {e}"))?;
-                pair.1 = bincode::serialize(&ids[idx])
-                    .map_err(|e| format!("Ser id: {e}"))?;
+                pair.0 = bincode::serialize(&scores[idx]).map_err(|e| format!("Ser score: {e}"))?;
+                pair.1 = bincode::serialize(&ids[idx]).map_err(|e| format!("Ser id: {e}"))?;
             }
             Ok(())
         })
@@ -171,8 +164,8 @@ impl FheEngine {
             sorted
                 .par_iter()
                 .map(|(_, id_bytes)| {
-                    let id: FheUint8 = bincode::deserialize(id_bytes)
-                        .map_err(|e| format!("Deser id: {e}"))?;
+                    let id: FheUint8 =
+                        bincode::deserialize(id_bytes).map_err(|e| format!("Deser id: {e}"))?;
                     let is_match: FheBool = id.eq(&target);
                     bincode::serialize(&is_match).map_err(|e| format!("Ser bool: {e}"))
                 })
@@ -224,4 +217,49 @@ fn batcher_layers(n: usize) -> Vec<Vec<(usize, usize)>> {
     }
 
     layers
+}
+
+#[cfg(test)]
+mod tests {
+    use super::batcher_layers;
+    use std::collections::HashSet;
+
+    // 0/1-Prinzip: ein Comparator-Netzwerk sortiert genau dann beliebige Eingaben
+    // korrekt, wenn es alle binären Eingaben sortiert. Wir prüfen also alle
+    // 2^n Bit-Sequenzen — ist das Netzwerk dort korrekt, ist es allgemein korrekt.
+    // Zusätzlich verifizieren wir die Layer-Invariante (disjunkte Paare).
+    #[test]
+    fn batcher_layers_form_a_valid_sorting_network() {
+        for n in 0usize..=8 {
+            let layers = batcher_layers(n);
+
+            for layer in &layers {
+                let mut indices = HashSet::new();
+                for &(i, j) in layer {
+                    assert!(i < j && j < n, "invalid pair ({i},{j}) for n={n}");
+                    assert!(indices.insert(i), "layer pair shares index {i} (n={n})");
+                    assert!(indices.insert(j), "layer pair shares index {j} (n={n})");
+                }
+            }
+
+            for input in 0u32..(1u32 << n) {
+                let mut arr: Vec<u8> = (0..n).map(|i| ((input >> i) & 1) as u8).collect();
+                for layer in &layers {
+                    for &(i, j) in layer {
+                        // Absteigend: tausche, wenn arr[i] < arr[j]
+                        if arr[i] < arr[j] {
+                            arr.swap(i, j);
+                        }
+                    }
+                }
+                for k in 1..n {
+                    assert!(
+                        arr[k - 1] >= arr[k],
+                        "n={n} input={input:0width$b} -> {arr:?} not sorted desc",
+                        width = n.max(1)
+                    );
+                }
+            }
+        }
+    }
 }

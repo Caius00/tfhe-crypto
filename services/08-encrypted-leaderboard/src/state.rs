@@ -9,16 +9,14 @@ use crate::fhe::FheEngine;
 pub const MAX_ENTRIES: usize = 20;
 
 // Globale State: Raumcode -> Session
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct AppState {
     sessions: Arc<RwLock<HashMap<String, Arc<Session>>>>,
 }
 
 impl AppState {
     pub fn new() -> Self {
-        Self {
-            sessions: Arc::new(RwLock::new(HashMap::new())),
-        }
+        Self::default()
     }
 
     // Session unter einem freien Raumcode einfügen — bei Kollision wird neu gewürfelt
