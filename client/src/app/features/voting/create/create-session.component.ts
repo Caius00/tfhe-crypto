@@ -140,26 +140,25 @@ export class CreateSessionComponent {
 
     const serverKeyB64 = this.tfhe.toBase64(this.keyPair.serverKeyBytes);
     const publicKeyB64 = this.keyPair.publicKeyBytes
-      ? this.tfhe.toBase64(this.keyPair.publicKeyBytes)
-      : null;
+        ? this.tfhe.toBase64(this.keyPair.publicKeyBytes)
+        : null;
 
-    this.votingService.createSession(this.creatorId(), serverKeyB64, publicKeyB64, this.questions())
+    this.votingService
+      .createSession(this.creatorId(), serverKeyB64, publicKeyB64, this.questions())
       .subscribe({
-        next: res => {
-          // ClientKey in Redis speichern
+        next: (res) => {
+          this.sessionId.set(res.session_id);
+          localStorage.setItem('creatorId', this.creatorId());
           const clientKeyBytes = this.keyPair!.clientKey.serialize();
           const clientKeyB64 = this.tfhe.toBase64(clientKeyBytes);
 
-          this.votingService.storeClientKey(res.session_id, clientKeyB64).subscribe({
-            next: () => {
-              this.sessionId.set(res.session_id);
-              localStorage.setItem('creatorId', this.creatorId());
-              this.router.navigateByUrl(`/voting/manage/${res.session_id}`);
-            },
-            error: () => this.status.set('Fehler beim Speichern des ClientKeys')
-          });
+          sessionStorage.setItem(`clientKey_${res.session_id}`, clientKeyB64);
+
+          this.router.navigateByUrl(`/voting/manage/${res.session_id}`);
         },
-        error: () => this.status.set('Fehler beim Erstellen der Session')
+        error: () => {
+          this.status.set('Fehler beim Erstellen der Session');
+        },
       });
   }
 }

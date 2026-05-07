@@ -19,7 +19,7 @@ export class JoinSessionComponent {
   private tfhe = inject(TfheService);
 
   sessionId = signal('');
-  participantId = signal('');
+  name = signal('');
 
   get hasPublicKey(): boolean {
     try {
@@ -31,9 +31,10 @@ export class JoinSessionComponent {
 
 // inside JoinSessionComponent
 async join() {
-  if (!this.sessionId() || !this.participantId()) return;
+  if (!this.sessionId() || !this.name()) return;
 
-  localStorage.setItem('participantId', this.participantId());
+  const participantId = 'p-' + crypto.randomUUID();
+  localStorage.setItem('participantId', participantId);
 
   await this.tfhe.ensureInitialized();
 
@@ -65,12 +66,11 @@ async join() {
     return;
   }
 
-  // 4) Name abfragen und verschlüsseln
-  const name = prompt('Gib deinen Namen ein') || this.participantId();
-  const encNameChunks = this.tfhe.encryptStringWithPublic(publicB64, name);
+  // 4) Name verschlüsseln mit PublicKey
+  const encNameChunks = this.tfhe.encryptStringWithPublic(publicB64, this.name());
 
   // 5) Join-Request an Backend senden
-  this.votingService.joinSession(this.sessionId(), this.participantId(), encNameChunks)
+  this.votingService.joinSession(this.sessionId(), participantId, encNameChunks)
     .subscribe({
       next: () => {
         this.router.navigate(['/voting/waiting', this.sessionId()]);
@@ -80,5 +80,4 @@ async join() {
       }
     });
 }
-
 }
