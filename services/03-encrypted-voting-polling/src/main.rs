@@ -16,7 +16,7 @@ use std::{
 
 use crate::voting::logic::{
     approve_participant, create_session, finalize_session, get_pending, get_results, get_session,
-    get_status, join_session, load_client_key, store_client_key, submit_vote,
+    get_status, join_session, submit_vote,
 };
 use crate::voting::types::AppState;
 
@@ -37,9 +37,6 @@ async fn main() {
         .route("/session", post(create_session))
         // Session-Daten abrufen (Fragen + Optionen)
         .route("/session/{session_id}", get(get_session))
-        // Key Storage in Redis
-        .route("/store-key", post(store_client_key))
-        .route("/load-key/{session_id}", get(load_client_key))
         // Join
         .route("/join", post(join_session))
         // Pending Teilnehmer
