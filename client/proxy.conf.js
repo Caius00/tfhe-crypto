@@ -38,12 +38,19 @@ const paths = [
   '/program-execution',
 ];
 
+// HTML-Navigation-Requests (Browser-Refresh, direkte URL-Eingabe) nicht proxyen —
+// Angular soll index.html ausliefern und das Routing selbst übernehmen.
+function bypass(req) {
+  if (req.headers.accept?.includes('text/html')) return '/index.html';
+}
+
 module.exports = Object.fromEntries(
   paths.map((path) => [
     path,
     {
       target,
       changeOrigin: true,
+      bypass,
       ...(target === LOCAL && {
         rewrite: (p) => p.replace(new RegExp(`^${path}`), '') || '/',
       }),
