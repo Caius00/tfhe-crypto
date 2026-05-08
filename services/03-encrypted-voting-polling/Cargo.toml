@@ -1,6 +1,6 @@
 [package]
 name = "encrypted-voting-polling"
-version = "0.1.11"
+version = "0.1.12"
 edition = "2021"
 publish = false
 description = "Encrypted Voting / Polling"
@@ -17,4 +17,3 @@ serde_json.workspace = true
 tfhe.workspace = true
 tower = { version = "0.5.3", features = ["full"] }
 tower-http = { version = "0.6.8", features = ["cors"] }
-redis = { version = "0.25", features = ["tokio-comp"] }

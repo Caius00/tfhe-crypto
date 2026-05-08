@@ -1,13 +1,7 @@
 <h2>Session beitreten</h2>
 
 <app-input label="Session ID" [value]="sessionId()" (valueChange)="sessionId.set($event)" />
-<app-input label="Teilnehmer ID" [value]="participantId()" (valueChange)="participantId.set($event)" />
-
-<!-- Optional: Teilnehmername (wird verschlüsselt) -->
-<label style="display:block; margin-top:8px;">
-  <span>Name (wird verschlüsselt)</span>
-  <input placeholder="Name" #nameInput />
-</label>
+<app-input label="Name (wird verschlüsselt)" [value]="name()" (valueChange)="name.set($event)" />
 
 <!-- Public Key Hinweis -->
 <p *ngIf="hasPublicKey">Public Key vorhanden.</p>

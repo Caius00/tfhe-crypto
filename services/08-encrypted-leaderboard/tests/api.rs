@@ -292,6 +292,9 @@ async fn empty_leaderboard_returns_empty_entries_and_matches() {
 //   8. Rank mit kaputtem Ciphertext → 500
 #[tokio::test]
 async fn full_lifecycle_create_submit_max_sort_rank() {
+    #[cfg(debug_assertions)]
+    panic!("FHE integration test requires --release: rerun with `cargo test --release` (debug FHE is ~10× slower)");
+
     let app = fresh_app();
     let code = create_room(&app).await;
 

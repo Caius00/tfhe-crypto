@@ -9,13 +9,20 @@
   <li *ngFor="let p of pending()">
     <div style="display:flex; gap:12px; align-items:center;">
       <div>
-        <b>{{ p.participant_id }}</b>
         <div style="font-size:0.95em; color:gray;">
-          {{ decryptName(p.enc_name_chunks) }}
+            @if (decryptedNames()[p.participant_id]) {
+                Name entschlüsselt {{ decryptedNames()[p.participant_id] }}
+            } @else {
+                <i> Name verschlüsselt</i>
+            }
         </div>
       </div>
 
       <div style="margin-left:auto; display:flex; gap:8px;">
+          <app-button
+                  label="Name entschlüsseln"
+                  (clicked)="decryptNameForParticipant(p.participant_id, p.enc_name_chunks)">
+          </app-button>
         <app-button label="✔" (clicked)="approve(p.participant_id)"></app-button>
         <app-button label="✖" (clicked)="reject(p.participant_id)"></app-button>
       </div>
@@ -34,9 +41,10 @@
 <p>{{ status() }}</p>
 <button (click)="decryptFinalResults()">Ergebnisse entschlüsseln</button>
 
-<div *ngIf="results() && results().length > 0">
+<!-- Entschlüsselte Ergebnisse anzeigen -->
+<div *ngIf="decryptedResults() && decryptedResults().length > 0">
   <h3>Auswertung:</h3>
-  <div *ngFor="let r of results(); let i = index" style="margin-bottom:12px;">
+  <div *ngFor="let r of decryptedResults(); let i = index" style="margin-bottom:12px;">
     <p><b>{{ questions()[i]?.text }}</b></p>
 
     <!-- Wenn Ergebnis ein Array (z. B. mehrere Werte) -->
@@ -51,5 +59,10 @@
     </ng-template>
   </div>
 </div>
+
+<!-- Verschlüsselte Ergebnisse geladen aber noch nicht entschlüsselt -->
+<p *ngIf="results().length > 0 && decryptedResults().length === 0">
+    Ergebnisse geladen – bitte entschlüsseln
+</p>
 
 <p *ngIf="results() && results().length === 0">Noch keine Ergebnisse verfügbar</p>
