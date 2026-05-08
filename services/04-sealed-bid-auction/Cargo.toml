@@ -1,6 +1,6 @@
 [package]
 name = "sealed-bid-auction"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2021"
 publish = false
 description = "Sealed-Bid Auction"
