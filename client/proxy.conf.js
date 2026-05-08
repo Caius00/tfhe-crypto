@@ -51,6 +51,11 @@ module.exports = Object.fromEntries(
       target,
       changeOrigin: true,
       bypass,
+      configure: (proxy) => {
+        proxy.on('proxyReq', (_, req) => {
+          console.log(`[Proxy] ${req.method} ${req.url} → ${target}`);
+        });
+      },
       ...(target === LOCAL && {
         rewrite: (p) => p.replace(new RegExp(`^${path}`), '') || '/',
       }),
