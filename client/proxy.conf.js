@@ -13,7 +13,10 @@ const REMOTE = 'http://159.195.145.100';
 
 function isLocalRunning() {
   try {
-    execSync('nc -z -w 1 localhost 8080', { stdio: 'ignore', timeout: 2000 });
+    execSync(
+      `node -e "var n=require('net').createConnection(8080,'localhost');n.on('connect',()=>{n.destroy();process.exit(0)});n.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),1000)"`,
+      { stdio: 'ignore', timeout: 2000 }
+    );
     return true;
   } catch {
     return false;
