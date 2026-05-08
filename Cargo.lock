@@ -1858,9 +1858,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe"
-version = "1.5.4"
+version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c8dd9c738c359a36c23c5816240bdd1ec4d0029030019fbb832c06c5dfd3e2c"
+checksum = "c15298cfa418ee5cb50446ebeea88dc44378a35b0d6c66eabdd3b7953b239e85"
 dependencies = [
  "aligned-vec",
  "bincode",
@@ -1878,14 +1878,15 @@ dependencies = [
  "tfhe-csprng",
  "tfhe-fft",
  "tfhe-ntt",
+ "tfhe-safe-serialize",
  "tfhe-versionable",
 ]
 
 [[package]]
 name = "tfhe-csprng"
-version = "0.8.1"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7a55bd4a1063a4792d50028efec52e5002beb142ab69ddcf7828a14af9698e3"
+checksum = "7d688adceee1ea2545ed78b8242165f0cece293f965cc4a1f7755e5cfca23b5f"
 dependencies = [
  "aes",
  "getrandom 0.2.17",
@@ -1897,9 +1898,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe-fft"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "997f368a7a52f8a49bb9d4530875e70c16838d26ec2f87756ea9523315c4bc26"
+checksum = "960a6a2ef1869320837e3d45ab60bbc031c045005eb2578b20fe074a982c2e56"
 dependencies = [
  "aligned-vec",
  "bytemuck",
@@ -1912,13 +1913,24 @@ dependencies = [
 
 [[package]]
 name = "tfhe-ntt"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e4802eabdc20d780bfc32f0e631a3b6d79dc01b3597c7c7ebae0b5df60046b6"
+checksum = "10650c743ade46b166c698c8349902ed5986784a7db418c51f810bea25f09e3d"
 dependencies = [
  "aligned-vec",
  "bytemuck",
  "pulp",
+]
+
+[[package]]
+name = "tfhe-safe-serialize"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0603167ceb9c52247b80ea6e944bb0a4f2b45ce4e1f413d97af5df6dee443ff"
+dependencies = [
+ "bincode",
+ "serde",
+ "tfhe-versionable",
 ]
 
 [[package]]
@@ -2011,9 +2023,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.52.1"
+version = "1.52.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b67dee974fe86fd92cc45b7a95fdd2f99a36a6d7b0d431a231178d3d670bbcc6"
+checksum = "110a78583f19d5cdb2c5ccf321d1290344e71313c6c37d43520d386027d18386"
 dependencies = [
  "bytes",
  "libc",

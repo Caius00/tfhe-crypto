@@ -14,12 +14,12 @@ members = [
 ]
 
 [workspace.dependencies]
-axum = "0.8"
+axum = "0.8.9"
 health = { path = "shared/health" }
-tokio = { version = "1", features = ["full"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-tfhe = { version = "1.5.4", features = ["boolean", "shortint", "integer"] }
+tokio = { version = "1.52.2", features = ["full"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+tfhe = { version = "1.6.1", features = ["boolean", "shortint", "integer"] }
 
 # tfhe-rs ist ohne Optimierung praktisch unbenutzbar (Schlüsselgenerierung
 # dauert dann Minuten statt Sekunden, FHE-Ops sind ~10× langsamer). Wir
