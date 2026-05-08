@@ -33,47 +33,38 @@ jobs:
               - 'services/01-encrypted-key-value-store/**'
               - 'shared/**'
               - 'Cargo.toml'
-              - 'Cargo.lock'
             s02:
               - 'services/02-encrypted-age-verification/**'
               - 'shared/**'
               - 'Cargo.toml'
-              - 'Cargo.lock'
             s03:
               - 'services/03-encrypted-voting-polling/**'
               - 'shared/**'
               - 'Cargo.toml'
-              - 'Cargo.lock'
             s04:
               - 'services/04-sealed-bid-auction/**'
               - 'shared/**'
               - 'Cargo.toml'
-              - 'Cargo.lock'
             s05:
               - 'services/05-encrypted-statistics-service/**'
               - 'shared/**'
               - 'Cargo.toml'
-              - 'Cargo.lock'
             s06:
               - 'services/06-encrypted-genomics/**'
               - 'shared/**'
               - 'Cargo.toml'
-              - 'Cargo.lock'
             s07:
               - 'services/07-encrypted-image-processing/**'
               - 'shared/**'
               - 'Cargo.toml'
-              - 'Cargo.lock'
             s08:
               - 'services/08-encrypted-leaderboard/**'
               - 'shared/**'
               - 'Cargo.toml'
-              - 'Cargo.lock'
             s09:
               - 'services/09-encrypted-program-execution/**'
               - 'shared/**'
               - 'Cargo.toml'
-              - 'Cargo.lock'
 
       - id: matrix
         run: |
