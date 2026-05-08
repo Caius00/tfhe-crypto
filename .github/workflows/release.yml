@@ -92,6 +92,7 @@ jobs:
       contents: write
     outputs:
       matrix: ${{ steps.bump.outputs.matrix }}
+      sha: ${{ steps.bump.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -131,6 +132,7 @@ jobs:
           git push
 
           echo "matrix=$UPDATED" >> $GITHUB_OUTPUT
+          echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
   build-push:
     needs: [setup, bump]
@@ -144,9 +146,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
-
-      - run: git pull origin main
+          ref: ${{ needs.bump.outputs.sha }}
 
       - uses: dtolnay/rust-toolchain@stable
 
