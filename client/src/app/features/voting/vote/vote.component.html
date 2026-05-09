@@ -1,48 +1,61 @@
-<h2>Abstimmen</h2>
+<app-page-header
+  title="Stimme abgeben"
+  subtitle="Beantworte alle Fragen. Deine Antworten werden lokal verschlüsselt, bevor sie das Gerät verlassen." />
 
-<div *ngIf="questions().length === 0">
-    <p>Fragen werden geladen…</p>
-</div>
+@if (isSubmitting()) {
+  <app-loading-overlay
+    [fullscreen]="true"
+    message="Stimme wird verschlüsselt und gesendet..."
+    hint="Das kann einige Sekunden dauern, je nach Anzahl der Fragen." />
+}
 
-<div *ngIf="questions().length > 0">
-    <div *ngFor="let q of questions(); let i = index" style="margin-bottom:12px;">
-        <p><b>{{ q.text }}</b></p>
+@if (errorMessage()) {
+  <div class="alert-row">
+    <app-alert variant="error" [message]="errorMessage()!" />
+  </div>
+}
+@if (successMessage()) {
+  <div class="alert-row">
+    <app-alert variant="success" [message]="successMessage()!" />
+  </div>
+}
 
-        <!-- Bool -->
-        <div *ngIf="q.question_type === 'bool'">
-            <label><input type="checkbox" [checked]="voteValue()[i]" (change)="toggleBool(i)" /> Ja</label>
-        </div>
-
-        <!-- Single -->
-        <div *ngIf="q.question_type === 'single'">
-            <div *ngFor="let opt of q.options; let oi = index">
-                <label>
-                    <input type="radio" name="q{{i}}" [checked]="voteValue()[i] === oi" (change)="selectSingle(i, oi)" />
-                    {{ opt }}
-                </label>
-            </div>
-        </div>
-
-        <!-- Multiple -->
-        <div *ngIf="q.question_type === 'multiple'">
-            <div *ngFor="let opt of q.options; let oi = index">
-                <label>
-                    <input type="checkbox"
-                           (change)="toggleMultiple(i, oi)"
-                           [checked]="isOptionChecked(i, oi)" />
-                    {{ opt }}
-                </label>
-            </div>
-        </div>
-
-        <!-- Numeric -->
-        <div *ngIf="q.question_type === 'numeric'">
-            <input type="number" #numInput (input)="onNumericInput(i, numInput.value)" />
-        </div>
+@if (isLoading()) {
+  <app-loading-overlay message="Fragen werden geladen..." />
+} @else if (hasSubmitted()) {
+  <app-card variant="elevated">
+    <div class="done">
+      <div class="done-icon">✅</div>
+      <h2 class="done-title">Stimme abgegeben</h2>
+      <p class="done-desc">
+        Deine verschlüsselte Stimme wurde erfolgreich übermittelt. Du kannst diese Seite
+        jetzt schließen.
+      </p>
+      <app-button label="Zurück zur Übersicht" (clicked)="goHome()" />
     </div>
+  </app-card>
+} @else if (questions().length === 0) {
+  <app-alert variant="warning" message="Keine Fragen in dieser Session." />
+} @else {
+  <div class="questions">
+    @for (q of questions(); track q.id; let i = $index) {
+      <app-question-input
+        [question]="q"
+        [index]="i + 1"
+        [value]="answers()[i]"
+        (valueChange)="updateAnswer(i, $event)" />
+    }
+  </div>
 
-    <div style="margin-top:12px;">
-        <button type="button" (click)="submit()">Abstimmen</button>
-        <span style="margin-left:12px;">{{ voteStatus() }}</span>
-    </div>
-</div>
+  <div class="submit-row">
+    <app-button
+      label="Stimme abgeben"
+      size="lg"
+      [loading]="isSubmitting()"
+      [disabled]="!canSubmit()"
+      (clicked)="submit()" />
+    @if (!canSubmit()) {
+      <span class="hint">Bitte alle Fragen beantworten.</span>
+    }
+  </div>
+}

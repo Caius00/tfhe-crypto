@@ -2,6 +2,7 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 0.4rem;
   font-family: inherit;
   font-weight: 600;
   border: none;
@@ -17,6 +18,9 @@ button.sm { font-size: 0.7rem;  padding: 0.35rem 0.75rem; }
 button.md { font-size: 0.75rem; padding: 0.55rem 1.1rem; }
 button.lg { font-size: 0.85rem; padding: 0.7rem 1.4rem; }
 
+/* Streckt den Button auf volle Container-Breite */
+button.full { width: 100%; }
+
 /* Variants */
 button.primary   { background: var(--c-primary);  color: #fff; }
 button.secondary { background: var(--c-surface); color: var(--c-text); border: 1.5px solid var(--c-border-strong); }
@@ -30,3 +34,19 @@ button:hover:not(:disabled).ghost     { background: var(--c-bg); }
 
 button:active:not(:disabled) { transform: translateY(0); }
 button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-icon { font-size: 0.95em; line-height: 1; }
+
+/* Spinner soll sich an Button-Farbe anpassen */
+button :is(.spinner) {
+  width: 1em;
+  height: 1em;
+  border-width: 2px;
+  border-color: rgba(255,255,255,0.4);
+  border-top-color: currentColor;
+}
+button.secondary :is(.spinner),
+button.ghost     :is(.spinner) {
+  border-color: var(--c-border);
+  border-top-color: var(--c-primary);
+}

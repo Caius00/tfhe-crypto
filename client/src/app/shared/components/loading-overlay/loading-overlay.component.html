@@ -1,0 +1,15 @@
+<div class="overlay" [class.fullscreen]="fullscreen" role="status" aria-live="polite">
+  <div class="overlay-card" [class.crypto]="variant === 'crypto'">
+    @if (variant === 'crypto') {
+      <app-crypto-loader [size]="fullscreen ? 'lg' : 'md'" />
+    } @else {
+      <app-spinner />
+    }
+    <div class="text">
+      <p class="message">{{ message }}</p>
+      @if (hint) {
+        <p class="hint">{{ hint }}</p>
+      }
+    </div>
+  </div>
+</div>
