@@ -6,6 +6,7 @@ publish = false
 description = "Encrypted Key-Value Store"
 
 [dependencies]
+redis = { version = "0.25", features = ["tokio-comp"] }
 tfhe = { workspace = true, features = ["software-prng"] }
 axum.workspace = true
 health.workspace = true
