@@ -1,0 +1,26 @@
+@if (results.length === 0) {
+  <app-empty-state
+    icon="📊"
+    title="Noch keine Auswertung"
+    message="Klicke auf 'Ergebnisse laden' und anschließend auf 'Entschlüsseln', sobald alle Stimmen abgegeben wurden." />
+} @else {
+  <div class="results">
+    @for (r of results; track $index; let i = $index) {
+      <app-card variant="flat">
+        <div class="result-block">
+          <p class="result-question">{{ questions[i]?.text || 'Frage ' + (i + 1) }}</p>
+
+          @if (isArray(r)) {
+            <ul class="result-list">
+              @for (line of r; track line) {
+                <li>{{ line }}</li>
+              }
+            </ul>
+          } @else {
+            <p class="result-value">{{ r }}</p>
+          }
+        </div>
+      </app-card>
+    }
+  </div>
+}

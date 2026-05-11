@@ -1,0 +1,57 @@
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.82rem;
+  color: var(--c-text);
+}
+
+.checkbox.disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Native Input wird visuell versteckt – wir zeichnen unsere eigene Box */
+.checkbox input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.box {
+  width: 1.05rem;
+  height: 1.05rem;
+  border: 1.5px solid var(--c-border-strong);
+  border-radius: 4px;
+  background: var(--c-surface);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  flex-shrink: 0;
+}
+
+.checkbox:hover:not(.disabled) .box {
+  border-color: var(--c-primary);
+}
+
+.checkbox input:focus-visible + .box {
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+}
+
+/* Aktiver Zustand: gefüllt + Häkchen */
+.checkbox input:checked + .box {
+  background: var(--c-primary);
+  border-color: var(--c-primary);
+}
+
+.checkbox input:checked + .box::after {
+  content: '';
+  width: 0.3rem;
+  height: 0.55rem;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+
+.label { line-height: 1.4; }

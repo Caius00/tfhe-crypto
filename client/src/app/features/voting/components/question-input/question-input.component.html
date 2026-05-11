@@ -1,0 +1,44 @@
+<app-card>
+  <div class="qi-header">
+    <span class="qi-index">Frage {{ index }}</span>
+  </div>
+
+  <p class="qi-text">{{ question.text }}</p>
+
+  <div class="qi-input">
+    @switch (question.question_type) {
+      @case ('bool') {
+        <app-checkbox
+          label="Ja"
+          [checked]="boolValue"
+          (checkedChange)="onBoolChange($event)" />
+      }
+
+      @case ('single') {
+        <app-radio-group
+          [options]="radioOptions"
+          [value]="singleValue"
+          (valueChange)="onSingleChange($event)" />
+      }
+
+      @case ('multiple') {
+        <div class="qi-multi">
+          @for (opt of question.options ?? []; track opt; let i = $index) {
+            <app-checkbox
+              [label]="opt"
+              [checked]="isMultipleChecked(i)"
+              (checkedChange)="onMultipleToggle(i, $event)" />
+          }
+        </div>
+      }
+
+      @case ('numeric') {
+        <app-input
+          type="number"
+          placeholder="0–255"
+          [value]="numericValue"
+          (valueChange)="onNumericChange($event)" />
+      }
+    }
+  </div>
+</app-card>

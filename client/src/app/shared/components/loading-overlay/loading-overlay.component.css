@@ -1,0 +1,59 @@
+.overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  width: 100%;
+}
+
+/* Vollbild-Variante: legt sich über die ganze App und blockiert Klicks */
+.overlay.fullscreen {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(2px);
+  z-index: 9999;
+}
+
+.overlay-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.4rem;
+  box-shadow: var(--shadow-lg);
+  min-width: 14rem;
+}
+
+/* Crypto-Variante: mehr Atmen + leicht hellerer Akzent-Rahmen */
+.overlay-card.crypto {
+  gap: 1.25rem;
+  padding: 1.4rem 1.6rem;
+  border-color: rgba(99, 102, 241, 0.25);
+  box-shadow:
+    var(--shadow-lg),
+    0 0 0 6px rgba(99, 102, 241, 0.06);
+}
+
+.overlay-card :is(.spinner) {
+  width: 1.6rem;
+  height: 1.6rem;
+}
+
+.text { display: flex; flex-direction: column; gap: 0.15rem; }
+
+.message {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--c-text);
+  margin: 0;
+}
+
+.hint {
+  font-size: 0.75rem;
+  color: var(--c-text-muted);
+  margin: 0;
+  line-height: 1.45;
+}

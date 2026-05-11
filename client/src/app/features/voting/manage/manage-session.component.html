@@ -1,68 +1,114 @@
-<h2>Session verwalten</h2>
+<app-page-header
+  title="Session verwalten"
+  subtitle="Genehmige Teilnehmer und werte am Ende die verschlüsselten Stimmen aus.">
+  <app-badge [label]="statusLabel()" [variant]="statusVariant()" />
+</app-page-header>
 
-<p>Session ID: <b>{{ sessionId }}</b></p>
-<hr />
+@if (isInitializing()) {
+  <app-loading-overlay
+    message="Session wird geladen..."
+    hint="Schlüssel und Fragen werden vorbereitet." />
+} @else {
+  <!-- Globale Hinweise -->
+  @if (errorMessage()) {
+    <div class="alert-row">
+      <app-alert variant="error" [message]="errorMessage()!" />
+    </div>
+  }
+  @if (infoMessage()) {
+    <div class="alert-row">
+      <app-alert variant="info" [message]="infoMessage()!" />
+    </div>
+  }
 
-<h3>Teilnehmer-Anfragen</h3>
-
-<ul>
-  <li *ngFor="let p of pending()">
-    <div style="display:flex; gap:12px; align-items:center;">
-      <div>
-        <div style="font-size:0.95em; color:gray;">
-            @if (decryptedNames()[p.participant_id]) {
-                Name entschlüsselt {{ decryptedNames()[p.participant_id] }}
-            } @else {
-                <i> Name verschlüsselt</i>
-            }
+  <!-- Session-Info mit Copy-Button für die ID -->
+  <app-card variant="flat">
+    <div class="session-info">
+      <div class="info-block">
+        <span class="info-label">Session-ID</span>
+        <div class="info-value-row">
+          <code class="info-value mono">{{ sessionId }}</code>
+          <app-copy-button [value]="sessionId" label="Kopieren" />
         </div>
       </div>
-
-      <div style="margin-left:auto; display:flex; gap:8px;">
-          <app-button
-                  label="Name entschlüsseln"
-                  (clicked)="decryptNameForParticipant(p.participant_id, p.enc_name_chunks)">
-          </app-button>
-        <app-button label="✔" (clicked)="approve(p.participant_id)"></app-button>
-        <app-button label="✖" (clicked)="reject(p.participant_id)"></app-button>
+      <div class="info-block">
+        <span class="info-label">Creator</span>
+        <span class="info-value">{{ creatorId }}</span>
       </div>
     </div>
-  </li>
-</ul>
+  </app-card>
 
-<p *ngIf="pending().length === 0">Keine offenen Anfragen</p>
+  <!-- Schlüssel-Bereich (ausklappbar) -->
+  @if (sessionKeys().length > 0) {
+    <app-card>
+      <div class="keys-head">
+        <div>
+          <h2 class="section-title">Schlüssel</h2>
+          <p class="section-desc">
+            Die FHE-Schlüssel dieser Session. Inhalte sind versteckt – mit "Anzeigen"
+            sichtbar machen oder direkt kopieren.
+          </p>
+        </div>
+        <app-button
+          [label]="showKeys() ? 'Bereich einklappen' : 'Schlüssel anzeigen'"
+          variant="secondary"
+          size="sm"
+          (clicked)="showKeys.set(!showKeys())" />
+      </div>
+      @if (showKeys()) {
+        <app-key-display [keys]="sessionKeys()" />
+      }
+    </app-card>
+  }
 
-<hr />
+  <!-- Pending -->
+  <app-card>
+    <h2 class="section-title">Teilnehmer-Anfragen</h2>
+    <p class="section-desc">
+      Live-Polling alle {{ 2 }} Sekunden. Du kannst Namen einzeln entschlüsseln, um zu prüfen
+      wer beitreten möchte.
+    </p>
+    <app-pending-list
+      [entries]="pending()"
+      (decrypt)="decryptName($event)"
+      (approve)="approve($event)"
+      (reject)="reject($event)" />
+  </app-card>
 
-<button (click)="finalize()">Voting beenden</button>
+  <!-- Ergebnisse -->
+  <app-card>
+    <h2 class="section-title">Auswertung</h2>
+    <p class="section-desc">
+      Sobald alle freigegebenen Teilnehmer abgestimmt haben, kannst du die verschlüsselten
+      Aggregate laden und mit deinem Client-Key entschlüsseln.
+    </p>
 
-<h3>Ergebnisse</h3>
-<button (click)="loadResults()">Ergebnisse laden</button>
-<p>{{ status() }}</p>
-<button (click)="decryptFinalResults()">Ergebnisse entschlüsseln</button>
+    <div class="result-actions">
+      <app-button
+        label="Auswertung anzeigen"
+        variant="primary"
+        [loading]="isLoadingResults()"
+        (clicked)="showResults()" />
+    </div>
 
-<!-- Entschlüsselte Ergebnisse anzeigen -->
-<div *ngIf="decryptedResults() && decryptedResults().length > 0">
-  <h3>Auswertung:</h3>
-  <div *ngFor="let r of decryptedResults(); let i = index" style="margin-bottom:12px;">
-    <p><b>{{ questions()[i]?.text }}</b></p>
+    <!-- Lokale Status-Meldung direkt beim Button (statt nur ganz oben) -->
+    @if (resultsStatus(); as status) {
+      <div class="result-status">
+        <app-alert [variant]="status.kind" [message]="status.message" />
+      </div>
+    }
 
-    <!-- Wenn Ergebnis ein Array (z. B. mehrere Werte) -->
-    <ng-container *ngIf="isArray(r); else singleValue">
-      <ul>
-        <li *ngFor="let x of r">{{ x }}</li>
-      </ul>
-    </ng-container>
+    <app-results-view
+      [questions]="questions()"
+      [results]="decryptedResults()" />
+  </app-card>
 
-    <ng-template #singleValue>
-      <span>{{ r }}</span>
-    </ng-template>
+  <!-- Session beenden -->
+  <div class="finalize-row">
+    <app-button
+      label="Voting beenden"
+      variant="danger"
+      [loading]="isFinalizing()"
+      (clicked)="finalize()" />
   </div>
-</div>
-
-<!-- Verschlüsselte Ergebnisse geladen aber noch nicht entschlüsselt -->
-<p *ngIf="results().length > 0 && decryptedResults().length === 0">
-    Ergebnisse geladen – bitte entschlüsseln
-</p>
-
-<p *ngIf="results() && results().length === 0">Noch keine Ergebnisse verfügbar</p>
+}

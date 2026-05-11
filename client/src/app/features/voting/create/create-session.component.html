@@ -1,55 +1,90 @@
-<h2>Session erstellen</h2>
+<app-page-header
+  title="Neue Session erstellen"
+  subtitle="Erstelle eine verschlüsselte Umfrage – Schlüssel werden lokal in deinem Browser generiert." />
 
-<input placeholder="Creator ID" (input)="creatorId.set($any($event.target).value)" />
+<!-- Vollbild-Overlay während der (blockierenden) Schlüsselgenerierung -->
+@if (isGeneratingKeys()) {
+  <app-loading-overlay
+    [fullscreen]="true"
+    message="Schlüssel werden erzeugt..."
+    hint="Das kann 30–90 Sekunden dauern. Bitte Browser-Tab nicht schließen." />
+}
 
-<div style="margin-top:8px;">
-  <button (click)="generateKeys()">Keys generieren</button>
-  <span style="margin-left:12px;">{{ status() }}</span>
-</div>
-
-<!-- Public / Server Key anzeigen (falls vorhanden) -->
-<div *ngIf="sessionId() === null && hasKeyPair">
-  <p><b>Public Key (Base64)</b></p>
-  <textarea readonly rows="3" style="width:100%;">{{ publicKeyBase64 }}</textarea>
-  <p><b>Server Key (Base64)</b></p>
-  <textarea readonly rows="3" style="width:100%;">{{ serverKeyBase64 }}</textarea>
-</div>
-
-<hr />
-
-<div *ngFor="let q of questions(); let i = index" style="margin-bottom:12px;">
-  <input
-    placeholder="Fragetext"
-    [value]="q.text"
-    (input)="updateQuestion(i, $any($event.target).value)"
-    style="width:60%;"
-  />
-
- <select [value]="q.question_type" (change)="onQuestionTypeChange(i, $any($event.target).value)">
-  <option value="bool">Ja/Nein</option>
-  <option value="single">Single Choice</option>
-  <option value="multiple">Multiple Choice</option>
-  <option value="numeric">Numeric</option>
-</select>
-
-  <label style="margin-left:8px;">
-    <input type="checkbox" [checked]="q.multiple" (change)="toggleMultiple(i)" />
-    Mehrfachauswahl
-  </label>
-
-  <div *ngIf="q.question_type === 'single' || q.question_type === 'multiple'" style="margin-top:8px;">
-    <div *ngFor="let opt of (q.options || []); let oi = index" style="display:flex; gap:8px; align-items:center; margin-bottom:4px;">
-      <input [value]="opt" (input)="updateOption(i, oi, $any($event.target).value)" placeholder="Option" />
-    </div>
-    <button (click)="addOption(i)">Option hinzufügen</button>
+<!-- Globale Fehler- bzw. Erfolgsmeldung -->
+@if (errorMessage()) {
+  <div class="alert-row">
+    <app-alert variant="error" [message]="errorMessage()!" />
   </div>
-</div>
+}
+@if (successMessage()) {
+  <div class="alert-row">
+    <app-alert variant="success" [message]="successMessage()!" />
+  </div>
+}
 
-<button (click)="addQuestion()">Frage hinzufügen</button>
-<button (click)="create()">Session erstellen</button>
+<!-- Schritt 1: Stammdaten + Schlüssel -->
+<app-card>
+  <h2 class="step-title">
+    <span class="step-num">1</span> Stammdaten & Schlüssel
+  </h2>
 
-<p>{{ status() }}</p>
+  <div class="form-row">
+    <app-input
+      label="Creator-ID"
+      placeholder="z.B. dein Name oder Kürzel"
+      [value]="creatorId()"
+      (valueChange)="creatorId.set($event)" />
+  </div>
 
-<div *ngIf="sessionId()">
-  <b>Session ID:</b> {{ sessionId() }}
+  <div class="key-row">
+    <app-button
+      label="Schlüssel generieren"
+      variant="primary"
+      [loading]="isGeneratingKeys()"
+      [disabled]="hasKeys()"
+      (clicked)="generateKeys()" />
+    @if (hasKeys()) {
+      <app-badge label="Schlüssel bereit" variant="success" />
+    } @else {
+      <app-badge label="Noch keine Schlüssel" variant="neutral" />
+    }
+  </div>
+</app-card>
+
+<!-- Schritt 2: Fragen -->
+<app-card>
+  <h2 class="step-title">
+    <span class="step-num">2</span> Fragen anlegen
+  </h2>
+
+  <div class="questions">
+    @for (q of questions(); track q.id; let i = $index) {
+      <app-question-editor
+        [question]="q"
+        [index]="i + 1"
+        [canRemove]="questions().length > 1"
+        (questionChange)="updateQuestion(i, $event)"
+        (remove)="removeQuestion(i)" />
+    }
+  </div>
+
+  <div class="add-question-row">
+    <app-button
+      label="+ Frage hinzufügen"
+      variant="secondary"
+      (clicked)="addQuestion()" />
+  </div>
+</app-card>
+
+<!-- Schritt 3: Erstellen -->
+<div class="submit-row">
+  <app-button
+    label="Session erstellen"
+    size="lg"
+    [loading]="isCreating()"
+    [disabled]="!canSubmit()"
+    (clicked)="create()" />
+  @if (!canSubmit() && !isCreating()) {
+    <span class="hint">Bitte Creator-ID, Schlüssel und vollständige Fragen ausfüllen.</span>
+  }
 </div>

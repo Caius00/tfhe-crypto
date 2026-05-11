@@ -1,0 +1,28 @@
+<button
+  type="button"
+  class="copy-btn"
+  [class.pill]="variant === 'pill'"
+  [class.copied]="copied()"
+  [class.failed]="failed()"
+  [attr.aria-label]="label || 'In Zwischenablage kopieren'"
+  (click)="copy()"
+>
+  @if (copied()) {
+    <span class="icon">✓</span>
+    <span class="text">Kopiert</span>
+  } @else if (failed()) {
+    <span class="icon">✕</span>
+    <span class="text">Fehler</span>
+  } @else {
+    <span class="icon" aria-hidden="true">
+      <!-- minimalistisches Copy-Icon -->
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+      </svg>
+    </span>
+    @if (label) {
+      <span class="text">{{ label }}</span>
+    }
+  }
+</button>

@@ -111,6 +111,80 @@ export class TfheService {
     return chunks;
   }
 
+  // ---------------------------------------------------------------------------
+  // Batch-Verschlüsselung via CompactCiphertextList
+  // Statt N separate Krypto-Operationen wird EINE Liste mit N Werten
+  // verschlüsselt und danach in einzelne Ciphertexts expandiert. Für längere
+  // Eingaben (Strings, viele Vote-Optionen) deutlich schneller (typ. 5–10×).
+  // Verlangt einen TfheCompactPublicKey statt TfheCompressedPublicKey.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Verschlüsselt einen String in EINEM Batch.
+   * Jedes Zeichen wird als FheUint8 (charCode 0–255) serialisiert und zurückgegeben.
+   *
+   * Hinweis: Funktioniert nur mit ASCII / Basic-Latin. Für Umlaute o.ä. müsste
+   * man auf UTF-8-Bytes umstellen – für Voting-Namen ist das Limit unkritisch.
+   */
+  encryptStringCompact(publicKeyB64: string, text: string): string[] {
+    const pkBytes = this.fromBase64(publicKeyB64);
+    const pk = TfheCompactPublicKey.deserialize(pkBytes);
+    const builder = CompactCiphertextList.builder(pk);
+
+    for (const ch of text) {
+      builder.push_u8(ch.charCodeAt(0) & 0xff);
+    }
+
+    const list = builder.build();
+    const expander = list.expand();
+
+    const chunks: string[] = [];
+    for (let i = 0; i < text.length; i++) {
+      const enc = expander.get_uint8(i);
+      chunks.push(this.toBase64(enc.serialize()));
+      enc.free();
+    }
+
+    expander.free();
+    list.free();
+    pk.free();
+    return chunks;
+  }
+
+  /**
+   * Verschlüsselt eine Liste von uint8-Werten (0–255) in EINEM Batch.
+   * Returnt ein Array von Base64-Strings in derselben Reihenfolge.
+   *
+   * Anwendung: alle Vote-Bits einer Session in einem Aufruf statt
+   * pro Frage einzeln.
+   */
+  encryptUint8sCompact(publicKeyB64: string, values: number[]): string[] {
+    if (values.length === 0) return [];
+
+    const pkBytes = this.fromBase64(publicKeyB64);
+    const pk = TfheCompactPublicKey.deserialize(pkBytes);
+    const builder = CompactCiphertextList.builder(pk);
+
+    for (const v of values) {
+      builder.push_u8(Math.max(0, Math.min(255, Math.round(v))));
+    }
+
+    const list = builder.build();
+    const expander = list.expand();
+
+    const out: string[] = [];
+    for (let i = 0; i < values.length; i++) {
+      const enc = expander.get_uint8(i);
+      out.push(this.toBase64(enc.serialize()));
+      enc.free();
+    }
+
+    expander.free();
+    list.free();
+    pk.free();
+    return out;
+  }
+
   /**
    * Generiert ein reproduzierbares Schlüsselpaar anhand eines Seed-Werts.
    * Mit demselben Seed entsteht immer dasselbe Schlüsselpaar.

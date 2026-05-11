@@ -1,0 +1,83 @@
+.alert-row { margin-bottom: 1rem; }
+
+app-card { display: block; margin-bottom: 1.25rem; }
+
+.section-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 0.4rem 0;
+  color: var(--c-text);
+}
+
+.section-desc {
+  font-size: 0.78rem;
+  color: var(--c-text-muted);
+  margin: 0 0 1rem 0;
+  line-height: 1.5;
+}
+
+.session-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+}
+
+.info-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.info-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--c-text-muted);
+}
+
+.info-value {
+  font-size: 0.85rem;
+  color: var(--c-text);
+  word-break: break-all;
+}
+
+/* Monospace nur für IDs/Hashes – Creator-Name bleibt normal */
+.info-value.mono {
+  font-family: 'Menlo', monospace;
+}
+
+.info-value-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.keys-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.keys-head h2 { margin-bottom: 0.3rem; }
+.keys-head p { margin-bottom: 0; }
+
+.result-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.result-status { margin-bottom: 1rem; }
+
+.finalize-row {
+  display: flex;
+  justify-content: flex-end;
+}

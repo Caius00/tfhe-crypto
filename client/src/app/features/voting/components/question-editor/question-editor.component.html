@@ -1,0 +1,50 @@
+<app-card>
+  <div class="qe-header">
+    <span class="qe-index">Frage {{ index }}</span>
+    @if (canRemove) {
+      <app-button label="Entfernen" variant="ghost" size="sm" (clicked)="remove.emit()" />
+    }
+  </div>
+
+  <div class="qe-row">
+    <app-input
+      label="Fragetext"
+      placeholder="z.B. Magst du Schokolade?"
+      [value]="question.text"
+      (valueChange)="onTextChange($event)" />
+  </div>
+
+  <div class="qe-row">
+    <app-select
+      label="Antworttyp"
+      [options]="typeOptions"
+      [value]="question.question_type"
+      (valueChange)="onTypeChange($event)" />
+  </div>
+
+  <!-- Optionen nur bei Single / Multiple Choice -->
+  @if (hasOptions) {
+    <div class="qe-options">
+      <span class="qe-options-label">Antwortmöglichkeiten</span>
+      @for (opt of question.options ?? []; track $index) {
+        <div class="qe-option-row">
+          <app-input
+            placeholder="Option {{ $index + 1 }}"
+            [value]="opt"
+            (valueChange)="onOptionChange($index, $event)" />
+          <app-button
+            label="✕"
+            variant="ghost"
+            size="sm"
+            [disabled]="(question.options?.length ?? 0) <= 1"
+            (clicked)="removeOption($index)" />
+        </div>
+      }
+      <app-button
+        label="+ Option hinzufügen"
+        variant="secondary"
+        size="sm"
+        (clicked)="addOption()" />
+    </div>
+  }
+</app-card>
