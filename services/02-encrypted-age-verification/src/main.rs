@@ -4,7 +4,6 @@ mod age_verification_tests;
 use axum::http::StatusCode;
 use axum::{routing::post, Json, Router};
 use base64::{engine::general_purpose, Engine as _};
-use health;
 use serde::{Deserialize, Serialize};
 use tfhe::prelude::*;
 use tfhe::{CompressedServerKey, FheBool, FheInt8};
