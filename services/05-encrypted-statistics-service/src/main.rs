@@ -108,15 +108,11 @@ async fn compute_statistics(
 
 #[tokio::main]
 async fn main() {
-<<<<<<< HEAD
-    let app = Router::new().merge(health::router(env!("CARGO_PKG_VERSION")));
-=======
     let app = Router::new()
         .route("/", post(compute_statistics))
         .merge(health::router(env!("CARGO_PKG_VERSION")))
         // Großes Limit nötig, weil FHE-Ciphertexte sehr groß sind (~1 MB pro Wert)
         .layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024 * 1024));
->>>>>>> main
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();

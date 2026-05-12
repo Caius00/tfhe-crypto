@@ -24,9 +24,6 @@ use tower_http::cors::{Any, CorsLayer};
 
 #[tokio::main]
 async fn main() {
-<<<<<<< HEAD
-    let app = Router::new().merge(health::router(env!("CARGO_PKG_VERSION")));
-=======
     // AppState ist thread-sichere Hashmap und hält die Voting-Sessions
     let state: AppState = Arc::new(Mutex::new(HashMap::new()));
 
@@ -60,7 +57,6 @@ async fn main() {
         .merge(health::router(env!("CARGO_PKG_VERSION")))
         .layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024 * 1024))
         .layer(cors);
->>>>>>> main
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));
 
