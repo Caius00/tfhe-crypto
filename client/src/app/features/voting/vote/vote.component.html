@@ -1,0 +1,61 @@
+<app-page-header
+  title="Stimme abgeben"
+  subtitle="Beantworte alle Fragen. Deine Antworten werden lokal verschlüsselt, bevor sie das Gerät verlassen." />
+
+@if (isSubmitting()) {
+  <app-loading-overlay
+    [fullscreen]="true"
+    message="Stimme wird verschlüsselt und gesendet..."
+    hint="Das kann einige Sekunden dauern, je nach Anzahl der Fragen." />
+}
+
+@if (errorMessage()) {
+  <div class="alert-row">
+    <app-alert variant="error" [message]="errorMessage()!" />
+  </div>
+}
+@if (successMessage()) {
+  <div class="alert-row">
+    <app-alert variant="success" [message]="successMessage()!" />
+  </div>
+}
+
+@if (isLoading()) {
+  <app-loading-overlay message="Fragen werden geladen..." />
+} @else if (hasSubmitted()) {
+  <app-card variant="elevated">
+    <div class="done">
+      <div class="done-icon">✅</div>
+      <h2 class="done-title">Stimme abgegeben</h2>
+      <p class="done-desc">
+        Deine verschlüsselte Stimme wurde erfolgreich übermittelt. Du kannst diese Seite
+        jetzt schließen.
+      </p>
+      <app-button label="Zurück zur Übersicht" (clicked)="goHome()" />
+    </div>
+  </app-card>
+} @else if (questions().length === 0) {
+  <app-alert variant="warning" message="Keine Fragen in dieser Session." />
+} @else {
+  <div class="questions">
+    @for (q of questions(); track q.id; let i = $index) {
+      <app-question-input
+        [question]="q"
+        [index]="i + 1"
+        [value]="answers()[i]"
+        (valueChange)="updateAnswer(i, $event)" />
+    }
+  </div>
+
+  <div class="submit-row">
+    <app-button
+      label="Stimme abgeben"
+      size="lg"
+      [loading]="isSubmitting()"
+      [disabled]="!canSubmit()"
+      (clicked)="submit()" />
+    @if (!canSubmit()) {
+      <span class="hint">Bitte alle Fragen beantworten.</span>
+    }
+  </div>
+}

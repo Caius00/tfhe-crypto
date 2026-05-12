@@ -1,0 +1,43 @@
+@if (entries.length === 0) {
+  <app-empty-state
+    icon="🕒"
+    title="Keine offenen Anfragen"
+    message="Sobald jemand der Session beitritt, erscheint sie hier zur Freigabe." />
+} @else {
+  <ul class="pending-list">
+    @for (e of entries; track e.participantId) {
+      <li class="pending-item">
+        <div class="pending-info">
+          <span class="pending-id">{{ e.participantId }}</span>
+          @if (e.decryptedName) {
+            <span class="pending-name">👤 {{ e.decryptedName }}</span>
+          } @else {
+            <span class="pending-name encrypted">🔒 Name verschlüsselt</span>
+          }
+        </div>
+        <div class="pending-actions">
+          @if (!e.decryptedName) {
+            <app-button
+              label="Name entschlüsseln"
+              variant="ghost"
+              size="sm"
+              [disabled]="busy"
+              (clicked)="decrypt.emit(e)" />
+          }
+          <app-button
+            label="✓ Annehmen"
+            variant="primary"
+            size="sm"
+            [disabled]="busy"
+            (clicked)="approve.emit(e.participantId)" />
+          <app-button
+            label="✕ Ablehnen"
+            variant="danger"
+            size="sm"
+            [disabled]="busy"
+            (clicked)="reject.emit(e.participantId)" />
+        </div>
+      </li>
+    }
+  </ul>
+}

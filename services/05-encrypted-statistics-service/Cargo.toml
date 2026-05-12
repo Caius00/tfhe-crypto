@@ -1,6 +1,6 @@
 [package]
 name = "encrypted-statistics-service"
-version = "0.1.6"
+version = "0.1.12"
 edition = "2021"
 publish = false
 description = "Encrypted Statistics Service"
@@ -12,3 +12,6 @@ health.workspace = true
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+rayon = "1"
+bincode = "1"
+base64 = "0.22"

@@ -1,10 +1,78 @@
-use axum::Router;
+mod voting;
+
+// axum ist Webframework, mit Router werden routen definiert
+use axum::{
+    routing::{get, post},
+    Router,
+};
+
+// mittels hashmap wird die session im Arbeitsspeicher gespeichert
+// Arc = atomically reference counted -> so kann State zwischen mehreren Threads geteilt werden
+// mit Mutex -> schreibt nur ein Thread gleichzeitig auf State
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
+
+use crate::voting::logic::{
+    approve_participant, create_session, finalize_session, get_pending, get_results, get_session,
+    get_status, join_session, submit_vote,
+};
+use crate::voting::types::AppState;
+
+use tower_http::cors::{Any, CorsLayer};
 
 #[tokio::main]
 async fn main() {
+<<<<<<< HEAD
     let app = Router::new().merge(health::router(env!("CARGO_PKG_VERSION")));
+=======
+    // AppState ist thread-sichere Hashmap und hält die Voting-Sessions
+    let state: AppState = Arc::new(Mutex::new(HashMap::new()));
+
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
+    let app = Router::new()
+        // Session erstellen
+        .route("/session", post(create_session))
+        // Session-Daten abrufen (Fragen + Optionen)
+        .route("/session/{session_id}", get(get_session))
+        // Join
+        .route("/join", post(join_session))
+        // Pending Teilnehmer
+        .route("/pending/{session_id}/{creator_id}", get(get_pending))
+        // Approval
+        .route("/approve", post(approve_participant))
+        // Vote
+        .route("/vote", post(submit_vote))
+        // Status für Teilnehmer
+        .route("/status/{session_id}/{participant_id}", get(get_status))
+        // Ergebnisse
+        .route("/results/{session_id}/{creator_id}", get(get_results))
+        .route(
+            "/finalize/{session_id}/{creator_id}",
+            post(finalize_session),
+        )
+        .with_state(state)
+        .merge(health::router(env!("CARGO_PKG_VERSION")))
+        .layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024 * 1024))
+        .layer(cors);
+>>>>>>> main
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("Fehler beim Binden an Port 8080: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    println!("Voting-Server läuft auf http://{}", addr);
+
     axum::serve(listener, app).await.unwrap();
 }

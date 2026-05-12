@@ -1,3 +1,15 @@
-<button [type]="type" [disabled]="disabled" (click)="clicked.emit()">
-  {{ label }}
+<button
+  [type]="type"
+  [disabled]="disabled || loading"
+  [ngClass]="[variant, size, fullWidth ? 'full' : '']"
+  (click)="onClick()"
+>
+  @if (loading) {
+    <app-spinner />
+  } @else {
+    @if (icon) {
+      <span class="btn-icon">{{ icon }}</span>
+    }
+    <span>{{ label }}</span>
+  }
 </button>

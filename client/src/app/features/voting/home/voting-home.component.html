@@ -1,0 +1,27 @@
+<app-page-header
+  title="Verschlüsseltes Voting"
+  subtitle="Erstelle oder nimm an einer Umfrage teil – alle Stimmen bleiben Ende-zu-Ende verschlüsselt." />
+
+<div class="action-grid">
+  <app-card variant="elevated">
+    <div class="action">
+      <div class="action-icon">🗳️</div>
+      <h2 class="action-title">Neue Session erstellen</h2>
+      <p class="action-desc">
+        Lege Fragen an, generiere Schlüssel und teile die Session-ID mit deinen Teilnehmern.
+      </p>
+      <app-button label="Session erstellen" [fullWidth]="true" (clicked)="goCreate()" />
+    </div>
+  </app-card>
+
+  <app-card variant="elevated">
+    <div class="action">
+      <div class="action-icon">🔗</div>
+      <h2 class="action-title">Session beitreten</h2>
+      <p class="action-desc">
+        Du hast eine Session-ID erhalten? Tritt der Umfrage bei und gib deine Stimme ab.
+      </p>
+      <app-button label="Beitreten" variant="secondary" [fullWidth]="true" (clicked)="goJoin()" />
+    </div>
+  </app-card>
+</div>
