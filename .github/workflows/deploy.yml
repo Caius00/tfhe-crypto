@@ -32,7 +32,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: deploy
-      - run: cargo test -p ${{ inputs.service }}
+      - run: cargo test --release -p ${{ inputs.service }} -- --test-threads=1
 
   build-push:
     needs: test

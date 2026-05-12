@@ -1,0 +1,18 @@
+<div class="field" [class.has-error]="error">
+  @if (label) {
+    <label class="field-label">{{ label }}</label>
+  }
+  <select
+    class="field-select"
+    [disabled]="disabled"
+    [value]="value"
+    (change)="onChange($event)"
+  >
+    @for (opt of options; track opt.value) {
+      <option [value]="opt.value">{{ opt.label }}</option>
+    }
+  </select>
+  @if (error) {
+    <span class="field-error">{{ error }}</span>
+  }
+</div>

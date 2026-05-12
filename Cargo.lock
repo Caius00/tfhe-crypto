@@ -30,27 +30,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "alloc-no-stdlib"
-version = "2.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc7bb162ec39d46ab1ca8c77bf72e890535becd1751bb45f64c597edb4c8c6b3"
-
-[[package]]
-name = "alloc-stdlib"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94fb8275041c72129eb51b7d0322c29b8387a0386127718b096429201a5d6ece"
-dependencies = [
- "alloc-no-stdlib",
-]
-
-[[package]]
-name = "anyhow"
-version = "1.0.102"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
-
-[[package]]
 name = "arrayref"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -344,6 +323,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8efb64bd706a16a1bdde310ae86b351e4d21550d98d056f22f8a7f7a2183fec"
 
 [[package]]
+name = "byteorder"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
+
+[[package]]
 name = "bytes"
 version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -607,7 +592,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-age-verification"
-version = "0.1.7"
+version = "0.1.13"
 dependencies = [
  "axum 0.8.9",
  "axum-test",
@@ -627,7 +612,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-genomics"
-version = "0.1.6"
+version = "0.1.12"
 dependencies = [
  "axum 0.8.9",
  "health",
@@ -639,7 +624,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-image-processing"
-version = "0.1.6"
+version = "0.1.12"
 dependencies = [
  "axum 0.8.9",
  "health",
@@ -651,7 +636,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-key-value-store"
-version = "0.1.6"
+version = "0.1.12"
 dependencies = [
  "axum 0.8.9",
  "health",
@@ -663,19 +648,23 @@ dependencies = [
 
 [[package]]
 name = "encrypted-leaderboard"
-version = "0.1.6"
+version = "0.1.12"
 dependencies = [
  "axum 0.8.9",
+ "base64",
+ "bincode",
  "health",
+ "rayon",
  "serde",
  "serde_json",
  "tfhe",
  "tokio",
+ "tower",
 ]
 
 [[package]]
 name = "encrypted-program-execution"
-version = "0.1.6"
+version = "0.1.12"
 dependencies = [
  "axum 0.8.9",
  "health",
@@ -687,10 +676,13 @@ dependencies = [
 
 [[package]]
 name = "encrypted-statistics-service"
-version = "0.1.6"
+version = "0.1.12"
 dependencies = [
  "axum 0.8.9",
+ "base64",
+ "bincode",
  "health",
+ "rayon",
  "serde",
  "serde_json",
  "tfhe",
@@ -699,14 +691,19 @@ dependencies = [
 
 [[package]]
 name = "encrypted-voting-polling"
-version = "0.1.6"
+version = "0.1.13"
 dependencies = [
  "axum 0.8.9",
+ "base64",
+ "bincode",
  "health",
  "serde",
  "serde_json",
  "tfhe",
  "tokio",
+ "tower",
+ "tower-http",
+ "uuid",
 ]
 
 [[package]]
@@ -931,6 +928,16 @@ name = "hashbrown"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4f467dd6dccf739c208452f8014c75c18bb8301b050ad1cfb27153803edb0f51"
+
+[[package]]
+name = "hdrhistogram"
+version = "7.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "765c9198f173dd59ce26ff9f95ef0aafd0a0fe01fb9d72841bc5066a4c06511d"
+dependencies = [
+ "byteorder",
+ "num-traits",
+]
 
 [[package]]
 name = "health"
@@ -1536,26 +1543,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pretty_assertions"
-version = "1.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ae130e2f271fbc2ac3a40fb1d07180839cdbbe443c7a27e1e3c13c5cac0116d"
-dependencies = [
- "diff",
- "yansi",
-]
-
-[[package]]
-name = "prettyplease"
-version = "0.2.37"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
-dependencies = [
- "proc-macro2",
- "syn",
-]
-
-[[package]]
 name = "proc-macro2"
 version = "1.0.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1657,23 +1644,6 @@ name = "r-efi"
 version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
-
-[[package]]
-name = "r-efi"
-version = "6.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
-
-[[package]]
-name = "rand"
-version = "0.8.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ca0ecfa931c29007047d1bc58e623ab12e5590e8c7cc53200d5202b69266d8a"
-dependencies = [
- "libc",
- "rand_chacha 0.3.1",
- "rand_core 0.6.4",
-]
 
 [[package]]
 name = "rand"
@@ -1982,7 +1952,7 @@ checksum = "490dcfcbfef26be6800d11870ff2df8774fa6e86d047e3e8c8a76b25655e41ca"
 
 [[package]]
 name = "sealed-bid-auction"
-version = "0.1.6"
+version = "0.1.12"
 dependencies = [
  "axum 0.8.9",
  "health",
@@ -2254,9 +2224,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe"
-version = "1.5.4"
+version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c8dd9c738c359a36c23c5816240bdd1ec4d0029030019fbb832c06c5dfd3e2c"
+checksum = "c15298cfa418ee5cb50446ebeea88dc44378a35b0d6c66eabdd3b7953b239e85"
 dependencies = [
  "aligned-vec",
  "bincode",
@@ -2274,14 +2244,15 @@ dependencies = [
  "tfhe-csprng",
  "tfhe-fft",
  "tfhe-ntt",
+ "tfhe-safe-serialize",
  "tfhe-versionable",
 ]
 
 [[package]]
 name = "tfhe-csprng"
-version = "0.8.1"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7a55bd4a1063a4792d50028efec52e5002beb142ab69ddcf7828a14af9698e3"
+checksum = "7d688adceee1ea2545ed78b8242165f0cece293f965cc4a1f7755e5cfca23b5f"
 dependencies = [
  "aes",
  "getrandom 0.2.17",
@@ -2293,9 +2264,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe-fft"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "997f368a7a52f8a49bb9d4530875e70c16838d26ec2f87756ea9523315c4bc26"
+checksum = "960a6a2ef1869320837e3d45ab60bbc031c045005eb2578b20fe074a982c2e56"
 dependencies = [
  "aligned-vec",
  "bytemuck",
@@ -2308,13 +2279,24 @@ dependencies = [
 
 [[package]]
 name = "tfhe-ntt"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e4802eabdc20d780bfc32f0e631a3b6d79dc01b3597c7c7ebae0b5df60046b6"
+checksum = "10650c743ade46b166c698c8349902ed5986784a7db418c51f810bea25f09e3d"
 dependencies = [
  "aligned-vec",
  "bytemuck",
  "pulp",
+]
+
+[[package]]
+name = "tfhe-safe-serialize"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0603167ceb9c52247b80ea6e944bb0a4f2b45ce4e1f413d97af5df6dee443ff"
+dependencies = [
+ "bincode",
+ "serde",
+ "tfhe-versionable",
 ]
 
 [[package]]
@@ -2438,9 +2420,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.52.1"
+version = "1.52.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b67dee974fe86fd92cc45b7a95fdd2f99a36a6d7b0d431a231178d3d670bbcc6"
+checksum = "110a78583f19d5cdb2c5ccf321d1290344e71313c6c37d43520d386027d18386"
 dependencies = [
  "bytes",
  "libc",
@@ -2510,9 +2492,13 @@ checksum = "ebe5ef63511595f1344e2d5cfa636d973292adc0eec1f0ad45fae9f0851ab1d4"
 dependencies = [
  "futures-core",
  "futures-util",
+ "hdrhistogram",
+ "indexmap",
  "pin-project-lite",
+ "slab",
  "sync_wrapper",
  "tokio",
+ "tokio-util",
  "tower-layer",
  "tower-service",
  "tracing",

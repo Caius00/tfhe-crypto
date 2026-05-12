@@ -1,0 +1,90 @@
+<app-page-header
+  title="Neue Session erstellen"
+  subtitle="Erstelle eine verschlüsselte Umfrage – Schlüssel werden lokal in deinem Browser generiert." />
+
+<!-- Vollbild-Overlay während der (blockierenden) Schlüsselgenerierung -->
+@if (isGeneratingKeys()) {
+  <app-loading-overlay
+    [fullscreen]="true"
+    message="Schlüssel werden erzeugt..."
+    hint="Das kann 30–90 Sekunden dauern. Bitte Browser-Tab nicht schließen." />
+}
+
+<!-- Globale Fehler- bzw. Erfolgsmeldung -->
+@if (errorMessage()) {
+  <div class="alert-row">
+    <app-alert variant="error" [message]="errorMessage()!" />
+  </div>
+}
+@if (successMessage()) {
+  <div class="alert-row">
+    <app-alert variant="success" [message]="successMessage()!" />
+  </div>
+}
+
+<!-- Schritt 1: Stammdaten + Schlüssel -->
+<app-card>
+  <h2 class="step-title">
+    <span class="step-num">1</span> Stammdaten & Schlüssel
+  </h2>
+
+  <div class="form-row">
+    <app-input
+      label="Creator-ID"
+      placeholder="z.B. dein Name oder Kürzel"
+      [value]="creatorId()"
+      (valueChange)="creatorId.set($event)" />
+  </div>
+
+  <div class="key-row">
+    <app-button
+      label="Schlüssel generieren"
+      variant="primary"
+      [loading]="isGeneratingKeys()"
+      [disabled]="hasKeys()"
+      (clicked)="generateKeys()" />
+    @if (hasKeys()) {
+      <app-badge label="Schlüssel bereit" variant="success" />
+    } @else {
+      <app-badge label="Noch keine Schlüssel" variant="neutral" />
+    }
+  </div>
+</app-card>
+
+<!-- Schritt 2: Fragen -->
+<app-card>
+  <h2 class="step-title">
+    <span class="step-num">2</span> Fragen anlegen
+  </h2>
+
+  <div class="questions">
+    @for (q of questions(); track q.id; let i = $index) {
+      <app-question-editor
+        [question]="q"
+        [index]="i + 1"
+        [canRemove]="questions().length > 1"
+        (questionChange)="updateQuestion(i, $event)"
+        (remove)="removeQuestion(i)" />
+    }
+  </div>
+
+  <div class="add-question-row">
+    <app-button
+      label="+ Frage hinzufügen"
+      variant="secondary"
+      (clicked)="addQuestion()" />
+  </div>
+</app-card>
+
+<!-- Schritt 3: Erstellen -->
+<div class="submit-row">
+  <app-button
+    label="Session erstellen"
+    size="lg"
+    [loading]="isCreating()"
+    [disabled]="!canSubmit()"
+    (clicked)="create()" />
+  @if (!canSubmit() && !isCreating()) {
+    <span class="hint">Bitte Creator-ID, Schlüssel und vollständige Fragen ausfüllen.</span>
+  }
+</div>

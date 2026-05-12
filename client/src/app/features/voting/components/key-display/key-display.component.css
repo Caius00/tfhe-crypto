@@ -1,0 +1,65 @@
+.keys {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.key {
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  background: var(--c-bg);
+  padding: 0.75rem 0.9rem;
+}
+
+.key-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.55rem;
+}
+
+.key-meta { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+
+.key-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--c-text);
+  letter-spacing: 0.01em;
+}
+
+.key-desc {
+  font-size: 0.7rem;
+  color: var(--c-text-muted);
+  line-height: 1.4;
+}
+
+.key-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.key-value {
+  font-family: 'Menlo', monospace;
+  font-size: 0.7rem;
+  color: var(--c-text);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm);
+  padding: 0.55rem 0.7rem;
+  max-height: 6rem;
+  overflow-y: auto;
+  word-break: break-all;
+}
+
+/* Maskierter Zustand: gedimmt damit klar ist dass es nur ein Preview ist */
+.key-value.masked {
+  background: var(--c-bg);
+  color: var(--c-text-subtle);
+}
+
+.key-value code { display: block; }
+.key-value .muted { color: var(--c-text-subtle); }

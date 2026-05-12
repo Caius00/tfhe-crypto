@@ -1,4 +1,4 @@
-import { Component, ElementRef, OnDestroy, AfterViewInit, ViewChild, HostListener } from '@angular/core';
+import { Component, ElementRef, OnDestroy, AfterViewInit, ViewChild, HostListener, Output, EventEmitter } from '@angular/core';
 
 interface Particle {
   x: number; y: number;
@@ -52,6 +52,9 @@ function loadImg(src: string): HTMLImageElement {
 export class FlappyBirdComponent implements AfterViewInit, OnDestroy {
   @ViewChild('canvas') canvasRef!: ElementRef<HTMLCanvasElement>;
   @ViewChild('gameWindow') windowRef!: ElementRef<HTMLDivElement>;
+
+  /** Emits the final score when a game ends. */
+  @Output() gameOver = new EventEmitter<number>();
 
   private ctx!: CanvasRenderingContext2D;
 
@@ -314,6 +317,7 @@ export class FlappyBirdComponent implements AfterViewInit, OnDestroy {
         // Kollisionsprüfung
         if (this.checkCollision(H)) {
           this.bestScore = Math.max(this.bestScore, this.score);
+          this.gameOver.emit(this.score);
           this.setPhase('GAME_OVER');
           this.gameOverTimer = 0;
           this.bvx = -80;

@@ -1,0 +1,114 @@
+<app-page-header
+  title="Session verwalten"
+  subtitle="Genehmige Teilnehmer und werte am Ende die verschlüsselten Stimmen aus.">
+  <app-badge [label]="statusLabel()" [variant]="statusVariant()" />
+</app-page-header>
+
+@if (isInitializing()) {
+  <app-loading-overlay
+    message="Session wird geladen..."
+    hint="Schlüssel und Fragen werden vorbereitet." />
+} @else {
+  <!-- Globale Hinweise -->
+  @if (errorMessage()) {
+    <div class="alert-row">
+      <app-alert variant="error" [message]="errorMessage()!" />
+    </div>
+  }
+  @if (infoMessage()) {
+    <div class="alert-row">
+      <app-alert variant="info" [message]="infoMessage()!" />
+    </div>
+  }
+
+  <!-- Session-Info mit Copy-Button für die ID -->
+  <app-card variant="flat">
+    <div class="session-info">
+      <div class="info-block">
+        <span class="info-label">Session-ID</span>
+        <div class="info-value-row">
+          <code class="info-value mono">{{ sessionId }}</code>
+          <app-copy-button [value]="sessionId" label="Kopieren" />
+        </div>
+      </div>
+      <div class="info-block">
+        <span class="info-label">Creator</span>
+        <span class="info-value">{{ creatorId }}</span>
+      </div>
+    </div>
+  </app-card>
+
+  <!-- Schlüssel-Bereich (ausklappbar) -->
+  @if (sessionKeys().length > 0) {
+    <app-card>
+      <div class="keys-head">
+        <div>
+          <h2 class="section-title">Schlüssel</h2>
+          <p class="section-desc">
+            Die FHE-Schlüssel dieser Session. Inhalte sind versteckt – mit "Anzeigen"
+            sichtbar machen oder direkt kopieren.
+          </p>
+        </div>
+        <app-button
+          [label]="showKeys() ? 'Bereich einklappen' : 'Schlüssel anzeigen'"
+          variant="secondary"
+          size="sm"
+          (clicked)="showKeys.set(!showKeys())" />
+      </div>
+      @if (showKeys()) {
+        <app-key-display [keys]="sessionKeys()" />
+      }
+    </app-card>
+  }
+
+  <!-- Pending -->
+  <app-card>
+    <h2 class="section-title">Teilnehmer-Anfragen</h2>
+    <p class="section-desc">
+      Live-Polling alle {{ 2 }} Sekunden. Du kannst Namen einzeln entschlüsseln, um zu prüfen
+      wer beitreten möchte.
+    </p>
+    <app-pending-list
+      [entries]="pending()"
+      (decrypt)="decryptName($event)"
+      (approve)="approve($event)"
+      (reject)="reject($event)" />
+  </app-card>
+
+  <!-- Ergebnisse -->
+  <app-card>
+    <h2 class="section-title">Auswertung</h2>
+    <p class="section-desc">
+      Sobald alle freigegebenen Teilnehmer abgestimmt haben, kannst du die verschlüsselten
+      Aggregate laden und mit deinem Client-Key entschlüsseln.
+    </p>
+
+    <div class="result-actions">
+      <app-button
+        label="Auswertung anzeigen"
+        variant="primary"
+        [loading]="isLoadingResults()"
+        (clicked)="showResults()" />
+    </div>
+
+    <!-- Lokale Status-Meldung direkt beim Button (statt nur ganz oben) -->
+    @if (resultsStatus(); as status) {
+      <div class="result-status">
+        <app-alert [variant]="status.kind" [message]="status.message" />
+      </div>
+    }
+
+    <app-results-view
+      [questions]="questions()"
+      [results]="decryptedResults()" />
+  </app-card>
+
+  <!-- Session beenden -->
+  <div class="finalize-row">
+    <app-button
+      label="Voting beenden"
+      variant="danger"
+      [loading]="isFinalizing()"
+      (clicked)="finalize()" />
+  </div>
+}

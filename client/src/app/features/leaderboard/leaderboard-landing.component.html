@@ -1,0 +1,37 @@
+<div class="landing">
+
+  <div class="l-panel">
+    <div class="l-panel-header">
+      <img src="/games/flappy-bird/images/bird/yellowbird-upflap.png" class="l-icon" alt="" />
+      <h2 class="l-title">RAUM ERSTELLEN</h2>
+    </div>
+    <p class="l-hint">
+      Du wirst Raumersteller. Nur du kannst das Leaderboard entschlüsseln.
+      FHE-Schlüssel werden generiert <strong>(30–90 Sek.)</strong>.
+    </p>
+    <app-button label="ERSTELLEN" (clicked)="createRoom.emit()" />
+  </div>
+
+  <div class="l-panel">
+    <div class="l-panel-header">
+      <img src="/games/flappy-bird/images/pipes/pipe.png" class="l-icon pipe-icon" alt="" />
+      <h2 class="l-title">RAUM BEITRETEN</h2>
+    </div>
+    <p class="l-hint">
+      Code eingeben, Flappy Bird spielen — Score wird automatisch
+      FHE-verschlüsselt übertragen.
+    </p>
+    <app-input
+      placeholder="6-stelliger Code"
+      [value]="joinCode()"
+      (valueChange)="joinCode.set($event)"
+    />
+    <app-button
+      label="BEITRETEN"
+      variant="secondary"
+      [disabled]="joinCode().length !== 6"
+      (clicked)="onJoin()"
+    />
+  </div>
+
+</div>

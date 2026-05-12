@@ -1,0 +1,19 @@
+<div class="crypto-loader" [attr.data-size]="size" role="status" aria-label="Krypto-Operation läuft">
+  <!-- Drei rotierende Ringe: außen → Mitte → innen -->
+  <span class="ring ring-outer"></span>
+  <span class="ring ring-mid"></span>
+  <span class="ring ring-inner"></span>
+
+  <!-- Drei orbitende Punkte – kreisen um das Schloss -->
+  <span class="orbit orbit-1"><span class="dot"></span></span>
+  <span class="orbit orbit-2"><span class="dot"></span></span>
+  <span class="orbit orbit-3"><span class="dot"></span></span>
+
+  <!-- Schloss-Icon im Zentrum – pulsiert leicht -->
+  <span class="lock" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="4" y="11" width="16" height="10" rx="2" ry="2"></rect>
+      <path d="M8 11V7a4 4 0 0 1 8 0v4"></path>
+    </svg>
+  </span>
+</div>
