@@ -607,7 +607,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-age-verification"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "axum 0.8.9",
  "axum-test",
