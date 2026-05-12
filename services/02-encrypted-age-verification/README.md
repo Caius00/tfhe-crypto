@@ -1,6 +1,6 @@
 # 🪪 02 · Encrypted Age Verification
 
-![version](https://img.shields.io/badge/version-0.1.13-blue)
+![version](https://img.shields.io/badge/version-0.1.14-blue)
 
 Verify age claims on encrypted data — the actual age never leaves the client.
 
