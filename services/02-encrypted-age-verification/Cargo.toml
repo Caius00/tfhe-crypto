@@ -13,6 +13,7 @@ tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.5", features = ["full"] }
 http = "1.0"
 axum-test = "15.0"
+serial_test = "3.1.1"
 axum.workspace = true
 health.workspace = true
 tokio = { workspace = true, features = ["full"] }
