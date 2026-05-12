@@ -30,7 +30,6 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< HEAD
 name = "alloc-no-stdlib"
 version = "2.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -46,8 +45,6 @@ dependencies = [
 ]
 
 [[package]]
-=======
->>>>>>> main
 name = "anyhow"
 version = "1.0.102"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -674,20 +671,16 @@ dependencies = [
 name = "encrypted-leaderboard"
 version = "0.1.12"
 dependencies = [
-<<<<<<< HEAD
  "axum 0.8.9",
-=======
- "axum",
- "base64",
+ "base64 0.22.1",
  "bincode",
->>>>>>> main
  "health",
  "rayon",
  "serde",
  "serde_json",
  "tfhe",
  "tokio",
- "tower",
+ "tower 0.5.3",
 ]
 
 [[package]]
@@ -706,13 +699,9 @@ dependencies = [
 name = "encrypted-statistics-service"
 version = "0.1.12"
 dependencies = [
-<<<<<<< HEAD
  "axum 0.8.9",
-=======
- "axum",
- "base64",
+ "base64 0.22.1",
  "bincode",
->>>>>>> main
  "health",
  "rayon",
  "serde",
@@ -725,20 +714,16 @@ dependencies = [
 name = "encrypted-voting-polling"
 version = "0.1.13"
 dependencies = [
-<<<<<<< HEAD
  "axum 0.8.9",
-=======
- "axum",
- "base64",
+ "base64 0.22.1",
  "bincode",
->>>>>>> main
  "health",
  "serde",
  "serde_json",
  "tfhe",
  "tokio",
- "tower",
- "tower-http",
+ "tower 0.5.3",
+ "tower-http 0.6.8",
  "uuid",
 ]
 
@@ -1579,7 +1564,6 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< HEAD
 name = "pretty_assertions"
 version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1590,8 +1574,6 @@ dependencies = [
 ]
 
 [[package]]
-=======
->>>>>>> main
 name = "prettyplease"
 version = "0.2.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1711,7 +1693,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
-<<<<<<< HEAD
 name = "rand"
 version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1723,8 +1704,6 @@ dependencies = [
 ]
 
 [[package]]
-=======
->>>>>>> main
 name = "rand"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
