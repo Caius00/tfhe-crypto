@@ -1,29 +1,46 @@
 #[cfg(test)]
 mod age_verification_tests;
 
-use axum::http::StatusCode;
-use axum::{routing::post, Json, Router};
+use aide::axum::{routing::post_with, ApiRouter};
+use axum::{extract::DefaultBodyLimit, http::StatusCode, Json, Router};
 use base64::{engine::general_purpose, Engine as _};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tfhe::prelude::*;
 use tfhe::{CompressedServerKey, FheBool, FheInt8};
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, JsonSchema)]
 struct AgeRequest {
+    /// Base64-kodierter, mit dem ClientKey verschlüsselter `FheInt8` (Alter in Jahren).
     encrypted_age: String,
+    /// Base64-kodierter `CompressedServerKey` (bincode-serialisiert).
     server_key: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, JsonSchema)]
 struct AgeResponse {
+    /// Base64-kodierter `FheBool` — true wenn Alter ≥ 18 und ≥ 0.
     is_adult: String,
 }
 
 pub fn create_app() -> Router {
-    Router::new()
-        .route("/", post(verify_age))
-        .merge(health::router(env!("CARGO_PKG_VERSION")))
-        .layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024 * 1024))
+    let api_router = ApiRouter::new().api_route(
+        "/",
+        post_with(verify_age, |op| {
+            op.description("Encrypted age verification — returns an encrypted boolean.")
+                .response::<200, Json<AgeResponse>>()
+        }),
+    );
+
+    openapi_docs::attach(
+        api_router,
+        "Encrypted Age Verification",
+        "Homomorphic age-check service: compares an encrypted age against the \
+         hardcoded threshold of 18 and returns an encrypted boolean.",
+        env!("CARGO_PKG_VERSION"),
+    )
+    .merge(health::router(env!("CARGO_PKG_VERSION")))
+    .layer(DefaultBodyLimit::max(2 * 1024 * 1024 * 1024))
 }
 
 pub(crate) fn decode_server_key(
