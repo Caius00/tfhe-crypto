@@ -29,15 +29,60 @@ async fn main() {
         .allow_headers(Any);
 
     let api_router = ApiRouter::new()
-        .api_route("/session", post_with(create_session, |op| op.description("Create a new voting session.")))
-        .api_route("/session/{session_id}", get_with(get_session, |op| op.description("Get questions and public key of a session.")))
-        .api_route("/join", post_with(join_session, |op| op.description("Request to join a session (pending until approved).")))
-        .api_route("/pending/{session_id}/{creator_id}", get_with(get_pending, |op| op.description("List participants pending approval (creator only).")))
-        .api_route("/approve", post_with(approve_participant, |op| op.description("Approve or reject a pending participant.")))
-        .api_route("/vote", post_with(submit_vote, |op| op.description("Submit encrypted votes for all questions.")))
-        .api_route("/status/{session_id}/{participant_id}", get_with(get_status, |op| op.description("Poll a participant's approval status.")))
-        .api_route("/results/{session_id}/{creator_id}", get_with(get_results, |op| op.description("Fetch homomorphically aggregated results (creator only).")))
-        .api_route("/finalize/{session_id}/{creator_id}", post_with(finalize_session, |op| op.description("Close the session – no further votes accepted.")))
+        .api_route(
+            "/session",
+            post_with(create_session, |op| {
+                op.description("Create a new voting session.")
+            }),
+        )
+        .api_route(
+            "/session/{session_id}",
+            get_with(get_session, |op| {
+                op.description("Get questions and public key of a session.")
+            }),
+        )
+        .api_route(
+            "/join",
+            post_with(join_session, |op| {
+                op.description("Request to join a session (pending until approved).")
+            }),
+        )
+        .api_route(
+            "/pending/{session_id}/{creator_id}",
+            get_with(get_pending, |op| {
+                op.description("List participants pending approval (creator only).")
+            }),
+        )
+        .api_route(
+            "/approve",
+            post_with(approve_participant, |op| {
+                op.description("Approve or reject a pending participant.")
+            }),
+        )
+        .api_route(
+            "/vote",
+            post_with(submit_vote, |op| {
+                op.description("Submit encrypted votes for all questions.")
+            }),
+        )
+        .api_route(
+            "/status/{session_id}/{participant_id}",
+            get_with(get_status, |op| {
+                op.description("Poll a participant's approval status.")
+            }),
+        )
+        .api_route(
+            "/results/{session_id}/{creator_id}",
+            get_with(get_results, |op| {
+                op.description("Fetch homomorphically aggregated results (creator only).")
+            }),
+        )
+        .api_route(
+            "/finalize/{session_id}/{creator_id}",
+            post_with(finalize_session, |op| {
+                op.description("Close the session – no further votes accepted.")
+            }),
+        )
         .with_state(state);
 
     let app = openapi_docs::attach(

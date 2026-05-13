@@ -21,12 +21,7 @@ use axum::{http::header, routing::get, Extension, Router};
 /// `axum::Router` zurück. Das Spec wird einmal beim Startup serialisiert.
 ///
 /// Aufrufer ist dafür verantwortlich, `with_state(...)` vorher zu setzen.
-pub fn attach(
-    router: ApiRouter,
-    title: &str,
-    description: &str,
-    version: &str,
-) -> Router {
+pub fn attach(router: ApiRouter, title: &str, description: &str, version: &str) -> Router {
     let mut api = OpenApi {
         info: Info {
             title: title.into(),
@@ -48,5 +43,8 @@ pub fn attach(
 }
 
 async fn serve_openapi(Extension(spec): Extension<Arc<String>>) -> impl IntoApiResponse {
-    ([(header::CONTENT_TYPE, "application/json")], spec.to_string())
+    (
+        [(header::CONTENT_TYPE, "application/json")],
+        spec.to_string(),
+    )
 }
