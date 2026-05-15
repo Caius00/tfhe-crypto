@@ -3,6 +3,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -16,49 +17,55 @@ pub type ApiError = (StatusCode, String);
 // Request-/Response-Typen
 // ---------------------------------------------------------------------------
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 pub struct CreateRequest {
+    /// Base64-kodierter `CompressedServerKey` (bincode-serialisiert).
     pub server_key: String,
+    /// Base64-kodierter Public-Key (an Spieler weitergereicht, sonst unverändert).
     pub public_key: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, JsonSchema)]
 pub struct CreateResponse {
+    /// 6-stelliger Raumcode, den E mit Spielern teilt.
     pub code: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, JsonSchema)]
 pub struct PublicKeyResponse {
     pub public_key: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 pub struct SubmitRequest {
+    /// Klartext-Schlüssel des Spielers (für Server-seitiges Dedup).
     pub player_key: String,
+    /// Base64-kodierter `FheUint16`.
     pub encrypted_score: String,
+    /// Base64-kodierter `FheUint8`.
     pub encrypted_id: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, JsonSchema)]
 pub struct EntryDto {
     pub encrypted_score: String,
     pub encrypted_id: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, JsonSchema)]
 pub struct EntriesResponse {
     pub entries: Vec<EntryDto>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 pub struct RankRequest {
     pub encrypted_id: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, JsonSchema)]
 pub struct RankResponse {
-    // Pro Position der sortierten Liste: ein verschlüsselter Bool
-    // (true = die Kennung passt). 1-basierter Rang = Index + 1.
+    /// Pro Position der sortierten Liste: ein verschlüsselter Bool
+    /// (true = die Kennung passt). 1-basierter Rang = Index + 1.
     pub matches: Vec<String>,
 }
 

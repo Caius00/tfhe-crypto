@@ -28,6 +28,8 @@ Einträge ohne sie jemals lesen zu können — nur der Raum-Ersteller kann entsc
 | `POST` | `/{code}/submit` | Score abgeben — Body: `{player_key, encrypted_score, encrypted_id}` |
 | `GET`  | `/{code}/entries` | Aktuelle (sortierte) Liste — Response: `{entries: [{encrypted_score, encrypted_id}]}` |
 | `POST` | `/{code}/rank` | Rang einer Kennung abfragen — Body: `{encrypted_id}`, Response: `{matches: [b64,…]}` |
+| `GET`  | `/docs` | Swagger UI |
+| `GET`  | `/openapi.json` | OpenAPI 3.1 Spec |
 | `GET`  | `/version` | Service-Version |
 | `GET`  | `/healthz` | Liveness Probe |
 | `GET`  | `/readyz` | Readiness Probe |

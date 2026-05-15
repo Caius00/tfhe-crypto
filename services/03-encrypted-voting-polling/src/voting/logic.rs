@@ -1,7 +1,7 @@
 use crate::voting::types::{
     AppState, ApproveRequest, CreateSessionRequest, CreateSessionResponse, JoinRequest,
-    JoinResponse, ParticipantState, Question, QuestionType, ResultResponse, SessionState,
-    VoteRequest, VoteResponse,
+    JoinResponse, ParticipantState, ParticipantStatusResponse, Question, QuestionType,
+    ResultResponse, SessionInfoResponse, SessionState, StatusResponse, VoteRequest, VoteResponse,
 };
 use axum::http::StatusCode;
 use axum::{
@@ -9,6 +9,7 @@ use axum::{
     Json,
 };
 use base64::{engine::general_purpose, Engine as _};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tfhe::{CompressedServerKey, FheUint8};
@@ -79,7 +80,7 @@ pub async fn join_session(
     }))
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, JsonSchema)]
 pub struct PendingEntry {
     pub participant_id: String,
     pub enc_name_chunks: Option<Vec<String>>,
@@ -113,7 +114,7 @@ pub async fn get_pending(
 pub async fn approve_participant(
     State(state): State<AppState>,
     Json(req): Json<ApproveRequest>,
-) -> ApiResult<serde_json::Value> {
+) -> ApiResult<StatusResponse> {
     let mut map = state.lock().unwrap();
     let session = map
         .get_mut(&req.session_id)
@@ -131,7 +132,9 @@ pub async fn approve_participant(
         session.participants.remove(&req.participant_id);
     }
 
-    Ok(Json(serde_json::json!({ "status": "ok" })))
+    Ok(Json(StatusResponse {
+        status: "ok".to_string(),
+    }))
 }
 
 /// POST /vote – Teilnehmer gibt verschlüsselte Stimmen ab
@@ -282,7 +285,7 @@ pub async fn get_results(
 pub async fn finalize_session(
     State(state): State<AppState>,
     Path((session_id, creator_id)): Path<(String, String)>,
-) -> ApiResult<serde_json::Value> {
+) -> ApiResult<StatusResponse> {
     let mut map = state.lock().unwrap();
 
     let session = map
@@ -295,21 +298,20 @@ pub async fn finalize_session(
 
     session.finalized = true;
 
-    Ok(Json(serde_json::json!({ "status": "finalized" })))
+    Ok(Json(StatusResponse {
+        status: "finalized".to_string(),
+    }))
 }
 
 pub async fn get_status(
     State(state): State<AppState>,
     Path((session_id, participant_id)): Path<(String, String)>,
-) -> Result<Json<serde_json::Value>, ApiError> {
+) -> ApiResult<ParticipantStatusResponse> {
     let map = state.lock().unwrap();
 
-    let session = match map.get(&session_id) {
-        Some(s) => s,
-        None => {
-            return Err((StatusCode::NOT_FOUND, "Session nicht gefunden".to_string()));
-        }
-    };
+    let session = map
+        .get(&session_id)
+        .ok_or((StatusCode::NOT_FOUND, "Session nicht gefunden".to_string()))?;
 
     println!(
         "STATUS CHECK -> session: {}, participant: {}",
@@ -322,9 +324,9 @@ pub async fn get_status(
         None => "not_found",
     };
 
-    Ok(Json(serde_json::json!({
-        "status": status
-    })))
+    Ok(Json(ParticipantStatusResponse {
+        status: status.to_string(),
+    }))
 }
 
 //
@@ -333,14 +335,14 @@ pub async fn get_status(
 pub async fn get_session(
     State(state): State<AppState>,
     Path(session_id): Path<String>,
-) -> ApiResult<serde_json::Value> {
+) -> ApiResult<SessionInfoResponse> {
     let map = state.lock().unwrap();
 
     let session = map.get(&session_id).ok_or(err("Session nicht gefunden"))?;
 
-    Ok(Json(serde_json::json!({
-        "session_id": session_id,
-        "questions": session.questions,
-        "public_key": session.public_key, // neu
-    })))
+    Ok(Json(SessionInfoResponse {
+        session_id,
+        questions: session.questions.clone(),
+        public_key: session.public_key.clone(),
+    }))
 }
