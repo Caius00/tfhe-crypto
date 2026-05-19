@@ -43,7 +43,9 @@ const paths = [
 
 // HTML-Navigation-Requests (Browser-Refresh, direkte URL-Eingabe) nicht proxyen —
 // Angular soll index.html ausliefern und das Routing selbst übernehmen.
+// Ausnahme: OpenAPI-Doku-Seiten (/docs) müssen vom Backend kommen, nicht von Angular.
 function bypass(req) {
+  if (req.url.endsWith('/docs') || req.url.endsWith('/openapi.json')) return null;
   if (req.headers.accept?.includes('text/html')) return '/index.html';
 }
 

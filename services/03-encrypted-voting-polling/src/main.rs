@@ -1,26 +1,22 @@
 mod voting;
 
-// axum ist Webframework, mit Router werden routen definiert
-use axum::{
-    routing::{get, post},
-    Router,
-};
-
-// mittels hashmap wird die session im Arbeitsspeicher gespeichert
-// Arc = atomically reference counted -> so kann State zwischen mehreren Threads geteilt werden
-// mit Mutex -> schreibt nur ein Thread gleichzeitig auf State
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
+
+use aide::axum::{
+    routing::{get_with, post_with},
+    ApiRouter,
+};
+use axum::extract::DefaultBodyLimit;
+use tower_http::cors::{Any, CorsLayer};
 
 use crate::voting::logic::{
     approve_participant, create_session, finalize_session, get_pending, get_results, get_session,
     get_status, join_session, submit_vote,
 };
 use crate::voting::types::AppState;
-
-use tower_http::cors::{Any, CorsLayer};
 
 #[tokio::main]
 async fn main() {
@@ -32,31 +28,74 @@ async fn main() {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    let app = Router::new()
-        // Session erstellen
-        .route("/session", post(create_session))
-        // Session-Daten abrufen (Fragen + Optionen)
-        .route("/session/{session_id}", get(get_session))
-        // Join
-        .route("/join", post(join_session))
-        // Pending Teilnehmer
-        .route("/pending/{session_id}/{creator_id}", get(get_pending))
-        // Approval
-        .route("/approve", post(approve_participant))
-        // Vote
-        .route("/vote", post(submit_vote))
-        // Status für Teilnehmer
-        .route("/status/{session_id}/{participant_id}", get(get_status))
-        // Ergebnisse
-        .route("/results/{session_id}/{creator_id}", get(get_results))
-        .route(
-            "/finalize/{session_id}/{creator_id}",
-            post(finalize_session),
+    let api_router = ApiRouter::new()
+        .api_route(
+            "/session",
+            post_with(create_session, |op| {
+                op.description("Create a new voting session.")
+            }),
         )
-        .with_state(state)
-        .merge(health::router(env!("CARGO_PKG_VERSION")))
-        .layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024 * 1024))
-        .layer(cors);
+        .api_route(
+            "/session/{session_id}",
+            get_with(get_session, |op| {
+                op.description("Get questions and public key of a session.")
+            }),
+        )
+        .api_route(
+            "/join",
+            post_with(join_session, |op| {
+                op.description("Request to join a session (pending until approved).")
+            }),
+        )
+        .api_route(
+            "/pending/{session_id}/{creator_id}",
+            get_with(get_pending, |op| {
+                op.description("List participants pending approval (creator only).")
+            }),
+        )
+        .api_route(
+            "/approve",
+            post_with(approve_participant, |op| {
+                op.description("Approve or reject a pending participant.")
+            }),
+        )
+        .api_route(
+            "/vote",
+            post_with(submit_vote, |op| {
+                op.description("Submit encrypted votes for all questions.")
+            }),
+        )
+        .api_route(
+            "/status/{session_id}/{participant_id}",
+            get_with(get_status, |op| {
+                op.description("Poll a participant's approval status.")
+            }),
+        )
+        .api_route(
+            "/results/{session_id}/{creator_id}",
+            get_with(get_results, |op| {
+                op.description("Fetch homomorphically aggregated results (creator only).")
+            }),
+        )
+        .api_route(
+            "/finalize/{session_id}/{creator_id}",
+            post_with(finalize_session, |op| {
+                op.description("Close the session – no further votes accepted.")
+            }),
+        )
+        .with_state(state);
+
+    let app = openapi_docs::attach(
+        api_router,
+        "Encrypted Voting / Polling",
+        "Homomorphic voting and polling service: creator-controlled sessions, \
+         approval flow for participants, encrypted ballots that are aggregated \
+         server-side without ever being decrypted.",
+        env!("CARGO_PKG_VERSION"),
+    )
+    .merge(health::router(env!("CARGO_PKG_VERSION")))
+    .layer(DefaultBodyLimit::max(2 * 1024 * 1024 * 1024))
+    .layer(cors);
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));
 
