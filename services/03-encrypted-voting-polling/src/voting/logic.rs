@@ -86,9 +86,34 @@ pub struct PendingEntry {
     pub enc_name_chunks: Option<Vec<String>>,
 }
 
+#[derive(Deserialize, JsonSchema)]
+pub struct SessionPath {
+    /// UUID der Voting-Session.
+    pub session_id: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct SessionCreatorPath {
+    /// UUID der Voting-Session.
+    pub session_id: String,
+    /// Kennung des Erstellers (zur Autorisierung).
+    pub creator_id: String,
+}
+
+#[derive(Deserialize, JsonSchema)]
+pub struct SessionParticipantPath {
+    /// UUID der Voting-Session.
+    pub session_id: String,
+    /// Kennung des Teilnehmers.
+    pub participant_id: String,
+}
+
 pub async fn get_pending(
     State(state): State<AppState>,
-    Path((session_id, creator_id)): Path<(String, String)>,
+    Path(SessionCreatorPath {
+        session_id,
+        creator_id,
+    }): Path<SessionCreatorPath>,
 ) -> ApiResult<Vec<PendingEntry>> {
     let map = state.lock().unwrap();
     let session = map.get(&session_id).ok_or(err("Session nicht gefunden"))?;
@@ -248,7 +273,10 @@ pub fn aggregate_votes_ciphertext_only(
 /// GET /results/:session_id/:creator_id – Ersteller pollt das verschlüsselte Ergebnis
 pub async fn get_results(
     State(state): State<AppState>,
-    Path((session_id, creator_id)): Path<(String, String)>,
+    Path(SessionCreatorPath {
+        session_id,
+        creator_id,
+    }): Path<SessionCreatorPath>,
 ) -> ApiResult<ResultResponse> {
     let map = state.lock().unwrap();
 
@@ -284,7 +312,10 @@ pub async fn get_results(
 
 pub async fn finalize_session(
     State(state): State<AppState>,
-    Path((session_id, creator_id)): Path<(String, String)>,
+    Path(SessionCreatorPath {
+        session_id,
+        creator_id,
+    }): Path<SessionCreatorPath>,
 ) -> ApiResult<StatusResponse> {
     let mut map = state.lock().unwrap();
 
@@ -305,7 +336,10 @@ pub async fn finalize_session(
 
 pub async fn get_status(
     State(state): State<AppState>,
-    Path((session_id, participant_id)): Path<(String, String)>,
+    Path(SessionParticipantPath {
+        session_id,
+        participant_id,
+    }): Path<SessionParticipantPath>,
 ) -> ApiResult<ParticipantStatusResponse> {
     let map = state.lock().unwrap();
 
@@ -334,7 +368,7 @@ pub async fn get_status(
 //
 pub async fn get_session(
     State(state): State<AppState>,
-    Path(session_id): Path<String>,
+    Path(SessionPath { session_id }): Path<SessionPath>,
 ) -> ApiResult<SessionInfoResponse> {
     let map = state.lock().unwrap();
 
