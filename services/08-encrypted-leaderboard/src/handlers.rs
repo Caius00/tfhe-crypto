@@ -31,6 +31,12 @@ pub struct CreateResponse {
     pub code: String,
 }
 
+#[derive(Deserialize, JsonSchema)]
+pub struct CodePath {
+    /// 6-stelliger Raumcode des Leaderboards.
+    pub code: String,
+}
+
 #[derive(Serialize, JsonSchema)]
 pub struct PublicKeyResponse {
     pub public_key: String,
@@ -122,7 +128,7 @@ pub async fn create_session(
 // Liefert den Public-Key des Raums an Spieler zurück.
 pub async fn get_public_key(
     State(state): State<AppState>,
-    Path(code): Path<String>,
+    Path(CodePath { code }): Path<CodePath>,
 ) -> Result<Json<PublicKeyResponse>, ApiError> {
     let session = require_session(&state, &code).await?;
     Ok(Json(PublicKeyResponse {
@@ -136,7 +142,7 @@ pub async fn get_public_key(
 // Ein Hintergrund-Sort wird angetriggert (Single-Flight, siehe spawn_sort_if_idle).
 pub async fn submit_score(
     State(state): State<AppState>,
-    Path(code): Path<String>,
+    Path(CodePath { code }): Path<CodePath>,
     Json(req): Json<SubmitRequest>,
 ) -> Result<StatusCode, ApiError> {
     let new_score = b64_decode(&req.encrypted_score).map_err(bad_req)?;
@@ -202,7 +208,7 @@ pub async fn submit_score(
 // kann die Inhalte überhaupt entschlüsseln.
 pub async fn get_entries(
     State(state): State<AppState>,
-    Path(code): Path<String>,
+    Path(CodePath { code }): Path<CodePath>,
 ) -> Result<Json<EntriesResponse>, ApiError> {
     let session = require_session(&state, &code).await?;
 
@@ -237,7 +243,7 @@ pub async fn get_entries(
 // Lokale Auswertung bei E ergibt 0..n Ränge — funktioniert auch bei Mehrfach-Treffern.
 pub async fn query_rank(
     State(state): State<AppState>,
-    Path(code): Path<String>,
+    Path(CodePath { code }): Path<CodePath>,
     Json(req): Json<RankRequest>,
 ) -> Result<Json<RankResponse>, ApiError> {
     let target = b64_decode(&req.encrypted_id).map_err(bad_req)?;
