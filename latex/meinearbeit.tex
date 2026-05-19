@@ -60,37 +60,39 @@
 
 % Sonstiges
 %\allowdisplaybreaks
+\setlength{\parindent}{0em}
+\setlength{\parskip}{0em}
 %\makeatletter
 %\renewcommand{\fps@figure}{ht!}
 %\renewcommand{\fps@table}{ht!}
 %\setlength{\@fptop}{0pt}
 %\makeatother
 
-
 \begin{document}
 
-\setlength{\parindent}{1em}
-\setlength{\parskip}{0em}
+    \maketitle
+    \clearpage
+    \setlength{\parskip}{1em}
 
-\maketitle
+    \input{contents/notice.tex}
+    \clearpage
+    \setlength{\parskip}{0em}
 
-\clearpage
+    \tableofcontents
+    \clearpage
+    \setlength{\parskip}{1em}
 
-\tableofcontents
+    \input{contents/einleitung.tex}
+    % Hier können weitere Kapitel oder Abschnitte eingefügt werden
 
-\setlength{\parindent}{1em}
-\setlength{\parskip}{0em}
+    \appendix
+    \clearpage
+    \setlength{\parskip}{0em}
 
-\input{contents/einleitung.tex}
+    \input{contents/anhang.tex}
+    \clearpage
 
-\appendix
-
-\input{contents/anhang.tex}
-
-\bibliographystyle{halpha-abbrv} % Support curstom abbreviation labels, see https://www.math.cmu.edu/~gautam/sj/blog/20171114-bibtex-doi.html
-\bibliography{meinearbeit}
-
-\setlength{\parindent}{1em}
-\setlength{\parskip}{0em}
+    \bibliographystyle{halpha-abbrv} % Support curstom abbreviation labels, see https://www.math.cmu.edu/~gautam/sj/blog/20171114-bibtex-doi.html
+    \bibliography{meinearbeit}
 
 \end{document}
