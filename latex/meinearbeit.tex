@@ -1,21 +1,14 @@
-\documentclass[a4paper,oneside,openright,11pt]{book}
+% !TEX root = ../meinearbeit.tex
+
+\documentclass[12pt]{article}
+
+\usepackage[a4paper,margin=2cm]{geometry}
 
 \usepackage[T1]{fontenc}
-
-%%%%%%%% Schriftart Latin Modern verwenden:
 \usepackage{lmodern}
-
-
-%%%%%%%% Um Helvetica serifenlos zu verwenden, folgende Zeilen auskommentieren:
-%\renewcommand{\familydefault}{\sfdefault}
-%\usepackage{helvet} 
-
-
-\usepackage[utf8]{inputenc} % ggf. Editor auf utf8 stellen!!
-
+\usepackage[utf8]{inputenc}
 \usepackage[ngerman]{babel}
-
-\usepackage{ngerman} % unter anderem für bessere Silbentrennung
+\usepackage{ngerman}
 
 \usepackage{listings}
 \usepackage{amssymb}
@@ -30,18 +23,14 @@
 
 %avoid overfull hbox problem
 \setlength{\emergencystretch}{3em}
-
 %avoid underfull hbox problem in bibliography
 \usepackage{etoolbox}
 % Variant A
 \apptocmd{\sloppy}{\hbadness 2000\relax}{}{}
 % Variant B
 % \apptocmd{\thebibliography}{\raggedright}{}{}
-
 \hyphenpenalty=5000
 \tolerance=1000
-
-
 
 % standard scaling factor for graphics, to support homogenous looks.
 \newcommand{\stdScaleFactor}{0.45}
@@ -71,8 +60,6 @@
 
 % Sonstiges
 %\allowdisplaybreaks
-%\setlength{\parindent}{1em}
-%\setlength{\parskip}{0em}
 %\makeatletter
 %\renewcommand{\fps@figure}{ht!}
 %\renewcommand{\fps@table}{ht!}
@@ -82,43 +69,28 @@
 
 \begin{document}
 
-\frontmatter
+\setlength{\parindent}{1em}
+\setlength{\parskip}{0em}
 
 \maketitle
 
 \clearpage
-\input{affirmation.tex}
-
-%%%%%% Sperrvermerk einkommentieren, falls nötig.
-%\input{restriction-notice}
-
-\clearpage
-\input{contents/abstract.tex}
-
 
 \tableofcontents
 
-\mainmatter
+\setlength{\parindent}{1em}
+\setlength{\parskip}{0em}
 
-\input{contents/einleitung}
-
-\input{contents/formale-anforderungen}
-
-\input{contents/struktur-und-inhalt}
-
-\input{contents/bewertungskriterien}
-
-\input{contents/ablauf}
+\input{contents/einleitung.tex}
 
 \appendix
 
-\input{contents/A-anhang-a}
+\input{contents/anhang.tex}
 
-%\bibliographystyle{alpha}
 \bibliographystyle{halpha-abbrv} % Support curstom abbreviation labels, see https://www.math.cmu.edu/~gautam/sj/blog/20171114-bibtex-doi.html
 \bibliography{meinearbeit}
 
-\backmatter
-
+\setlength{\parindent}{1em}
+\setlength{\parskip}{0em}
 
 \end{document}
