@@ -1,79 +1,115 @@
-use tfhe::boolean::backward_compatibility::{client_key, server_key};
-use tfhe::{ConfigBuilder, FheBool, FheUint32, generate_keys, set_server_key};
-use tfhe::prelude::*;
-use axum::Router;
-use axum::Json;
+
+
+
+
+use axum::{routing::{get, post}, Json, Router};
+use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
+use tfhe::prelude::*;
+use tfhe::{CompressedServerKey, FheBool, FheUint32};
 
-
-fn bestimme_gewinner(gebot_a: &FheUint32, gebot_b: &FheUint32) -> FheBool {
-    gebot_a.gt(gebot_b)
+// Steckbrief --> client zum Server
+#[derive(Deserialize)]
+struct BidRequest {
+    bidder_name: String,
+    encrypted_amount: String, 
+    server_key: String,       
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+// Das Format für ein gebot in server-speicher
+#[derive(Clone)]
 struct Bid {
     bidder_name: String,
     encrypted_amount: FheUint32,
 }
 
-async fn gebot_empfangen(Json(neues_gebot): Json<Bid>) -> &'static str {
-    let mut liste = BIDS.lock().unwrap();
+// Liste für gebote
+static BIDS: Mutex<Vec<Bid>> = Mutex::new(Vec::new());
 
+//  empfängt das Gebot und entpackung 
+async fn gebot_empfangen(Json(req): Json<BidRequest>) -> Result<&'static str, String> {
+    // Server-Schlüssel aus Base64 decodieren und dekomprimieren
+    let sk_bytes = general_purpose::STANDARD
+        .decode(&req.server_key)
+        .map_err(|e| format!("Invalid ServerKey Base64: {}", e))?;
+
+    let compressed: CompressedServerKey = bincode::deserialize(&sk_bytes)
+        .map_err(|e| format!("Failed to deserialize CompressedServerKey: {}", e))?;
+
+    let server_key = compressed.decompress();
+
+    // Verschlüsseltes Gebot aus Base64 decodieren und deserialisieren
+    let bid_bytes = general_purpose::STANDARD
+        .decode(&req.encrypted_amount)
+        .map_err(|e| format!("Invalid Age Base64: {}", e))?;
+
+    let enc_amount: FheUint32 = bincode::deserialize(&bid_bytes)
+        .map_err(|e| format!("Failed to deserialize Encrypted Amount: {}", e))?;
+
+    //  In die Liste eintragen (Server-Key wird hier noch nicht gebraucht, erst beim Vergleichen)
+    let neues_gebot = Bid {
+        bidder_name: req.bidder_name,
+        encrypted_amount: enc_amount,
+    };
+
+    let mut liste = BIDS.lock().unwrap();
     liste.push(neues_gebot);
-    "Gebot erfolgreich im Tresor gespeichert!"
+
+    Ok("Gebot erfolgreich im Liste gespeichert!")
 }
 
-async fn auktion_auswerten() -> String {
+// Auswertung
+async fn auktion_auswerten() -> Result<String, String> {
     let liste = BIDS.lock().unwrap();
 
     if liste.is_empty() {
-        return "Keine Gebote vorhanden!".to_string();
+        return Ok("Keine Gebote vorhanden!".to_string());
     }
 
-    let mut gewinner_index = 0;
-    for i in 1..liste.len() {
-        let ist_neues_gebot_groesser = liste[i].encrypted_amount.gt(&liste[gewinner_index].encrypted_amount);
-    }
-    format!("Die Auktion wurde ausgewertet!")
+    let _gewinner_nachricht = tokio::task::block_in_place(|| {
+        let mut gewinner_index = 0;
+
+        for i in 1..liste.len() {
+          
+            let _ist_neues_gebot_groesser: FheBool = liste[i]
+                .encrypted_amount
+                .gt(&liste[gewinner_index].encrypted_amount);
+            
+          
+        }
+        
+        format!("Die Auktion mit {} Geboten wurde blind ausgewertet!", liste.len())
+    });
+
+    Ok("Die Auktion wurde erfolgreich im FHE-Modus verarbeitet!".to_string())
 }
 
 async fn hallo_test() -> &'static str {
     "Hallo! Der Auktions-Server ist bereit."
 }
 
-use std::sync::Mutex;
-static BIDS: Mutex<Vec<Bid>> = Mutex::new(Vec::new());
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = ConfigBuilder::default().build();
-    let (client_key, server_key) = generate_keys(config);
-    set_server_key(server_key);
-
-    // Ein Gebot von 100 Euro verschlüsseln
-    let secret_bid_value = FheUint32::encrypt(100u32, &client_key);
+async fn main() {
     
-
-
-
     let app = Router::new()
-        .route("/test", axum::routing::get(hallo_test))
-        .route("/auswerten", axum::routing::get(auktion_auswerten))
-        .route("/gebot", axum::routing::post(gebot_empfangen))
-        .merge(health::router(env!("CARGO_PKG_VERSION")));
+        .route("/test", get(hallo_test))
+        .route("/gebot", post(gebot_empfangen))
+        .route("/auswerten", get(auktion_auswerten))
+        .merge(health::router(env!("CARGO_PKG_VERSION")))
+        .layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024 * 1024));
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("Fehler beim Binden an Port 8080: {}", e);
+            std::process::exit(1);
+        }
+    };
 
-    //Test
-    let secret_bid_2 = FheUint32::encrypt(150u32, &client_key);
-    let is_a_greater = bestimme_gewinner(&secret_bid_value, &secret_bid_2);
-    let result: bool = is_a_greater.decrypt(&client_key);
-    if result {
-        println!("Gebot A was greater!");
-    } else {
-        println!("Gebot B was greater!");
-    }
-    Ok(())
+    println!("Auktions-Server läuft auf http://{}", addr);
+    axum::serve(listener, app).await.unwrap();
 }
 
