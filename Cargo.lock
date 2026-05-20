@@ -389,12 +389,20 @@ dependencies = [
 name = "encrypted-genomics"
 version = "0.1.13"
 dependencies = [
+ "aide",
  "axum",
+ "base64",
+ "bincode",
  "health",
+ "openapi-docs",
+ "schemars",
  "serde",
  "serde_json",
  "tfhe",
  "tokio",
+ "tower 0.5.3",
+ "tower-http",
+ "uuid",
 ]
 
 [[package]]
