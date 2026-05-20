@@ -12,3 +12,5 @@ health.workspace = true
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+image = "0.25.10"
+rayon = "1.12.0"
