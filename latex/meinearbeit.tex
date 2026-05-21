@@ -5,7 +5,8 @@
 \usepackage[a4paper,margin=2cm]{geometry}
 
 \usepackage[T1]{fontenc}
-\usepackage{lmodern}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{helvet} 
 \usepackage[utf8]{inputenc}
 \usepackage[ngerman]{babel}
 \usepackage{ngerman}
@@ -38,59 +39,59 @@
 % Titelseite und Erklaerung
 \usepackage{sethesis}
 
-
 % Angaben Titelseite
-\unilogo{\includegraphics[scale=0.75]{FHDW-Logo.eps}}
-%\uniname{}
-\fachgebiet{Informatik/Wirtschaftsinformatik}
-\institut{FHDW Hannover}
-\fachbereich{Kryptographie Teil 2}
-% Angaben zur Arbeit
-\author{Nina Neumann, Johanna Amini, Amirreza Ahmadi Darani, Xuan-Loc Tran, Franz Müller, Tammo Lütten, Jannes Breuer, Bjarne Möller, Darko Marjanovic, Oliver Knöbl, Rafael Ulmer} % Nugget :(
+\unilogo{\includegraphics[scale=0.5]{FHDW-Logo.eps}}
+\uniname{FHDW Hannover}
 \title{Fast Fully Homomorphic Encryption}
-\englishtitle{}
 \ort{Hannover}
-\thesistype{Dokumentation}
-%\thesistype{Masterarbeit}
-\studiengang{Informatik} % Hier Studiengang angeben
+\thesistype{Spezifikationsdokument}
+\studiengang{Bachelor Informatik/Wirtschaftsinformatik}
+\modul{Integrationsprojekt Kryptographie Teil 2}
 \erstpru{Tristan Hörmann}
-\zweitpru{}
-\betreu{}
-\datum{\today} % Datum der Abgabe hier einsetzen
+\datum{\today}
+\quartal{Sommerquartal 2026}
 
 % Sonstiges
 %\allowdisplaybreaks
+\setlength{\parindent}{0em}
+\setlength{\parskip}{0em}
 %\makeatletter
 %\renewcommand{\fps@figure}{ht!}
 %\renewcommand{\fps@table}{ht!}
 %\setlength{\@fptop}{0pt}
 %\makeatother
 
-
 \begin{document}
 
-\setlength{\parindent}{1em}
-\setlength{\parskip}{0em}
+    \maketitle
+    \clearpage
+    \setlength{\parskip}{1em}
 
-\maketitle
+    \input{contents/notice.tex}
+    \clearpage
+    \setlength{\parskip}{0em}
 
-\clearpage
+    \tableofcontents
+    \clearpage
+    \setlength{\parskip}{1em}
 
-\tableofcontents
+    \input{contents/einleitung.tex}
+    \clearpage
+    \input{contents/querschnittssektionen.tex}
+    \clearpage
+    \input{contents/client.tex}
+    \clearpage
+    \input{contents/usecases.tex}
+    % Hier können weitere Kapitel oder Abschnitte eingefügt werden
 
-\setlength{\parindent}{1em}
-\setlength{\parskip}{0em}
+    \appendix
+    \clearpage
+    \setlength{\parskip}{0em}
 
-\input{contents/einleitung.tex}
+    \input{contents/anhang.tex}
+    \clearpage
 
-\appendix
-
-\input{contents/anhang.tex}
-
-\bibliographystyle{halpha-abbrv} % Support curstom abbreviation labels, see https://www.math.cmu.edu/~gautam/sj/blog/20171114-bibtex-doi.html
-\bibliography{meinearbeit}
-
-\setlength{\parindent}{1em}
-\setlength{\parskip}{0em}
+    \bibliographystyle{halpha-abbrv} % Support curstom abbreviation labels, see https://www.math.cmu.edu/~gautam/sj/blog/20171114-bibtex-doi.html
+    \bibliography{meinearbeit}
 
 \end{document}
