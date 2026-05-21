@@ -1,14 +1,14 @@
 import { Component, ElementRef, OnDestroy, AfterViewInit, ViewChild, HostListener, Output, EventEmitter } from '@angular/core';
 
-interface Particle {
+interface ExplosionParticle {
   x: number; y: number;
-  vx: number; vy: number;
+  velocityX: number; velocityY: number;
   alpha: number; size: number;
 }
 
 interface Pipe {
   x: number;
-  gapY: number;
+  gapCenterY: number;
   scored: boolean;
 }
 
@@ -23,25 +23,25 @@ type Phase =
   | 'PLAYING'
   | 'GAME_OVER';
 
-const SCROLL_SPEED   = 0.6;
-const GREEN          = '#166534';
-const TEXT_X_FRAC    = 0.5;
-const PIPE_GAP       = 165;
-const PIPE_WIDTH     = 52;
-const PIPE_SPEED     = 160;
-const PIPE_INTERVAL  = 2.0;
-const BIRD_IDLE_X    = 90;
-const GROUND_H       = 58;
+const BACKGROUND_SCROLL_SPEED          = 0.6;
+const TITLE_GREEN_COLOR                = '#166534';
+const TITLE_HORIZONTAL_CENTER_FRACTION = 0.5;
+const PIPE_VERTICAL_GAP                = 165;
+const PIPE_WIDTH                       = 52;
+const PIPE_SCROLL_SPEED                = 160;
+const PIPE_SPAWN_INTERVAL_SECONDS      = 2.0;
+const BIRD_IDLE_X_POSITION             = 90;
+const GROUND_HEIGHT                    = 58;
 
 function easeOutBack(t: number): number {
   const c1 = 1.70158, c3 = c1 + 1;
   return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
 }
 
-function loadImg(src: string): HTMLImageElement {
-  const img = new Image();
-  img.src = src;
-  return img;
+function loadImage(src: string): HTMLImageElement {
+  const image = new Image();
+  image.src = src;
+  return image;
 }
 
 @Component({
@@ -51,226 +51,245 @@ function loadImg(src: string): HTMLImageElement {
 })
 export class FlappyBirdComponent implements AfterViewInit, OnDestroy {
   @ViewChild('canvas') canvasRef!: ElementRef<HTMLCanvasElement>;
-  @ViewChild('gameWindow') windowRef!: ElementRef<HTMLDivElement>;
+  @ViewChild('gameWindow') gameWindowRef!: ElementRef<HTMLDivElement>;
 
   /** Emits the final score when a game ends. */
   @Output() gameOver = new EventEmitter<number>();
 
-  private ctx!: CanvasRenderingContext2D;
+  private canvasContext!: CanvasRenderingContext2D;
 
   // Assets
-  private bgImage  = loadImg('/games/flappy-bird/images/background.png');
-  private birdUp   = loadImg('/games/flappy-bird/images/bird/yellowbird-upflap.png');
-  private birdMid  = loadImg('/games/flappy-bird/images/bird/yellowbird-midflap.png');
-  private birdDown = loadImg('/games/flappy-bird/images/bird/yellowbird-downflap.png');
+  private backgroundImage    = loadImage('/games/flappy-bird/images/background.png');
+  private birdSpriteWingsUp  = loadImage('/games/flappy-bird/images/bird/yellowbird-upflap.png');
+  private birdSpriteWingsMid = loadImage('/games/flappy-bird/images/bird/yellowbird-midflap.png');
+  private birdSpriteWingsDown = loadImage('/games/flappy-bird/images/bird/yellowbird-downflap.png');
 
-  private bgX = 0;
-  private animationId = 0;
+  private backgroundScrollX = 0;
+  private animationFrameId = 0;
   private resizeObserver!: ResizeObserver;
-  private lastTs = 0;
-  private fontReady = false;
+  private lastFrameTimestamp = 0;
+  private isFontLoaded = false;
 
   // measured left edge of the title text (updated each draw)
-  private textLeftEdge = 0;
+  private titleTextLeftEdge = 0;
 
   // Phase
-  private phase: Phase = 'TITLE_ENTER';
-  private pt = 0;
+  private currentPhase: Phase = 'TITLE_ENTER';
+  private phaseElapsedSeconds = 0;
 
   // Bird
-  private bx = -80;
-  private by = 0;
-  private bvx = 0;
-  private bvy = 0;
-  private brot = 0;
+  private birdX = -80;
+  private birdY = 0;
+  private birdVelocityX = 0;
+  private birdVelocityY = 0;
+  private birdRotation = 0;
 
   // Flap cycle for fly-in / idle
-  private flapTimer = 0;
-  private flapFrame = 0; // 0=up 1=mid 2=down 3=mid
+  private flapAnimationTimer = 0;
+  private flapAnimationFrame = 0; // 0=up 1=mid 2=down 3=mid
 
   // Particles
-  private particles: Particle[] = [];
+  private titleExplosionParticles: ExplosionParticle[] = [];
 
   // Game state
   private pipes: Pipe[] = [];
-  private pipeTimer = 0;
+  private pipeSpawnTimer = 0;
   private score = 0;
   private bestScore = 0;
-  private gameOverTimer = 0;
+  private gameOverElapsedSeconds = 0;
 
   ngAfterViewInit(): void {
-    this.ctx = this.canvasRef.nativeElement.getContext('2d')!;
+    this.canvasContext = this.canvasRef.nativeElement.getContext('2d')!;
 
     this.resizeObserver = new ResizeObserver(() => this.resizeCanvas());
-    this.resizeObserver.observe(this.windowRef.nativeElement);
+    this.resizeObserver.observe(this.gameWindowRef.nativeElement);
     this.resizeCanvas();
 
     document.fonts.load('16px "Press Start 2P"').then(() => {
-      this.fontReady = true;
+      this.isFontLoaded = true;
     });
 
-    this.animationId = requestAnimationFrame((t) => { this.lastTs = t; this.loop(t); });
+    this.animationFrameId = requestAnimationFrame((timestamp) => {
+      this.lastFrameTimestamp = timestamp;
+      this.loop(timestamp);
+    });
   }
 
   @HostListener('click')
   onClick(): void {
-    if (this.phase === 'IDLE') {
+    this.handleJumpInput();
+  }
+
+  @HostListener('window:keydown', ['$event'])
+  onKeyDown(event: KeyboardEvent): void {
+    if (event.code !== 'Space' && event.key !== ' ') return;
+    event.preventDefault();
+    this.handleJumpInput();
+  }
+
+  private handleJumpInput(): void {
+    if (this.currentPhase === 'IDLE') {
       this.startGame();
-    } else if (this.phase === 'PLAYING') {
+    } else if (this.currentPhase === 'PLAYING') {
       this.flap();
-    } else if (this.phase === 'GAME_OVER' && this.gameOverTimer > 1.0) {
+    } else if (this.currentPhase === 'GAME_OVER' && this.gameOverElapsedSeconds > 1.0) {
       this.startGame();
     }
   }
 
   private startGame(): void {
-    const H = this.canvasRef.nativeElement.height;
+    const canvasHeight = this.canvasRef.nativeElement.height;
     this.pipes = [];
-    this.pipeTimer = 0;
+    this.pipeSpawnTimer = 0;
     this.score = 0;
-    this.bx = BIRD_IDLE_X;
-    this.by = H * 0.45;
-    this.bvx = 0;
-    this.bvy = 0;
-    this.brot = 0;
+    this.birdX = BIRD_IDLE_X_POSITION;
+    this.birdY = canvasHeight * 0.45;
+    this.birdVelocityX = 0;
+    this.birdVelocityY = 0;
+    this.birdRotation = 0;
     this.setPhase('PLAYING');
     this.flap();
   }
 
   private flap(): void {
-    this.bvy = -400;
-    this.bvx = Math.min(this.bvx + 45, 90); // kleiner Rechts-Schub
+    this.birdVelocityY = -400;
+    this.birdVelocityX = Math.min(this.birdVelocityX + 45, 90); // kleiner Rechts-Schub
   }
 
   private resizeCanvas(): void {
-    const el = this.windowRef.nativeElement;
-    const c  = this.canvasRef.nativeElement;
-    c.width  = el.clientWidth;
-    c.height = el.clientHeight;
+    const containerElement = this.gameWindowRef.nativeElement;
+    const canvasElement    = this.canvasRef.nativeElement;
+    canvasElement.width  = containerElement.clientWidth;
+    canvasElement.height = containerElement.clientHeight;
   }
 
-  private loop(ts: number): void {
-    const dt = Math.min((ts - this.lastTs) / 1000, 0.05);
-    this.lastTs = ts;
-    this.pt += dt;
+  private loop(timestamp: number): void {
+    const deltaSeconds = Math.min((timestamp - this.lastFrameTimestamp) / 1000, 0.05);
+    this.lastFrameTimestamp = timestamp;
+    this.phaseElapsedSeconds += deltaSeconds;
 
-    const { width: W, height: H } = this.canvasRef.nativeElement;
+    const { width: canvasWidth, height: canvasHeight } = this.canvasRef.nativeElement;
 
-    this.bgX -= SCROLL_SPEED;
-    if (this.bgX <= -W) this.bgX = 0;
+    this.backgroundScrollX -= BACKGROUND_SCROLL_SPEED;
+    if (this.backgroundScrollX <= -canvasWidth) this.backgroundScrollX = 0;
 
-    this.drawBackground(W, H);
-    this.update(W, H, dt);
+    this.drawBackground(canvasWidth, canvasHeight);
+    this.update(canvasWidth, canvasHeight, deltaSeconds);
 
     // Pipes & Ground nur im Spiel
-    if (this.phase === 'PLAYING' || this.phase === 'GAME_OVER') {
-      this.drawPipes(H);
-      this.drawGround(W, H);
+    if (this.currentPhase === 'PLAYING' || this.currentPhase === 'GAME_OVER') {
+      this.drawPipes(canvasHeight);
+      this.drawGround(canvasWidth, canvasHeight);
     }
 
-    this.drawTitle(W, H);
+    this.drawTitle(canvasWidth, canvasHeight);
     this.drawParticles();
 
-    if (this.phase !== 'TITLE_ENTER' && this.phase !== 'TITLE_SHOW') {
+    if (this.currentPhase !== 'TITLE_ENTER' && this.currentPhase !== 'TITLE_SHOW') {
       this.drawBird();
     }
 
-    if (this.phase === 'PLAYING') {
-      this.drawScore(W);
+    if (this.currentPhase === 'PLAYING') {
+      this.drawScore(canvasWidth);
     }
 
-    if (this.phase === 'GAME_OVER') {
-      this.drawGround(W, H);
-      this.drawScore(W);
-      this.drawGameOver(W, H);
+    if (this.currentPhase === 'GAME_OVER') {
+      this.drawGround(canvasWidth, canvasHeight);
+      this.drawScore(canvasWidth);
+      this.drawGameOver(canvasWidth, canvasHeight);
     }
 
-    if (this.phase === 'IDLE') {
-      this.drawStartPrompt(W, H);
+    if (this.currentPhase === 'IDLE') {
+      this.drawStartPrompt(canvasWidth, canvasHeight);
     }
 
-    this.animationId = requestAnimationFrame((t) => this.loop(t));
+    this.animationFrameId = requestAnimationFrame((nextTimestamp) => this.loop(nextTimestamp));
   }
 
-  private setPhase(p: Phase): void { this.phase = p; this.pt = 0; }
+  private setPhase(nextPhase: Phase): void {
+    this.currentPhase = nextPhase;
+    this.phaseElapsedSeconds = 0;
+  }
 
-  private update(W: number, H: number, dt: number): void {
-    const midY = H * 0.45;
+  private update(canvasWidth: number, canvasHeight: number, deltaSeconds: number): void {
+    const verticalCenter = canvasHeight * 0.45;
 
     // Flap cycle animation
-    this.flapTimer += dt;
-    if (this.flapTimer > 0.11) {
-      this.flapFrame = (this.flapFrame + 1) % 4;
-      this.flapTimer = 0;
+    this.flapAnimationTimer += deltaSeconds;
+    if (this.flapAnimationTimer > 0.11) {
+      this.flapAnimationFrame = (this.flapAnimationFrame + 1) % 4;
+      this.flapAnimationTimer = 0;
     }
 
-    switch (this.phase) {
+    switch (this.currentPhase) {
 
       case 'TITLE_ENTER':
-        if (this.pt >= 1.8) this.setPhase('TITLE_SHOW');
+        if (this.phaseElapsedSeconds >= 1.8) this.setPhase('TITLE_SHOW');
         break;
 
       case 'TITLE_SHOW':
-        if (this.pt >= 1.0) {
+        if (this.phaseElapsedSeconds >= 1.0) {
           this.setPhase('BIRD_FLY_IN');
-          this.bx  = -80;
-          this.by  = midY;
-          this.bvx = 440;
-          this.bvy = 0;
+          this.birdX = -80;
+          this.birdY = verticalCenter;
+          this.birdVelocityX = 440;
+          this.birdVelocityY = 0;
         }
         break;
 
       case 'BIRD_FLY_IN':
-        this.bx  += this.bvx * dt;
-        this.by   = midY + Math.sin(this.pt * 9) * 10;
-        this.bvy  = Math.cos(this.pt * 9) * 90;
-        this.brot = -0.15;
-        if (this.textLeftEdge > 0 && this.bx + 24 >= this.textLeftEdge) {
-          this.bx = this.textLeftEdge - 24;
+        this.birdX += this.birdVelocityX * deltaSeconds;
+        this.birdY = verticalCenter + Math.sin(this.phaseElapsedSeconds * 9) * 10;
+        this.birdVelocityY = Math.cos(this.phaseElapsedSeconds * 9) * 90;
+        this.birdRotation = -0.15;
+        if (this.titleTextLeftEdge > 0 && this.birdX + 24 >= this.titleTextLeftEdge) {
+          this.birdX = this.titleTextLeftEdge - 24;
           this.setPhase('COLLISION');
-          this.spawnParticles(W, H);
-          this.bvx = -380;
-          this.bvy = -220;
+          this.spawnTitleExplosionParticles(canvasWidth, canvasHeight);
+          this.birdVelocityX = -380;
+          this.birdVelocityY = -220;
         }
         break;
 
       case 'COLLISION':
-        if (this.pt >= 0.06) this.setPhase('BIRD_TUMBLE');
+        if (this.phaseElapsedSeconds >= 0.06) this.setPhase('BIRD_TUMBLE');
         break;
 
       case 'BIRD_TUMBLE':
-        this.bx  += this.bvx * dt;
-        this.by  += this.bvy * dt;
-        this.bvy += 420 * dt;
-        this.bvx += (0 - this.bvx) * 2 * dt;
-        this.brot += 9 * dt;
-        for (const p of this.particles) {
-          p.x += p.vx * dt; p.y += p.vy * dt;
-          p.vy += 280 * dt; p.alpha -= dt * 1.0;
+        this.birdX += this.birdVelocityX * deltaSeconds;
+        this.birdY += this.birdVelocityY * deltaSeconds;
+        this.birdVelocityY += 420 * deltaSeconds;
+        this.birdVelocityX += (0 - this.birdVelocityX) * 2 * deltaSeconds;
+        this.birdRotation += 9 * deltaSeconds;
+        for (const particle of this.titleExplosionParticles) {
+          particle.x += particle.velocityX * deltaSeconds;
+          particle.y += particle.velocityY * deltaSeconds;
+          particle.velocityY += 280 * deltaSeconds;
+          particle.alpha -= deltaSeconds * 1.0;
         }
-        this.particles = this.particles.filter((p) => p.alpha > 0);
-        if (this.pt >= 1.6) this.setPhase('BIRD_RECOVER');
+        this.titleExplosionParticles = this.titleExplosionParticles.filter((particle) => particle.alpha > 0);
+        if (this.phaseElapsedSeconds >= 1.6) this.setPhase('BIRD_RECOVER');
         break;
 
       case 'BIRD_RECOVER':
       case 'IDLE': {
-        this.bvy += 380 * dt;
-        this.bvy  = Math.min(this.bvy, 400);
+        this.birdVelocityY += 380 * deltaSeconds;
+        this.birdVelocityY = Math.min(this.birdVelocityY, 400);
 
-        if (this.by >= midY + 100 && this.bvy > 0) {
-          this.bvy = -390;
+        if (this.birdY >= verticalCenter + 100 && this.birdVelocityY > 0) {
+          this.birdVelocityY = -390;
         }
 
-        this.bvx += (BIRD_IDLE_X - this.bx) * 4 * dt;
-        this.bvx *= Math.pow(0.05, dt);
+        this.birdVelocityX += (BIRD_IDLE_X_POSITION - this.birdX) * 4 * deltaSeconds;
+        this.birdVelocityX *= Math.pow(0.05, deltaSeconds);
 
-        this.bx += this.bvx * dt;
-        this.by += this.bvy * dt;
+        this.birdX += this.birdVelocityX * deltaSeconds;
+        this.birdY += this.birdVelocityY * deltaSeconds;
 
-        const rot = Math.max(-0.5, Math.min(1.2, this.bvy / 300));
-        this.brot += (rot - this.brot) * 10 * dt;
+        const targetRotation = Math.max(-0.5, Math.min(1.2, this.birdVelocityY / 300));
+        this.birdRotation += (targetRotation - this.birdRotation) * 10 * deltaSeconds;
 
-        if (this.phase === 'BIRD_RECOVER' && Math.abs(this.bx - BIRD_IDLE_X) < 25 && this.pt >= 0.8) {
+        if (this.currentPhase === 'BIRD_RECOVER' && Math.abs(this.birdX - BIRD_IDLE_X_POSITION) < 25 && this.phaseElapsedSeconds >= 0.8) {
           this.setPhase('IDLE');
         }
         break;
@@ -278,91 +297,91 @@ export class FlappyBirdComponent implements AfterViewInit, OnDestroy {
 
       case 'PLAYING': {
         // Schwerkraft
-        this.bvy += 600 * dt;
-        this.bvy  = Math.min(this.bvy, 520);
+        this.birdVelocityY += 600 * deltaSeconds;
+        this.birdVelocityY = Math.min(this.birdVelocityY, 520);
 
         // Rechts-Schub klingt ab
-        this.bvx *= Math.pow(0.08, dt);
-        this.bx  += this.bvx * dt;
-        this.by  += this.bvy * dt;
+        this.birdVelocityX *= Math.pow(0.08, deltaSeconds);
+        this.birdX += this.birdVelocityX * deltaSeconds;
+        this.birdY += this.birdVelocityY * deltaSeconds;
 
         // X innerhalb sinnvoller Grenzen halten
-        if (this.bx < 50)         this.bx = 50;
-        if (this.bx > W * 0.35)   this.bx = W * 0.35;
+        if (this.birdX < 50)                  this.birdX = 50;
+        if (this.birdX > canvasWidth * 0.35)  this.birdX = canvasWidth * 0.35;
 
         // Rotation folgt Vertikalgeschwindigkeit
-        const rot = Math.max(-0.5, Math.min(1.4, this.bvy / 350));
-        this.brot += (rot - this.brot) * 12 * dt;
+        const targetRotation = Math.max(-0.5, Math.min(1.4, this.birdVelocityY / 350));
+        this.birdRotation += (targetRotation - this.birdRotation) * 12 * deltaSeconds;
 
         // Pipes spawnen
-        this.pipeTimer += dt;
-        if (this.pipeTimer >= PIPE_INTERVAL) {
-          this.pipeTimer = 0;
-          const minGapY = 100 + PIPE_GAP / 2;
-          const maxGapY = H - GROUND_H - 60 - PIPE_GAP / 2;
-          const gapY = minGapY + Math.random() * (maxGapY - minGapY);
-          this.pipes.push({ x: W + PIPE_WIDTH, gapY, scored: false });
+        this.pipeSpawnTimer += deltaSeconds;
+        if (this.pipeSpawnTimer >= PIPE_SPAWN_INTERVAL_SECONDS) {
+          this.pipeSpawnTimer = 0;
+          const minGapCenterY = 100 + PIPE_VERTICAL_GAP / 2;
+          const maxGapCenterY = canvasHeight - GROUND_HEIGHT - 60 - PIPE_VERTICAL_GAP / 2;
+          const gapCenterY = minGapCenterY + Math.random() * (maxGapCenterY - minGapCenterY);
+          this.pipes.push({ x: canvasWidth + PIPE_WIDTH, gapCenterY, scored: false });
         }
 
         // Pipes bewegen + Score zählen
         for (const pipe of this.pipes) {
-          pipe.x -= PIPE_SPEED * dt;
-          if (!pipe.scored && pipe.x + PIPE_WIDTH / 2 < this.bx) {
+          pipe.x -= PIPE_SCROLL_SPEED * deltaSeconds;
+          if (!pipe.scored && pipe.x + PIPE_WIDTH / 2 < this.birdX) {
             pipe.scored = true;
             this.score++;
           }
         }
-        this.pipes = this.pipes.filter(p => p.x > -PIPE_WIDTH - 10);
+        this.pipes = this.pipes.filter(pipe => pipe.x > -PIPE_WIDTH - 10);
 
         // Kollisionsprüfung
-        if (this.checkCollision(H)) {
+        if (this.checkCollision(canvasHeight)) {
           this.bestScore = Math.max(this.bestScore, this.score);
           this.gameOver.emit(this.score);
           this.setPhase('GAME_OVER');
-          this.gameOverTimer = 0;
-          this.bvx = -80;
-          this.bvy = -200;
+          this.gameOverElapsedSeconds = 0;
+          this.birdVelocityX = -80;
+          this.birdVelocityY = -200;
         }
         break;
       }
 
       case 'GAME_OVER': {
-        this.gameOverTimer += dt;
+        this.gameOverElapsedSeconds += deltaSeconds;
 
         // Vogel fällt zu Boden
-        this.bvy += 500 * dt;
-        this.bvy  = Math.min(this.bvy, 600);
-        this.bvx *= Math.pow(0.15, dt);
-        this.bx  += this.bvx * dt;
-        this.by  += this.bvy * dt;
-        this.brot += 8 * dt;
+        this.birdVelocityY += 500 * deltaSeconds;
+        this.birdVelocityY = Math.min(this.birdVelocityY, 600);
+        this.birdVelocityX *= Math.pow(0.15, deltaSeconds);
+        this.birdX += this.birdVelocityX * deltaSeconds;
+        this.birdY += this.birdVelocityY * deltaSeconds;
+        this.birdRotation += 8 * deltaSeconds;
 
-        const groundY = H - GROUND_H - 18;
-        if (this.by > groundY) {
-          this.by   = groundY;
-          this.bvy  = 0;
-          this.bvx  = 0;
+        const groundRestY = canvasHeight - GROUND_HEIGHT - 18;
+        if (this.birdY > groundRestY) {
+          this.birdY = groundRestY;
+          this.birdVelocityY = 0;
+          this.birdVelocityX = 0;
         }
         break;
       }
     }
   }
 
-  private checkCollision(H: number): boolean {
-    const birdR  = 13;
-    const groundY = H - GROUND_H;
+  private checkCollision(canvasHeight: number): boolean {
+    const birdRadius = 13;
+    const groundTopY = canvasHeight - GROUND_HEIGHT;
 
-    if (this.by + birdR >= groundY) return true;
-    if (this.by - birdR <= 0)       return true;
+    if (this.birdY + birdRadius >= groundTopY) return true;
+    if (this.birdY - birdRadius <= 0)          return true;
 
     for (const pipe of this.pipes) {
-      const pLeft     = pipe.x - PIPE_WIDTH / 2;
-      const pRight    = pipe.x + PIPE_WIDTH / 2 + 5; // leicht breiter für cap
-      const gapTop    = pipe.gapY - PIPE_GAP / 2;
-      const gapBottom = pipe.gapY + PIPE_GAP / 2;
+      const pipeLeftX  = pipe.x - PIPE_WIDTH / 2;
+      const pipeRightX = pipe.x + PIPE_WIDTH / 2 + 5; // leicht breiter für cap
+      const gapTopY    = pipe.gapCenterY - PIPE_VERTICAL_GAP / 2;
+      const gapBottomY = pipe.gapCenterY + PIPE_VERTICAL_GAP / 2;
 
-      if (this.bx + birdR > pLeft && this.bx - birdR < pRight) {
-        if (this.by - birdR < gapTop || this.by + birdR > gapBottom) {
+      if (this.birdX + birdRadius > pipeLeftX && this.birdX - birdRadius < pipeRightX) {
+        if (this.birdY - birdRadius < gapTopY || this.birdY + birdRadius > gapBottomY) {
           return true;
         }
       }
@@ -372,72 +391,72 @@ export class FlappyBirdComponent implements AfterViewInit, OnDestroy {
 
   // ── Draw helpers ──────────────────────────────────────────────
 
-  private drawPipes(H: number): void {
-    const ctx     = this.ctx;
-    const groundY = H - GROUND_H;
-    const capH    = 26;
-    const capW    = PIPE_WIDTH + 12;
+  private drawPipes(canvasHeight: number): void {
+    const ctx        = this.canvasContext;
+    const groundTopY = canvasHeight - GROUND_HEIGHT;
+    const capHeight  = 26;
+    const capWidth   = PIPE_WIDTH + 12;
 
     for (const pipe of this.pipes) {
-      const gapTop    = pipe.gapY - PIPE_GAP / 2;
-      const gapBottom = pipe.gapY + PIPE_GAP / 2;
+      const gapTopY    = pipe.gapCenterY - PIPE_VERTICAL_GAP / 2;
+      const gapBottomY = pipe.gapCenterY + PIPE_VERTICAL_GAP / 2;
 
       // --- obere Röhre ---
       // Rohr-Körper
       ctx.fillStyle = '#4ab34a';
-      ctx.fillRect(pipe.x - PIPE_WIDTH / 2, 0, PIPE_WIDTH, gapTop - capH);
+      ctx.fillRect(pipe.x - PIPE_WIDTH / 2, 0, PIPE_WIDTH, gapTopY - capHeight);
       // Highlight
       ctx.fillStyle = '#72d572';
-      ctx.fillRect(pipe.x - PIPE_WIDTH / 2 + 4, 0, 10, gapTop - capH);
+      ctx.fillRect(pipe.x - PIPE_WIDTH / 2 + 4, 0, 10, gapTopY - capHeight);
       // Cap
       ctx.fillStyle = '#4ab34a';
-      ctx.fillRect(pipe.x - capW / 2, gapTop - capH, capW, capH);
+      ctx.fillRect(pipe.x - capWidth / 2, gapTopY - capHeight, capWidth, capHeight);
       ctx.fillStyle = '#72d572';
-      ctx.fillRect(pipe.x - capW / 2 + 4, gapTop - capH, 10, capH);
+      ctx.fillRect(pipe.x - capWidth / 2 + 4, gapTopY - capHeight, 10, capHeight);
       // Outline
       ctx.strokeStyle = '#2e7d2e';
       ctx.lineWidth = 2;
-      ctx.strokeRect(pipe.x - PIPE_WIDTH / 2, 0, PIPE_WIDTH, gapTop - capH);
-      ctx.strokeRect(pipe.x - capW / 2, gapTop - capH, capW, capH);
+      ctx.strokeRect(pipe.x - PIPE_WIDTH / 2, 0, PIPE_WIDTH, gapTopY - capHeight);
+      ctx.strokeRect(pipe.x - capWidth / 2, gapTopY - capHeight, capWidth, capHeight);
 
       // --- untere Röhre ---
-      const bodyTop = gapBottom + capH;
-      const bodyH   = groundY - bodyTop;
+      const lowerPipeBodyTopY  = gapBottomY + capHeight;
+      const lowerPipeBodyHeight = groundTopY - lowerPipeBodyTopY;
       // Cap
       ctx.fillStyle = '#4ab34a';
-      ctx.fillRect(pipe.x - capW / 2, gapBottom, capW, capH);
+      ctx.fillRect(pipe.x - capWidth / 2, gapBottomY, capWidth, capHeight);
       ctx.fillStyle = '#72d572';
-      ctx.fillRect(pipe.x - capW / 2 + 4, gapBottom, 10, capH);
+      ctx.fillRect(pipe.x - capWidth / 2 + 4, gapBottomY, 10, capHeight);
       // Rohr-Körper
       ctx.fillStyle = '#4ab34a';
-      ctx.fillRect(pipe.x - PIPE_WIDTH / 2, bodyTop, PIPE_WIDTH, bodyH);
+      ctx.fillRect(pipe.x - PIPE_WIDTH / 2, lowerPipeBodyTopY, PIPE_WIDTH, lowerPipeBodyHeight);
       ctx.fillStyle = '#72d572';
-      ctx.fillRect(pipe.x - PIPE_WIDTH / 2 + 4, bodyTop, 10, bodyH);
+      ctx.fillRect(pipe.x - PIPE_WIDTH / 2 + 4, lowerPipeBodyTopY, 10, lowerPipeBodyHeight);
       // Outline
       ctx.strokeStyle = '#2e7d2e';
       ctx.lineWidth = 2;
-      ctx.strokeRect(pipe.x - capW / 2, gapBottom, capW, capH);
-      ctx.strokeRect(pipe.x - PIPE_WIDTH / 2, bodyTop, PIPE_WIDTH, bodyH);
+      ctx.strokeRect(pipe.x - capWidth / 2, gapBottomY, capWidth, capHeight);
+      ctx.strokeRect(pipe.x - PIPE_WIDTH / 2, lowerPipeBodyTopY, PIPE_WIDTH, lowerPipeBodyHeight);
     }
   }
 
-  private drawGround(W: number, H: number): void {
-    const ctx     = this.ctx;
-    const groundY = H - GROUND_H;
+  private drawGround(canvasWidth: number, canvasHeight: number): void {
+    const ctx        = this.canvasContext;
+    const groundTopY = canvasHeight - GROUND_HEIGHT;
     ctx.fillStyle = '#ded895';
-    ctx.fillRect(0, groundY, W, GROUND_H);
+    ctx.fillRect(0, groundTopY, canvasWidth, GROUND_HEIGHT);
     ctx.fillStyle = '#c8b84a';
-    ctx.fillRect(0, groundY, W, 5);
+    ctx.fillRect(0, groundTopY, canvasWidth, 5);
     // Gras
     ctx.fillStyle = '#5a9e3a';
-    ctx.fillRect(0, groundY - 6, W, 8);
+    ctx.fillRect(0, groundTopY - 6, canvasWidth, 8);
   }
 
-  private drawScore(W: number): void {
-    const ctx  = this.ctx;
-    const font = this.fontReady ? '"Press Start 2P"' : '"Courier New", monospace';
+  private drawScore(canvasWidth: number): void {
+    const ctx        = this.canvasContext;
+    const fontFamily = this.isFontLoaded ? '"Press Start 2P"' : '"Courier New", monospace';
     ctx.save();
-    ctx.font          = `28px ${font}`;
+    ctx.font          = `28px ${fontFamily}`;
     ctx.textAlign     = 'center';
     ctx.textBaseline  = 'top';
     ctx.fillStyle     = '#ffffff';
@@ -445,23 +464,23 @@ export class FlappyBirdComponent implements AfterViewInit, OnDestroy {
     ctx.shadowBlur    = 0;
     ctx.shadowOffsetX = 2;
     ctx.shadowOffsetY = 2;
-    ctx.fillText(`${this.score}`, W / 2, 18);
+    ctx.fillText(`${this.score}`, canvasWidth / 2, 18);
     ctx.restore();
   }
 
-  private drawGameOver(W: number, H: number): void {
-    const ctx  = this.ctx;
-    const font = this.fontReady ? '"Press Start 2P"' : '"Courier New", monospace';
+  private drawGameOver(canvasWidth: number, canvasHeight: number): void {
+    const ctx        = this.canvasContext;
+    const fontFamily = this.isFontLoaded ? '"Press Start 2P"' : '"Courier New", monospace';
 
     // Panel
-    const panelW = W * 0.72;
-    const panelH = H * 0.38;
-    const panelX = (W - panelW) / 2;
-    const panelY = H * 0.24;
+    const panelWidth  = canvasWidth * 0.72;
+    const panelHeight = canvasHeight * 0.38;
+    const panelX      = (canvasWidth - panelWidth) / 2;
+    const panelY      = canvasHeight * 0.24;
 
     ctx.save();
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    this.roundRect(panelX, panelY, panelW, panelH, 12);
+    this.roundRect(panelX, panelY, panelWidth, panelHeight, 12);
     ctx.fill();
 
     ctx.textAlign    = 'center';
@@ -469,198 +488,204 @@ export class FlappyBirdComponent implements AfterViewInit, OnDestroy {
     ctx.shadowBlur   = 0;
 
     // GAME OVER
-    ctx.font      = `${Math.min(W / 11, 30)}px ${font}`;
+    ctx.font      = `${Math.min(canvasWidth / 11, 30)}px ${fontFamily}`;
     ctx.fillStyle = '#ff4444';
     ctx.shadowOffsetX = 2; ctx.shadowOffsetY = 2;
     ctx.shadowColor = '#000';
-    ctx.fillText('GAME OVER', W / 2, panelY + panelH * 0.22);
+    ctx.fillText('GAME OVER', canvasWidth / 2, panelY + panelHeight * 0.22);
 
     // Scores
-    ctx.font      = `${Math.min(W / 17, 18)}px ${font}`;
+    ctx.font      = `${Math.min(canvasWidth / 17, 18)}px ${fontFamily}`;
     ctx.fillStyle = '#ffffff';
-    ctx.fillText(`Score: ${this.score}`,       W / 2, panelY + panelH * 0.48);
-    ctx.fillText(`Best:  ${this.bestScore}`,   W / 2, panelY + panelH * 0.68);
+    ctx.fillText(`Score: ${this.score}`,     canvasWidth / 2, panelY + panelHeight * 0.48);
+    ctx.fillText(`Best:  ${this.bestScore}`, canvasWidth / 2, panelY + panelHeight * 0.68);
 
     // Restart hint
-    if (this.gameOverTimer > 1.0) {
-      const pulse = 0.55 + 0.45 * Math.sin(this.gameOverTimer * 5);
-      ctx.globalAlpha = pulse;
-      ctx.font        = `${Math.min(W / 22, 13)}px ${font}`;
+    if (this.gameOverElapsedSeconds > 1.0) {
+      const pulseAlpha = 0.55 + 0.45 * Math.sin(this.gameOverElapsedSeconds * 5);
+      ctx.globalAlpha = pulseAlpha;
+      ctx.font        = `${Math.min(canvasWidth / 22, 13)}px ${fontFamily}`;
       ctx.fillStyle   = '#aaffaa';
       ctx.shadowOffsetX = 1; ctx.shadowOffsetY = 1;
-      ctx.fillText('Click to Restart', W / 2, panelY + panelH * 0.88);
+      ctx.fillText('Click to Restart', canvasWidth / 2, panelY + panelHeight * 0.88);
     }
 
     ctx.restore();
   }
 
-  private drawStartPrompt(W: number, H: number): void {
-    const ctx   = this.ctx;
-    const font  = this.fontReady ? '"Press Start 2P"' : '"Courier New", monospace';
-    const pulse = 0.55 + 0.45 * Math.sin(this.pt * 3.5);
+  private drawStartPrompt(canvasWidth: number, canvasHeight: number): void {
+    const ctx        = this.canvasContext;
+    const fontFamily = this.isFontLoaded ? '"Press Start 2P"' : '"Courier New", monospace';
+    const pulseAlpha = 0.55 + 0.45 * Math.sin(this.phaseElapsedSeconds * 3.5);
 
     ctx.save();
-    ctx.globalAlpha   = pulse;
-    ctx.font          = `${Math.min(W / 22, 15)}px ${font}`;
+    ctx.globalAlpha   = pulseAlpha;
+    ctx.font          = `${Math.min(canvasWidth / 22, 15)}px ${fontFamily}`;
     ctx.textAlign     = 'center';
     ctx.textBaseline  = 'middle';
     ctx.fillStyle     = '#ffffff';
     ctx.shadowColor   = '#000';
     ctx.shadowOffsetX = 2; ctx.shadowOffsetY = 2;
     ctx.shadowBlur    = 0;
-    ctx.fillText('Click to Play!', W / 2, H * 0.73);
+    ctx.fillText('Click to Play!', canvasWidth / 2, canvasHeight * 0.73);
     ctx.restore();
   }
 
-  private roundRect(x: number, y: number, w: number, h: number, r: number): void {
-    const ctx = this.ctx;
+  private roundRect(x: number, y: number, width: number, height: number, cornerRadius: number): void {
+    const ctx = this.canvasContext;
     ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + w - r, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-    ctx.lineTo(x + w, y + h - r);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-    ctx.lineTo(x + r, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-    ctx.lineTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.moveTo(x + cornerRadius, y);
+    ctx.lineTo(x + width - cornerRadius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + cornerRadius);
+    ctx.lineTo(x + width, y + height - cornerRadius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - cornerRadius, y + height);
+    ctx.lineTo(x + cornerRadius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - cornerRadius);
+    ctx.lineTo(x, y + cornerRadius);
+    ctx.quadraticCurveTo(x, y, x + cornerRadius, y);
     ctx.closePath();
   }
 
   /** Pick the right bird image based on vertical velocity */
   private getBirdFrame(): HTMLImageElement {
-    if (this.phase === 'BIRD_TUMBLE' || this.phase === 'GAME_OVER') return this.birdDown;
+    if (this.currentPhase === 'BIRD_TUMBLE' || this.currentPhase === 'GAME_OVER') return this.birdSpriteWingsDown;
 
-    if (this.phase === 'BIRD_FLY_IN' || this.phase === 'IDLE' ||
-        this.phase === 'BIRD_RECOVER' || this.phase === 'PLAYING') {
-      if (this.bvy < -40) return this.birdUp;
-      if (this.bvy >  40) return this.birdDown;
-      return this.birdMid;
+    if (this.currentPhase === 'BIRD_FLY_IN' || this.currentPhase === 'IDLE' ||
+        this.currentPhase === 'BIRD_RECOVER' || this.currentPhase === 'PLAYING') {
+      if (this.birdVelocityY < -40) return this.birdSpriteWingsUp;
+      if (this.birdVelocityY >  40) return this.birdSpriteWingsDown;
+      return this.birdSpriteWingsMid;
     }
 
-    const frames = [this.birdUp, this.birdMid, this.birdDown, this.birdMid];
-    return frames[this.flapFrame];
+    const flapFrames = [this.birdSpriteWingsUp, this.birdSpriteWingsMid, this.birdSpriteWingsDown, this.birdSpriteWingsMid];
+    return flapFrames[this.flapAnimationFrame];
   }
 
-  private spawnParticles(W: number, H: number): void {
-    const OW = 720, OH = 110;
-    const off = document.createElement('canvas');
-    off.width = OW; off.height = OH;
-    const ctx = off.getContext('2d')!;
-    const font = this.fontReady ? '"Press Start 2P"' : '"Courier New", monospace';
-    ctx.font = `36px ${font}`;
-    ctx.fillStyle = GREEN;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('Clappy-Bird', OW / 2, OH / 2);
+  private spawnTitleExplosionParticles(canvasWidth: number, canvasHeight: number): void {
+    const offscreenWidth  = 720;
+    const offscreenHeight = 110;
+    const offscreenCanvas = document.createElement('canvas');
+    offscreenCanvas.width  = offscreenWidth;
+    offscreenCanvas.height = offscreenHeight;
+    const offscreenContext = offscreenCanvas.getContext('2d')!;
+    const fontFamily = this.isFontLoaded ? '"Press Start 2P"' : '"Courier New", monospace';
+    offscreenContext.font = `36px ${fontFamily}`;
+    offscreenContext.fillStyle = TITLE_GREEN_COLOR;
+    offscreenContext.textAlign = 'center';
+    offscreenContext.textBaseline = 'middle';
+    offscreenContext.fillText('Clappy-Bird', offscreenWidth / 2, offscreenHeight / 2);
 
-    const data = ctx.getImageData(0, 0, OW, OH).data;
-    const S  = 5;
-    const ox = W * TEXT_X_FRAC - OW / 2;
-    const oy = H * 0.45 - OH / 2;
+    const pixelData = offscreenContext.getImageData(0, 0, offscreenWidth, offscreenHeight).data;
+    const particlePixelSize = 5;
+    const originX = canvasWidth * TITLE_HORIZONTAL_CENTER_FRACTION - offscreenWidth / 2;
+    const originY = canvasHeight * 0.45 - offscreenHeight / 2;
 
-    for (let py = 0; py < OH; py += S) {
-      for (let px = 0; px < OW; px += S) {
-        if (data[(py * OW + px) * 4 + 3] > 100) {
-          this.particles.push({
-            x: ox + px, y: oy + py,
-            vx: (px - OW / 2) * 1.0 + (Math.random() - 0.5) * 140,
-            vy: (Math.random() - 0.5) * 180 - 80,
-            alpha: 1, size: S,
+    for (let pixelY = 0; pixelY < offscreenHeight; pixelY += particlePixelSize) {
+      for (let pixelX = 0; pixelX < offscreenWidth; pixelX += particlePixelSize) {
+        if (pixelData[(pixelY * offscreenWidth + pixelX) * 4 + 3] > 100) {
+          this.titleExplosionParticles.push({
+            x: originX + pixelX,
+            y: originY + pixelY,
+            velocityX: (pixelX - offscreenWidth / 2) * 1.0 + (Math.random() - 0.5) * 140,
+            velocityY: (Math.random() - 0.5) * 180 - 80,
+            alpha: 1,
+            size: particlePixelSize,
           });
         }
       }
     }
   }
 
-  private drawBackground(W: number, H: number): void {
-    if (this.bgImage.complete && this.bgImage.naturalWidth > 0) {
-      this.ctx.drawImage(this.bgImage, this.bgX, 0, W, H);
-      this.ctx.drawImage(this.bgImage, this.bgX + W, 0, W, H);
+  private drawBackground(canvasWidth: number, canvasHeight: number): void {
+    if (this.backgroundImage.complete && this.backgroundImage.naturalWidth > 0) {
+      this.canvasContext.drawImage(this.backgroundImage, this.backgroundScrollX, 0, canvasWidth, canvasHeight);
+      this.canvasContext.drawImage(this.backgroundImage, this.backgroundScrollX + canvasWidth, 0, canvasWidth, canvasHeight);
     } else {
-      this.ctx.clearRect(0, 0, W, H);
+      this.canvasContext.clearRect(0, 0, canvasWidth, canvasHeight);
     }
   }
 
-  private drawTitle(W: number, H: number): void {
+  private drawTitle(canvasWidth: number, canvasHeight: number): void {
     if (
-      this.phase !== 'TITLE_ENTER' &&
-      this.phase !== 'TITLE_SHOW' &&
-      this.phase !== 'BIRD_FLY_IN'
+      this.currentPhase !== 'TITLE_ENTER' &&
+      this.currentPhase !== 'TITLE_SHOW' &&
+      this.currentPhase !== 'BIRD_FLY_IN'
     ) return;
 
-    const ctx  = this.ctx;
-    const font = this.fontReady ? '"Press Start 2P"' : '"Courier New", monospace';
-    const size = Math.max(30, Math.min(W / 10, 74));
+    const ctx        = this.canvasContext;
+    const fontFamily = this.isFontLoaded ? '"Press Start 2P"' : '"Courier New", monospace';
+    const fontSize   = Math.max(30, Math.min(canvasWidth / 10, 74));
 
-    let x = W / 2, alpha = 1;
+    let titleX = canvasWidth / 2;
+    let titleAlpha = 1;
 
-    if (this.phase === 'TITLE_ENTER') {
-      const prog = Math.min(this.pt / 1.8, 1);
-      const ease = easeOutBack(prog);
-      x     = W / 2 + (1 - ease) * (W / 2 + 300);
-      alpha = Math.min(prog * 4, 1);
+    if (this.currentPhase === 'TITLE_ENTER') {
+      const enterProgress = Math.min(this.phaseElapsedSeconds / 1.8, 1);
+      const easedProgress = easeOutBack(enterProgress);
+      titleX     = canvasWidth / 2 + (1 - easedProgress) * (canvasWidth / 2 + 300);
+      titleAlpha = Math.min(enterProgress * 4, 1);
     }
 
     ctx.save();
-    ctx.globalAlpha  = alpha;
-    ctx.font         = `${size}px ${font}`;
+    ctx.globalAlpha  = titleAlpha;
+    ctx.font         = `${fontSize}px ${fontFamily}`;
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
     ctx.imageSmoothingEnabled = false;
 
     // Measure text left edge for collision
-    const tw = ctx.measureText('Clappy-Bird').width;
-    this.textLeftEdge = x - tw / 2;
+    const textWidth = ctx.measureText('Clappy-Bird').width;
+    this.titleTextLeftEdge = titleX - textWidth / 2;
 
     // Drop shadow
     ctx.fillStyle = '#003300';
     ctx.shadowBlur = 0; ctx.shadowOffsetX = 3; ctx.shadowOffsetY = 3;
-    ctx.fillText('Clappy-Bird', x, H * 0.45);
+    ctx.fillText('Clappy-Bird', titleX, canvasHeight * 0.45);
 
     // Black outline
     ctx.strokeStyle = '#000000';
-    ctx.lineWidth = Math.max(3, size * 0.12);
+    ctx.lineWidth = Math.max(3, fontSize * 0.12);
     ctx.lineJoin = 'round';
-    ctx.strokeText('Clappy-Bird', x, H * 0.45);
+    ctx.strokeText('Clappy-Bird', titleX, canvasHeight * 0.45);
 
     // Fill
     ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
     ctx.shadowColor   = 'transparent'; ctx.shadowBlur = 0;
-    ctx.fillStyle     = GREEN;
-    ctx.fillText('Clappy-Bird', x, H * 0.45);
+    ctx.fillStyle     = TITLE_GREEN_COLOR;
+    ctx.fillText('Clappy-Bird', titleX, canvasHeight * 0.45);
 
     ctx.restore();
   }
 
   private drawParticles(): void {
-    const ctx = this.ctx;
+    const ctx = this.canvasContext;
     ctx.save();
-    ctx.shadowColor = GREEN; ctx.shadowBlur = 6;
-    ctx.fillStyle   = GREEN;
-    for (const p of this.particles) {
-      ctx.globalAlpha = Math.max(0, p.alpha);
-      ctx.fillRect(p.x, p.y, p.size, p.size);
+    ctx.shadowColor = TITLE_GREEN_COLOR; ctx.shadowBlur = 6;
+    ctx.fillStyle   = TITLE_GREEN_COLOR;
+    for (const particle of this.titleExplosionParticles) {
+      ctx.globalAlpha = Math.max(0, particle.alpha);
+      ctx.fillRect(particle.x, particle.y, particle.size, particle.size);
     }
     ctx.restore();
   }
 
   private drawBird(): void {
-    const img = this.getBirdFrame();
-    if (!img.complete || !img.naturalWidth) return;
+    const birdImage = this.getBirdFrame();
+    if (!birdImage.complete || !birdImage.naturalWidth) return;
 
-    const W = 48, H = 36;
-    const ctx = this.ctx;
+    const birdSpriteWidth  = 48;
+    const birdSpriteHeight = 36;
+    const ctx = this.canvasContext;
     ctx.save();
-    ctx.translate(this.bx, this.by);
-    ctx.rotate(this.brot);
+    ctx.translate(this.birdX, this.birdY);
+    ctx.rotate(this.birdRotation);
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(img, -W / 2, -H / 2, W, H);
+    ctx.drawImage(birdImage, -birdSpriteWidth / 2, -birdSpriteHeight / 2, birdSpriteWidth, birdSpriteHeight);
     ctx.restore();
   }
 
   ngOnDestroy(): void {
-    cancelAnimationFrame(this.animationId);
+    cancelAnimationFrame(this.animationFrameId);
     this.resizeObserver?.disconnect();
   }
 }
