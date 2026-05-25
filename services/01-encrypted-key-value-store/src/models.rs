@@ -2,15 +2,14 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
 pub struct PutKeyRequest {
-    pub key: String,
-    pub value: String,
-    pub ttl: u64, // TODO() make it server only instead
+    pub key: Vec<u8>,
+    pub value: Vec<u8>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct KeyValueResponse {
-    pub key: String,
-    pub value: String,
+    pub key: Vec<u8>,
+    pub value: Vec<u8>,
 }
 
 #[derive(Debug, Serialize)]
