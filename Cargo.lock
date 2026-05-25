@@ -456,6 +456,7 @@ name = "encrypted-key-value-store"
 version = "0.1.12"
 dependencies = [
  "axum",
+ "bincode",
  "health",
  "redis",
  "serde",

@@ -5,16 +5,21 @@ mod models;
 use std::sync::Arc;
 use axum::Router;
 use axum::routing::{delete, get, post};
+use tfhe::{generate_keys, ConfigBuilder};
 use crate::routes::{put_entry, get_entry, delete_entry, list_keys, exists, delete_all};
 use store::SharedState;
 use crate::store::AppState;
 
 #[tokio::main]
 async fn main() {
-    // TODO() we could return ttl
+    // TODO() make configurable
+    let ttl_sec = 60u64;
+    // temp until api handles keys
+    let config = ConfigBuilder::default().build();
+    let (client_key, server_key) = generate_keys(config);
     const REDIS_URL: &str = "redis://localhost:6379";
     let state: SharedState = Arc::new(
-        AppState::new(REDIS_URL).expect("Failed to connect to Redis.")
+        AppState::new(REDIS_URL, &client_key, ttl_sec).expect("Failed to connect to Redis.")
     );
 
     let app = Router::new()
