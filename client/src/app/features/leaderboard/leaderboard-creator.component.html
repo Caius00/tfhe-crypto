@@ -1,0 +1,55 @@
+<div class="creator">
+
+  <div class="code-panel">
+    <img src="/games/flappy-bird/images/bird/yellowbird-midflap.png" class="code-bird" alt="bird" />
+    <div class="code-content">
+      <span class="code-label">RAUM-CODE</span>
+      <span class="code-value">{{ roomCode }}</span>
+      <span class="code-sub">Teile diesen Code mit deinen Spielern</span>
+    </div>
+    <img src="/games/flappy-bird/images/pipes/pipe.png" class="code-pipe" alt="" />
+  </div>
+
+  <div class="lb-container">
+    <div class="lb-top-bar">
+      <span class="lb-title">LEADERBOARD</span>
+      <div class="lb-actions">
+        @if (loading) {
+          <app-spinner />
+        } @else if (lastUpdated) {
+          <span class="lb-updated">{{ timeAgo() }}</span>
+        }
+        <app-button label="↺" size="sm" variant="ghost" [disabled]="loading" (clicked)="refresh.emit()" />
+      </div>
+    </div>
+
+    <div class="lb-body">
+      @if (entries.length === 0 && !loading) {
+        <div class="lb-empty">
+          <img src="/games/flappy-bird/images/bird/yellowbird-midflap.png" class="empty-bird" alt="bird" />
+          <p class="empty-label">WARTE AUF SPIELER …</p>
+        </div>
+      }
+
+      @for (entry of entries; track entry.rank) {
+        <div class="lb-row" [class.is-first]="entry.rank === 1">
+          <div class="lb-rank" [class.rank-1]="entry.rank===1" [class.rank-2]="entry.rank===2" [class.rank-3]="entry.rank===3">
+            {{ entry.rank }}
+          </div>
+          <div class="lb-info">
+            <span class="lb-score">{{ entry.score }}</span>
+            <span class="lb-id">{{ entry.playerId }}</span>
+          </div>
+          <div class="lb-bar-track">
+            <div class="lb-bar-fill" [style.width.%]="entries[0] ? (entry.score / entries[0].score) * 100 : 0"></div>
+          </div>
+        </div>
+      }
+    </div>
+
+    <div class="lb-footer">
+      🔒 Scores FHE-verschlüsselt · Server sieht nur Ciphertexts · Auto-Update alle 8s
+    </div>
+  </div>
+
+</div>

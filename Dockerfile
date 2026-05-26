@@ -12,12 +12,14 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 # Nur Abhängigkeiten bauen und cachen (inkl. tfhe)
 FROM chef AS cacher
+ENV RUSTFLAGS="-C target-cpu=native"
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 
 # Eigenen Code bauen
 FROM chef AS builder
 ARG SERVICE_NAME
+ENV RUSTFLAGS="-C target-cpu=native"
 COPY Cargo.toml Cargo.lock ./
 COPY services/ services/
 COPY shared/ shared/

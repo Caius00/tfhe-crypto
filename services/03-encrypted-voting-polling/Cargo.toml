@@ -1,14 +1,22 @@
 [package]
 name = "encrypted-voting-polling"
-version = "0.1.6"
+version = "0.1.17"
 edition = "2021"
 publish = false
 description = "Encrypted Voting / Polling"
 
 [dependencies]
-tfhe = { workspace = true, features = ["software-prng"] }
+bincode = "1.3.3"
+base64 = "0.22.1"
+uuid = { version = "1", features = ["v4"] }
 axum.workspace = true
 health.workspace = true
-tokio.workspace = true
+openapi-docs.workspace = true
+tokio = { workspace = true, features = ["full"] }
 serde.workspace = true
 serde_json.workspace = true
+tfhe.workspace = true
+tower = { version = "0.5.3", features = ["full"] }
+tower-http = { version = "0.6.8", features = ["cors"] }
+aide.workspace = true
+schemars.workspace = true

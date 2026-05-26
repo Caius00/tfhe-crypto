@@ -1,0 +1,40 @@
+<app-page-header
+  title="Session beitreten"
+  subtitle="Trage Session-ID und deinen Namen ein – dein Name wird vor dem Senden verschlüsselt." />
+
+@if (errorMessage()) {
+  <div class="alert-row">
+    <app-alert variant="error" [message]="errorMessage()!" />
+  </div>
+}
+
+<app-card>
+  <div class="form">
+    <app-input
+      label="Session-ID"
+      placeholder="UUID der Session"
+      [value]="sessionId()"
+      (valueChange)="sessionId.set($event)" />
+
+    <app-input
+      label="Dein Name (wird verschlüsselt)"
+      placeholder="z.B. Anna"
+      [value]="name()"
+      (valueChange)="name.set($event)" />
+
+    <div class="actions">
+      <app-button
+        label="Beitreten"
+        size="lg"
+        [fullWidth]="true"
+        [loading]="isJoining()"
+        [disabled]="!canSubmit()"
+        (clicked)="join()" />
+    </div>
+
+    <p class="privacy-hint">
+      🔒 Dein Name wird mit dem Public-Key der Session verschlüsselt und kann nur vom
+      Session-Ersteller entschlüsselt werden.
+    </p>
+  </div>
+</app-card>

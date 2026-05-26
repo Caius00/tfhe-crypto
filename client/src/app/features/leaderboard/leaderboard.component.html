@@ -1,2 +1,51 @@
-<h1>08 – Encrypted Leaderboard</h1>
-<app-flappy-bird />
+<div class="lb-page">
+
+  <div class="lb-page-header">
+    <img src="/games/flappy-bird/images/bird/yellowbird-midflap.png" class="page-bird" alt="bird" />
+    <div>
+      <h1 class="page-title">ENCRYPTED</h1>
+      <h1 class="page-title accent">LEADERBOARD</h1>
+    </div>
+  </div>
+
+  @if (view() === 'landing') {
+    <app-leaderboard-landing
+      (createRoom)="onCreateRoom()"
+      (joinRoom)="onJoinRoom($event)"
+    />
+  }
+
+  @if (view() === 'creating') {
+    <div class="status-panel">
+      <app-spinner />
+      <div>
+        <p class="status-title">SCHLÜSSEL WERDEN GENERIERT …</p>
+        <p class="status-hint">FHE-Keypair · 30–90 Sekunden</p>
+      </div>
+    </div>
+  }
+
+  @if (view() === 'creator') {
+    <app-leaderboard-creator
+      [roomCode]="roomCode()"
+      [entries]="creatorEntries()"
+      [loading]="creatorLoading()"
+      [lastUpdated]="lastUpdated()"
+      (refresh)="fetchLeaderboard()"
+    />
+  }
+
+  @if (view() === 'player') {
+    <app-leaderboard-player
+      [roomCode]="roomCode()"
+      [playerId]="playerId()"
+      (submitScore)="onSubmitScore($event)"
+    />
+  }
+
+  @if (view() === 'error') {
+    <app-alert variant="error" [message]="errorMessage()" />
+    <app-button label="ZURÜCK" variant="ghost" (clicked)="goHome()" />
+  }
+
+</div>

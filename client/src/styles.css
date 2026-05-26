@@ -1,2 +1,41 @@
-/* You can add global styles to this file, and also import other style files */
-@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Press+Start+2P&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; }
+
+:root {
+  --c-bg: #f8fafc;
+  --c-surface: #ffffff;
+  --c-border: #e2e8f0;
+  --c-border-strong: #cbd5e1;
+  --c-text: #0f172a;
+  --c-text-muted: #64748b;
+  --c-text-subtle: #94a3b8;
+  --c-primary: #6366f1;
+  --c-primary-hover: #4f46e5;
+  --c-success: #22c55e;
+  --c-success-bg: #f0fdf4;
+  --c-success-border: #bbf7d0;
+  --c-error: #ef4444;
+  --c-error-bg: #fef2f2;
+  --c-error-border: #fecaca;
+  --c-warning: #f59e0b;
+  --c-warning-bg: #fffbeb;
+  --c-warning-border: #fde68a;
+  --c-info-bg: #eff6ff;
+  --c-info-border: #bfdbfe;
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
+  --shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+  --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 14px;
+  color: var(--c-text);
+  background: var(--c-bg);
+  margin: 0;
+}
