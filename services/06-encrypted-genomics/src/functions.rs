@@ -1,11 +1,13 @@
-use std::sync::Arc;
-use std::time::Instant;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use rayon::prelude::*;
-use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use std::time::Instant;
 use tfhe::prelude::*;
-use tfhe::{generate_keys, set_server_key, ClientKey, ConfigBuilder, FheUint8, PublicKey, ServerKey};
+use tfhe::{
+    generate_keys, set_server_key, ClientKey, ConfigBuilder, FheUint8, PublicKey, ServerKey,
+};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -118,25 +120,25 @@ pub struct EncryptRequest {
 
 #[derive(Serialize, JsonSchema)]
 pub struct EncryptResponse {
-    pub encrypted_data: String,   
+    pub encrypted_data: String,
     pub original_length: usize,
 }
 
 #[derive(Deserialize, Serialize, JsonSchema)]
 pub struct ProcessRequest {
-    pub encrypted_sequence: String, 
-    pub risk_pattern: String,       
+    pub encrypted_sequence: String,
+    pub risk_pattern: String,
 }
 
 #[derive(Serialize, JsonSchema)]
 pub struct ProcessResponse {
-    pub encrypted_distances: String, 
+    pub encrypted_distances: String,
     pub windows: usize,
 }
 
 #[derive(Deserialize, Serialize, JsonSchema)]
 pub struct DecryptRequest {
-    pub encrypted_data: String, 
+    pub encrypted_data: String,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -144,13 +146,12 @@ pub struct DecryptResponse {
     pub plain_data: Vec<u8>,
 }
 
-// API Handler 
+// API Handler
 pub async fn encrypt_handler(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
     axum::Json(req): axum::Json<EncryptRequest>,
 ) -> Result<axum::Json<EncryptResponse>, (axum::http::StatusCode, String)> {
-    let clean = encode_dna(&req.sequence)
-        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e))?;
+    let clean = encode_dna(&req.sequence).map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e))?;
     let len = clean.len();
 
     let now = Instant::now();
@@ -172,30 +173,28 @@ pub async fn process_handler(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
     axum::Json(req): axum::Json<ProcessRequest>,
 ) -> Result<axum::Json<ProcessResponse>, (axum::http::StatusCode, String)> {
-
     set_server_key(state.server_key.clone());
 
     let now = Instant::now();
 
-    let enc_bytes = BASE64
-        .decode(&req.encrypted_sequence)
-        .map_err(|e| (
+    let enc_bytes = BASE64.decode(&req.encrypted_sequence).map_err(|e| {
+        (
             axum::http::StatusCode::BAD_REQUEST,
-            format!("Base64-Fehler: {}", e)
-        ))?;
+            format!("Base64-Fehler: {}", e),
+        )
+    })?;
 
     let enc_seq = deserialize_fhe_vec(&enc_bytes);
 
-    let pattern = parse_pattern(&req.risk_pattern)
-        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e))?;
+    let pattern =
+        parse_pattern(&req.risk_pattern).map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e))?;
 
     let enc_pattern: Vec<FheUint8> = pattern
         .iter()
         .map(|&b| FheUint8::try_encrypt(b, &state.public_key).unwrap())
         .collect();
 
-    let enc_distances =
-        homomorphic_sliding_window(&enc_seq, &enc_pattern, &state.public_key);
+    let enc_distances = homomorphic_sliding_window(&enc_seq, &enc_pattern, &state.public_key);
 
     println!("processing finished in {:?}", now.elapsed());
 
@@ -208,19 +207,20 @@ pub async fn process_handler(
         encrypted_distances: dist_b64,
         windows,
     }))
-
 }
 
 pub async fn decrypt_handler(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
     axum::Json(req): axum::Json<DecryptRequest>,
 ) -> Result<axum::Json<DecryptResponse>, (axum::http::StatusCode, String)> {
-
     let now = Instant::now();
 
-    let enc_bytes = BASE64
-        .decode(&req.encrypted_data)
-        .map_err(|e| (axum::http::StatusCode::BAD_REQUEST, format!("Base64-err: {}", e)))?;
+    let enc_bytes = BASE64.decode(&req.encrypted_data).map_err(|e| {
+        (
+            axum::http::StatusCode::BAD_REQUEST,
+            format!("Base64-err: {}", e),
+        )
+    })?;
     let enc_vec = deserialize_fhe_vec(&enc_bytes);
 
     let plain: Vec<u8> = enc_vec
