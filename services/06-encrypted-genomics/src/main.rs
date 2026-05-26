@@ -8,8 +8,8 @@ use tower_http::cors::{Any, CorsLayer};
 
 mod functions;
 
-#[derive(Serialize, Deserialize, JsonSchema)]
 /*
+#[derive(Serialize, Deserialize, JsonSchema)]
 struct TestResponse {
     message: String,
 }
