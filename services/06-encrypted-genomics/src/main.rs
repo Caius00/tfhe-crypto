@@ -77,6 +77,43 @@ async fn main() {
 }
 
 /*
+
+curl
+# encrypt
+enc=$(curl -s -X POST http://localhost:8080/encrypt \
+  -H "Content-Type: application/json" \
+  -d '{"sequence":"ATCGATCG"}')
+
+echo "$enc"
+
+# process
+proc=$(echo "$enc" | \
+jq --arg risk "012" '
+{
+    encrypted_sequence: .encrypted_data,
+    risk_pattern: $risk
+}' | \
+curl -s -X POST http://localhost:8080/process \
+    -H "Content-Type: application/json" \
+    --data @-)
+
+echo "$proc"
+
+# decrypt
+dec=$(echo "$proc" | \
+jq '
+{
+    encrypted_data: .encrypted_distances
+}' | \
+curl -s -X POST http://localhost:8080/decrypt \
+    -H "Content-Type: application/json" \
+    --data @-)
+
+echo "$dec" | jq '.plain_data'
+
+
+
+win
 use format list to see sequence original length ($enc | format-list), window length ($proc | format-list)
 encrypt testsequence in body
     $enc = Invoke-RestMethod `
