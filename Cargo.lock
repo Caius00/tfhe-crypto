@@ -469,7 +469,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-voting-polling"
-version = "0.1.16"
+version = "0.1.17"
 dependencies = [
  "aide",
  "axum",
