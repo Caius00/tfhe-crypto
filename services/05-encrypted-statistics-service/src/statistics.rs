@@ -94,7 +94,7 @@ fn batcher_merge(
     depth: usize,
     out: &mut Vec<(usize, usize, usize)>,
 ) -> usize {
-    let len = (hi - lo + step - 1) / step;
+    let len = (hi - lo).div_ceil(step);
     if len <= 1 {
         return depth;
     }
