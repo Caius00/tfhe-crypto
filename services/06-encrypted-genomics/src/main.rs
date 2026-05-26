@@ -1,7 +1,4 @@
-use aide::axum::{
-    routing::{post_with},
-    ApiRouter,
-};
+use aide::axum::{routing::post_with, ApiRouter};
 use axum::extract::DefaultBodyLimit;
 use axum::{http::StatusCode, Json};
 use schemars::JsonSchema;
@@ -23,7 +20,6 @@ pub(crate) async fn testfun() -> Result<Json<TestResponse>, (StatusCode, String)
     }))
 }
 */
-
 #[tokio::main]
 async fn main() {
     let cors = CorsLayer::new()
