@@ -4,6 +4,9 @@ use axum::extract::DefaultBodyLimit;
 use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
 use tower_http::cors::{Any, CorsLayer};
+use std::sync::Arc;
+
+mod functions;
 
 #[derive(Serialize,Deserialize,JsonSchema)]
 struct TestResponse {
@@ -23,7 +26,15 @@ async fn main() {
         .allow_methods(Any)
         .allow_headers(Any);
 
+    
+    let shared_state = Arc::new(functions::AppState::new());
+
     let api_router = ApiRouter::new()
+        .api_route("/encrypt", post_with(functions::encrypt_handler, |op| op.description("DNA verschlüsseln")))
+        .api_route("/process", post_with(functions::process_handler, |op| op.description("Homomorphe Risikomuster-Prüfung")))
+        .api_route("/decrypt", post_with(functions::decrypt_handler, |op| op.description("Ergebnisse entschlüsseln")))
+        .with_state(shared_state);
+    /*
     .api_route(
         "/", 
         post_with(testfun, |op| { 
@@ -37,11 +48,12 @@ async fn main() {
             .response::<200, Json<TestResponse>>()
         })
     );
-    
+    */
+
     let app = openapi_docs::attach(
         api_router,
-        "",
-        "",
+        "tammoloco",
+        "0.1",
         ""
     )
     .merge(health::router(env!("CARGO_PKG_VERSION")))
@@ -53,3 +65,43 @@ async fn main() {
     println!("Server läuft auf http://{}", addr);
     axum::serve(listener, app).await.unwrap();
 }
+
+
+
+
+
+/*
+use format list to see sequence original length ($enc | format-list), window length ($proc | format-list)
+encrypt testsequence in body
+    $enc = Invoke-RestMethod `
+    -Uri "http://localhost:8080/encrypt" `
+    -Method Post `
+    -ContentType "application/json" `
+    -Body '{"sequence":"ATCGATCG"}'
+    $enc
+
+
+check risk pattern , risk pattern in body
+    $proc = Invoke-RestMethod `
+    -Uri "http://localhost:8080/process" `
+    -Method Post `
+    -ContentType "application/json" `
+    -Body (@{
+        encrypted_sequence = $enc.encrypted_data
+        risk_pattern = "012"
+    } | ConvertTo-Json)
+
+    $proc
+
+
+decrypt
+    $dec = Invoke-RestMethod `
+    -Uri "http://localhost:8080/decrypt" `
+    -Method Post `
+    -ContentType "application/json" `
+    -Body (@{
+        encrypted_data = $proc.encrypted_distances
+    } | ConvertTo-Json)
+
+    $dec.plain_data
+*/

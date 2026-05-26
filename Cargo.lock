@@ -395,6 +395,7 @@ dependencies = [
  "bincode",
  "health",
  "openapi-docs",
+ "rayon",
  "schemars",
  "serde",
  "serde_json",
