@@ -1,5 +1,5 @@
 use aide::axum::{
-    routing::{get_with, post_with},
+    routing::{post_with},
     ApiRouter,
 };
 use axum::extract::DefaultBodyLimit;
@@ -12,6 +12,7 @@ use tower_http::cors::{Any, CorsLayer};
 mod functions;
 
 #[derive(Serialize, Deserialize, JsonSchema)]
+/*
 struct TestResponse {
     message: String,
 }
@@ -21,6 +22,7 @@ pub(crate) async fn testfun() -> Result<Json<TestResponse>, (StatusCode, String)
         message: "Success".to_string(),
     }))
 }
+*/
 
 #[tokio::main]
 async fn main() {
