@@ -35,7 +35,6 @@ export class QuestionEditorComponent {
 
   /** Auswahlmöglichkeiten für den Frage-Typ */
   readonly typeOptions: SelectOption<QuestionType>[] = [
-    { value: 'bool',     label: 'Ja / Nein' },
     { value: 'single',   label: 'Single Choice' },
     { value: 'multiple', label: 'Multiple Choice' },
     { value: 'numeric',  label: 'Numerisch (0–255)' },

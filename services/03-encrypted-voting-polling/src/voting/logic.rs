@@ -12,7 +12,7 @@ use base64::{engine::general_purpose, Engine as _};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tfhe::{CompressedServerKey, FheUint8};
+use tfhe::{CompressedServerKey, FheUint32};
 use uuid::Uuid;
 
 type ApiError = (StatusCode, String);
@@ -195,12 +195,12 @@ pub fn aggregate_votes_ciphertext_only(
         match question.question_type {
             //  BOOL / NUMERIC → einzelne Summe
             QuestionType::Bool | QuestionType::Numeric => {
-                let mut acc: Option<FheUint8> = None;
+                let mut acc: Option<FheUint32> = None;
 
                 for v in votes {
                     let bytes = general_purpose::STANDARD.decode(&v[q_idx][0]).unwrap();
 
-                    let vote: FheUint8 = bincode::deserialize(&bytes).unwrap();
+                    let vote: FheUint32 = bincode::deserialize(&bytes).unwrap();
 
                     acc = Some(match acc {
                         None => vote,
@@ -215,12 +215,12 @@ pub fn aggregate_votes_ciphertext_only(
             // SINGLE / MULTIPLE → Vektor
             QuestionType::Single | QuestionType::Multiple => {
                 let option_count = votes[0][q_idx].len();
-                let mut acc_vec: Vec<Option<FheUint8>> = vec![None; option_count];
+                let mut acc_vec: Vec<Option<FheUint32>> = vec![None; option_count];
 
                 for v in votes {
                     for (opt_idx, enc) in v[q_idx].iter().enumerate() {
                         let bytes = general_purpose::STANDARD.decode(enc).unwrap();
-                        let vote: FheUint8 = bincode::deserialize(&bytes).unwrap();
+                        let vote: FheUint32 = bincode::deserialize(&bytes).unwrap();
 
                         acc_vec[opt_idx] = Some(match &acc_vec[opt_idx] {
                             None => vote,

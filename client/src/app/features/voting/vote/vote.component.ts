@@ -25,7 +25,6 @@ import {
  * beim Submit jede Antwort homomorph mit dem Public-Key der Session.
  *
  * Encoding-Regeln (übereinstimmend mit dem Backend):
- *   - bool      → [enc(0|1)]
  *   - single    → One-Hot (Array mit 0/1, eine 1 an Index der Auswahl)
  *   - multiple  → Multi-Hot (Array mit 0/1 pro Option)
  *   - numeric   → [enc(value)]
@@ -73,8 +72,7 @@ export class VoteComponent implements OnInit {
     return qs.every((q, i) => {
       const v = ans[i];
       switch (q.question_type) {
-        case 'bool':     return typeof v === 'boolean';
-        case 'numeric':  return typeof v === 'number' && Number.isFinite(v);
+        case 'numeric': return (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 255);
         case 'single':   return typeof v === 'number';
         case 'multiple': return Array.isArray(v) && v.length > 0;
       }
@@ -194,13 +192,18 @@ export class VoteComponent implements OnInit {
       const q = qs[i];
       const v = ans[i];
 
-      if (q.question_type === 'bool') {
-        flatValues.push(v === true ? 1 : 0);
-        valuesPerQuestion.push(1);
-      } else if (q.question_type === 'numeric') {
-        const num = typeof v === 'number' ? Math.max(0, Math.min(255, Math.round(v))) : 0;
-        flatValues.push(num);
-        valuesPerQuestion.push(1);
+      if (q.question_type === 'numeric') {
+        if (
+          typeof v !== 'number' ||
+          !Number.isInteger(v) ||
+          v < 0 ||
+          v > 255
+        ){
+          throw new Error(`Ungültiger Zahlenwert bei Frage ${i + 1}: ${String(v)}`);
+        } else {
+          flatValues.push(v);
+          valuesPerQuestion.push(1);
+        }
       } else if (q.question_type === 'single') {
         const selected = typeof v === 'number' ? v : -1;
         const opts = q.options ?? [];
@@ -221,7 +224,7 @@ export class VoteComponent implements OnInit {
     }
 
     // 2) Eine einzige Krypto-Operation für ALLE Werte
-    const encryptedFlat = this.tfhe.encryptUint8sCompact(pk, flatValues);
+    const encryptedFlat = this.tfhe.encryptUint32Compact(pk, flatValues);
 
     // 3) Zurück in die Form "ein Array pro Frage" splitten
     const result: string[][] = [];
