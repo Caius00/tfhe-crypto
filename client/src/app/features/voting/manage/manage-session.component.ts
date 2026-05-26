@@ -439,10 +439,10 @@ export class ManageSessionComponent implements OnInit, OnDestroy {
 
       try {
         // BOOL und NUMERIC: skalares Ergebnis
-        if (q.question_type === 'bool' || q.question_type === 'numeric') {
+        if (q.question_type === 'numeric') {
           const raw = this.tfhe.fromBase64(entry[0]);
-          const num = this.tfhe.decryptUint8(raw, this.clientKey);
-          return q.question_type === 'bool' ? `Ja-Stimmen: ${num}` : `Summe: ${num}`;
+          const num = this.tfhe.decryptUint32(raw, this.clientKey);
+          return `Summe: ${num}`;
         }
 
         // SINGLE und MULTIPLE: pro Option ein Zähler
@@ -452,7 +452,7 @@ export class ManageSessionComponent implements OnInit, OnDestroy {
             const ct = entry[i];
             if (!ct) return `${opt}: 0`;
             const raw = this.tfhe.fromBase64(ct);
-            const count = this.tfhe.decryptUint8(raw, this.clientKey);
+            const count = this.tfhe.decryptUint32(raw, this.clientKey);
             return `${opt}: ${count}`;
           });
         }

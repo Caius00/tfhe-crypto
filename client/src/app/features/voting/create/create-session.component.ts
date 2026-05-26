@@ -51,7 +51,7 @@ export class CreateSessionComponent {
   creatorId = signal('');
   /** Liste der Fragen (mind. eine, leere Initialfrage) */
   questions = signal<Question[]>([
-    { id: 1, text: '', question_type: 'bool', options: null, multiple: false },
+    { id: 1, text: '', question_type: 'single', options: null, multiple: false },
   ]);
 
   /** Generiertes FHE-KeyPair – null bis "Keys generieren" geklickt wurde */
@@ -126,7 +126,7 @@ export class CreateSessionComponent {
   addQuestion(): void {
     this.questions.update((arr) => [
       ...arr,
-      { id: arr.length + 1, text: '', question_type: 'bool', options: null, multiple: false },
+      { id: arr.length + 1, text: '', question_type: 'single', options: null, multiple: false },
     ]);
   }
 

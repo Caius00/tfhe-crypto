@@ -7,12 +7,6 @@
 
   <div class="qi-input">
     @switch (question.question_type) {
-      @case ('bool') {
-        <app-checkbox
-          label="Ja"
-          [checked]="boolValue"
-          (checkedChange)="onBoolChange($event)" />
-      }
 
       @case ('single') {
         <app-radio-group
@@ -34,10 +28,16 @@
 
       @case ('numeric') {
         <app-input
-          type="number"
+          type="text"
+          inputmode="numeric"
           placeholder="0–255"
           [value]="numericValue"
           (valueChange)="onNumericChange($event)" />
+        @if (numericError) {
+        <div class="qi-error">
+        {{ numericError }}
+        </div>
+        }
       }
     }
   </div>
