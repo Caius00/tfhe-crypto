@@ -157,7 +157,7 @@ pub async fn encrypt_handler(
     let now = Instant::now();
     let encrypted: Vec<FheUint8> = clean
         .par_iter()
-        .map(|&b| FheUint8::try_encrypt(b, &state.client_key).unwrap())
+        .map(|&b| FheUint8::try_encrypt(b, &state.public_key).unwrap())
         .collect();
     println!("encryption finished in {:?}", now.elapsed());
 
