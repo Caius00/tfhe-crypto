@@ -40,10 +40,7 @@ async fn test_invalid_server_key_base64() {
         "encrypted_list": [],
         "server_key": "not-valid-base64!!!"
     });
-    let response = create_app()
-        .oneshot(post_json(&payload))
-        .await
-        .unwrap();
+    let response = create_app().oneshot(post_json(&payload)).await.unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
@@ -54,10 +51,7 @@ async fn test_corrupt_server_key_bytes() {
         "encrypted_list": [],
         "server_key": general_purpose::STANDARD.encode(vec![1u8, 2, 3, 4, 5])
     });
-    let response = create_app()
-        .oneshot(post_json(&payload))
-        .await
-        .unwrap();
+    let response = create_app().oneshot(post_json(&payload)).await.unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
@@ -69,10 +63,7 @@ async fn test_invalid_list_item_base64() {
         "encrypted_list": ["not-valid-base64!!!"],
         "server_key": server_key_b64(sk)
     });
-    let response = create_app()
-        .oneshot(post_json(&payload))
-        .await
-        .unwrap();
+    let response = create_app().oneshot(post_json(&payload)).await.unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
@@ -84,10 +75,7 @@ async fn test_corrupt_list_item_bytes() {
         "encrypted_list": [general_purpose::STANDARD.encode(vec![1u8, 2, 3, 4, 5])],
         "server_key": server_key_b64(sk)
     });
-    let response = create_app()
-        .oneshot(post_json(&payload))
-        .await
-        .unwrap();
+    let response = create_app().oneshot(post_json(&payload)).await.unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
@@ -99,10 +87,7 @@ async fn test_empty_list() {
         "encrypted_list": [],
         "server_key": server_key_b64(sk)
     });
-    let response = create_app()
-        .oneshot(post_json(&payload))
-        .await
-        .unwrap();
+    let response = create_app().oneshot(post_json(&payload)).await.unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
@@ -161,17 +146,17 @@ fn test_statistics_single_element() {
 
     let enc = vec![FheInt32::encrypt(42i32, client_key)];
 
-    let sum_val: i64    = statistics::sum(&enc).decrypt(client_key);
-    let min_val: i32    = statistics::min(&enc).decrypt(client_key);
-    let max_val: i32    = statistics::max(&enc).decrypt(client_key);
-    let avg_val: i64    = statistics::average(&enc).decrypt(client_key);
+    let sum_val: i64 = statistics::sum(&enc).decrypt(client_key);
+    let min_val: i32 = statistics::min(&enc).decrypt(client_key);
+    let max_val: i32 = statistics::max(&enc).decrypt(client_key);
+    let avg_val: i64 = statistics::average(&enc).decrypt(client_key);
     let median_val: i32 = statistics::median(&enc).decrypt(client_key);
 
-    assert_eq!(statistics::count(&enc), 1,  "count");
-    assert_eq!(sum_val,    42, "sum");
-    assert_eq!(min_val,    42, "min");
-    assert_eq!(max_val,    42, "max");
-    assert_eq!(avg_val,    42, "average");
+    assert_eq!(statistics::count(&enc), 1, "count");
+    assert_eq!(sum_val, 42, "sum");
+    assert_eq!(min_val, 42, "min");
+    assert_eq!(max_val, 42, "max");
+    assert_eq!(avg_val, 42, "average");
     assert_eq!(median_val, 42, "median");
 }
 
@@ -186,13 +171,16 @@ fn test_statistics_even_n_lower_median() {
     tfhe::set_server_key(sk);
 
     let input = [10i32, 20, 30, 40];
-    let enc: Vec<FheInt32> = input.iter().map(|&x| FheInt32::encrypt(x, client_key)).collect();
+    let enc: Vec<FheInt32> = input
+        .iter()
+        .map(|&x| FheInt32::encrypt(x, client_key))
+        .collect();
 
     let median_val: i32 = statistics::median(&enc).decrypt(client_key);
-    let avg_val: i64    = statistics::average(&enc).decrypt(client_key);
+    let avg_val: i64 = statistics::average(&enc).decrypt(client_key);
 
     assert_eq!(median_val, 20, "lower median (nicht 25)");
-    assert_eq!(avg_val,    25, "average");
+    assert_eq!(avg_val, 25, "average");
 }
 
 /// Negative Eingabewerte — FheInt32 unterstützt Vorzeichen.
@@ -206,19 +194,22 @@ fn test_statistics_negative_values() {
     tfhe::set_server_key(sk);
 
     let input = [-10i32, -5, 5, 10];
-    let enc: Vec<FheInt32> = input.iter().map(|&x| FheInt32::encrypt(x, client_key)).collect();
+    let enc: Vec<FheInt32> = input
+        .iter()
+        .map(|&x| FheInt32::encrypt(x, client_key))
+        .collect();
 
-    let sum_val: i64    = statistics::sum(&enc).decrypt(client_key);
-    let min_val: i32    = statistics::min(&enc).decrypt(client_key);
-    let max_val: i32    = statistics::max(&enc).decrypt(client_key);
-    let avg_val: i64    = statistics::average(&enc).decrypt(client_key);
+    let sum_val: i64 = statistics::sum(&enc).decrypt(client_key);
+    let min_val: i32 = statistics::min(&enc).decrypt(client_key);
+    let max_val: i32 = statistics::max(&enc).decrypt(client_key);
+    let avg_val: i64 = statistics::average(&enc).decrypt(client_key);
     let median_val: i32 = statistics::median(&enc).decrypt(client_key);
 
-    assert_eq!(sum_val,     0,   "sum");
-    assert_eq!(min_val,    -10,  "min");
-    assert_eq!(max_val,     10,  "max");
-    assert_eq!(avg_val,     0,   "average");
-    assert_eq!(median_val, -5,   "lower median");
+    assert_eq!(sum_val, 0, "sum");
+    assert_eq!(min_val, -10, "min");
+    assert_eq!(max_val, 10, "max");
+    assert_eq!(avg_val, 0, "average");
+    assert_eq!(median_val, -5, "lower median");
 }
 
 /// Average Truncation toward zero (nicht Floor).
@@ -278,33 +269,28 @@ async fn test_compute_statistics_roundtrip() {
         .unwrap();
     let res: StatisticsResponse = serde_json::from_slice(&body).unwrap();
 
-    let sum_enc: FheInt64 = bincode::deserialize(
-        &general_purpose::STANDARD.decode(&res.sum).unwrap(),
-    ).unwrap();
-    let min_enc: FheInt32 = bincode::deserialize(
-        &general_purpose::STANDARD.decode(&res.min).unwrap(),
-    ).unwrap();
-    let max_enc: FheInt32 = bincode::deserialize(
-        &general_purpose::STANDARD.decode(&res.max).unwrap(),
-    ).unwrap();
-    let avg_enc: FheInt64 = bincode::deserialize(
-        &general_purpose::STANDARD.decode(&res.average).unwrap(),
-    ).unwrap();
-    let median_enc: FheInt32 = bincode::deserialize(
-        &general_purpose::STANDARD.decode(&res.median).unwrap(),
-    ).unwrap();
+    let sum_enc: FheInt64 =
+        bincode::deserialize(&general_purpose::STANDARD.decode(&res.sum).unwrap()).unwrap();
+    let min_enc: FheInt32 =
+        bincode::deserialize(&general_purpose::STANDARD.decode(&res.min).unwrap()).unwrap();
+    let max_enc: FheInt32 =
+        bincode::deserialize(&general_purpose::STANDARD.decode(&res.max).unwrap()).unwrap();
+    let avg_enc: FheInt64 =
+        bincode::deserialize(&general_purpose::STANDARD.decode(&res.average).unwrap()).unwrap();
+    let median_enc: FheInt32 =
+        bincode::deserialize(&general_purpose::STANDARD.decode(&res.median).unwrap()).unwrap();
 
-    let sum_val: i64    = sum_enc.decrypt(client_key);
-    let min_val: i32    = min_enc.decrypt(client_key);
-    let max_val: i32    = max_enc.decrypt(client_key);
-    let avg_val: i64    = avg_enc.decrypt(client_key);
+    let sum_val: i64 = sum_enc.decrypt(client_key);
+    let min_val: i32 = min_enc.decrypt(client_key);
+    let max_val: i32 = max_enc.decrypt(client_key);
+    let avg_val: i64 = avg_enc.decrypt(client_key);
     let median_val: i32 = median_enc.decrypt(client_key);
 
-    assert_eq!(res.count, 3,   "count");
-    assert_eq!(sum_val,   60,  "sum");
-    assert_eq!(min_val,   10,  "min");
-    assert_eq!(max_val,   30,  "max");
-    assert_eq!(avg_val,   20,  "average");
+    assert_eq!(res.count, 3, "count");
+    assert_eq!(sum_val, 60, "sum");
+    assert_eq!(min_val, 10, "min");
+    assert_eq!(max_val, 30, "max");
+    assert_eq!(avg_val, 20, "average");
     assert_eq!(median_val, 20, "median");
 }
 

@@ -87,7 +87,13 @@ fn batcher_sort(lo: usize, hi: usize, depth: usize, out: &mut Vec<(usize, usize,
     batcher_merge(lo, hi, 1, d1.max(d2), out)
 }
 
-fn batcher_merge(lo: usize, hi: usize, step: usize, depth: usize, out: &mut Vec<(usize, usize, usize)>) -> usize {
+fn batcher_merge(
+    lo: usize,
+    hi: usize,
+    step: usize,
+    depth: usize,
+    out: &mut Vec<(usize, usize, usize)>,
+) -> usize {
     let len = (hi - lo + step - 1) / step;
     if len <= 1 {
         return depth;

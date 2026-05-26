@@ -39,7 +39,12 @@ struct StatisticsResponse {
 fn to_base64<T: serde::Serialize>(val: &T) -> Result<String, (StatusCode, String)> {
     bincode::serialize(val)
         .map(|bytes| general_purpose::STANDARD.encode(bytes))
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Serialisierungsfehler: {}", e)))
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Serialisierungsfehler: {}", e),
+            )
+        })
 }
 
 /// POST /
@@ -50,10 +55,19 @@ async fn compute_statistics(
     // 1. Server Key deserialisieren und dekomprimieren
     let sk_bytes = general_purpose::STANDARD
         .decode(&req.server_key)
-        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Ungültiger ServerKey Base64: {}", e)))?;
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("Ungültiger ServerKey Base64: {}", e),
+            )
+        })?;
 
-    let compressed: CompressedServerKey = bincode::deserialize(&sk_bytes)
-        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Fehler beim Deserialisieren des ServerKey: {}", e)))?;
+    let compressed: CompressedServerKey = bincode::deserialize(&sk_bytes).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("Fehler beim Deserialisieren des ServerKey: {}", e),
+        )
+    })?;
 
     let server_key = compressed.decompress();
 
@@ -62,16 +76,26 @@ async fn compute_statistics(
         .encrypted_list
         .iter()
         .map(|b64| {
-            let bytes = general_purpose::STANDARD
-                .decode(b64)
-                .map_err(|e| (StatusCode::BAD_REQUEST, format!("Ungültiger Item-Base64: {}", e)))?;
-            bincode::deserialize(&bytes)
-                .map_err(|e| (StatusCode::BAD_REQUEST, format!("Fehler beim Deserialisieren von FheInt32: {}", e)))
+            let bytes = general_purpose::STANDARD.decode(b64).map_err(|e| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    format!("Ungültiger Item-Base64: {}", e),
+                )
+            })?;
+            bincode::deserialize(&bytes).map_err(|e| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    format!("Fehler beim Deserialisieren von FheInt32: {}", e),
+                )
+            })
         })
         .collect::<Result<Vec<_>, (StatusCode, String)>>()?;
 
     if enc_list.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "Die Liste darf nicht leer sein".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Die Liste darf nicht leer sein".to_string(),
+        ));
     }
 
     let count = enc_list.len() as u64;
