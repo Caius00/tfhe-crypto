@@ -69,7 +69,7 @@ async fn compute_statistics(
         )
     })?;
 
-    let server_key = compressed.decompress();
+    let server_key = tokio::task::block_in_place(|| compressed.decompress());
 
     // 2. Verschlüsselte Liste deserialisieren
     let enc_list: Vec<FheInt32> = req
