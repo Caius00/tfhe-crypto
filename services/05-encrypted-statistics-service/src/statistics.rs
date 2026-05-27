@@ -119,6 +119,9 @@ fn batcher_merge(
 pub fn median(list: &[FheInt32]) -> FheInt32 {
     let mut sorted = list.to_vec();
     let n = sorted.len();
+    if n == 0 {
+        panic!("Liste darf nicht leer sein");
+    }
     if n == 1 {
         return sorted.remove(0);
     }

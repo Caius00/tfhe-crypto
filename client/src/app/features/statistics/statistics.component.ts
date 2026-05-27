@@ -60,6 +60,8 @@ export class StatisticsComponent {
         .map((s) => {
           const n = Number(s);
           if (!Number.isInteger(n)) throw new Error(`Kein gültiger Wert: "${s}"`);
+          if (n < -2147483648 || n > 2147483647)
+            throw new Error(`Wert außerhalb des i32-Bereichs [-2147483648, 2147483647]: "${s}"`);
           return n;
         });
     } catch (e: any) {
