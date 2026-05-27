@@ -14,7 +14,7 @@ spec:
           from: All
     - name: redis
       protocol: TCP
-      port: 6379
+      port: 6301
       allowedRoutes:
         kinds:
           - kind: TCPRoute

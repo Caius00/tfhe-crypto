@@ -19,8 +19,8 @@ traefik:
       expose:
         default: false  # true = Dashboard über LoadBalancer-IP:9000 erreichbar (nur für Debugging)
     redis:
-      port: 6379
-      exposedPort: 6379
+      port: 6301
+      exposedPort: 6301
       protocol: TCP
       expose:
         default: true
