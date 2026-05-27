@@ -70,10 +70,9 @@ async fn compute_statistics(
         )
     })?;
 
-    let engine = tokio::task::block_in_place(|| {
-        fhe::FheEngine::from_server_key(compressed.decompress())
-    })
-    .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    let engine =
+        tokio::task::block_in_place(|| fhe::FheEngine::from_server_key(compressed.decompress()))
+            .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
 
     // 2. Verschlüsselte Liste deserialisieren
     let enc_list: Vec<FheInt32> = req
