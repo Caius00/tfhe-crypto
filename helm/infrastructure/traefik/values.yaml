@@ -22,6 +22,8 @@ traefik:
       port: 6379
       exposedPort: 6379
       protocol: TCP
+      expose:
+        default: true
 
   api:
     dashboard: true
