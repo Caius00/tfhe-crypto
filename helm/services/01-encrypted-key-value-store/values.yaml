@@ -24,6 +24,17 @@ route:
     namespace: traefik
     sectionName: web
 
+# Öffentlicher TCP-Zugriff auf Redis via Gateway API (TCPRoute)
+redisRoute:
+  enabled: true
+  gateway:
+    name: traefik-gateway
+    namespace: traefik
+    sectionName: redis
+  backend:
+    service: ekv-redis-master
+    port: 6379
+
 redis:
   enabled: true
   auth:

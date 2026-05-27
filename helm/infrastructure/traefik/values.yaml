@@ -18,6 +18,10 @@ traefik:
       protocol: TCP
       expose:
         default: false  # true = Dashboard über LoadBalancer-IP:9000 erreichbar (nur für Debugging)
+    redis:
+      port: 6379
+      exposedPort: 6379
+      protocol: TCP
 
   api:
     dashboard: true
@@ -31,6 +35,7 @@ traefik:
       enabled: false  # Traefik CRDs nicht installiert (--skip-crds), nur Gateway API wird genutzt
     kubernetesGateway:
       enabled: true
+      experimentalChannel: true  # benötigt für TCPRoute / TLSRoute (experimental Gateway API)
 
   gatewayClass:
     enabled: true
