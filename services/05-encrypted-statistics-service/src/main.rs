@@ -1,3 +1,4 @@
+mod fhe;
 mod statistics;
 
 #[cfg(test)]
@@ -69,7 +70,10 @@ async fn compute_statistics(
         )
     })?;
 
-    let server_key = tokio::task::block_in_place(|| compressed.decompress());
+    let engine = tokio::task::block_in_place(|| {
+        fhe::FheEngine::from_server_key(compressed.decompress())
+    })
+    .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
 
     // 2. Verschlüsselte Liste deserialisieren
     let enc_list: Vec<FheInt32> = req
@@ -101,18 +105,16 @@ async fn compute_statistics(
     let count = enc_list.len() as u64;
 
     // 3. Homomorphe Berechnungen – blockierend, da CPU-intensiv.
-    //    block_in_place verhindert, dass der Tokio-Threadpool blockiert wird.
+    //    engine.install setzt den ServerKey auf dem dedizierten Pool (request-sicher).
     let (enc_sum, enc_min, enc_max, enc_avg, enc_median) = tokio::task::block_in_place(|| {
-        rayon::broadcast(|_| tfhe::set_server_key(server_key.clone()));
-        tfhe::set_server_key(server_key);
-
-        let s: FheInt64 = statistics::sum(&enc_list);
-        let mn: FheInt32 = statistics::min(&enc_list);
-        let mx: FheInt32 = statistics::max(&enc_list);
-        let avg: FheInt64 = statistics::average(&enc_list);
-        let med = statistics::median(&enc_list);
-
-        (s, mn, mx, avg, med)
+        engine.install(|| {
+            let s: FheInt64 = statistics::sum(&enc_list);
+            let mn: FheInt32 = statistics::min(&enc_list);
+            let mx: FheInt32 = statistics::max(&enc_list);
+            let avg: FheInt64 = statistics::average(&enc_list);
+            let med = statistics::median(&enc_list);
+            (s, mn, mx, avg, med)
+        })
     });
 
     // 4. Ergebnisse serialisieren und zurücksenden
