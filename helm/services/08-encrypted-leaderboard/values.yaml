@@ -3,7 +3,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/caius00/encrypted-leaderboard
-  tag: "0.1.17"
+  tag: "0.1.18"
   pullPolicy: IfNotPresent
 
 service:
