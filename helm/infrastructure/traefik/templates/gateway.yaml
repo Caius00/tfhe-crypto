@@ -20,3 +20,11 @@ spec:
           - kind: TCPRoute
         namespaces:
           from: All
+    - name: postgres
+      protocol: TCP
+      port: 5432
+      allowedRoutes:
+        kinds:
+          - kind: TCPRoute
+        namespaces:
+          from: All

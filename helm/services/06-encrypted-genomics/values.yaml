@@ -23,3 +23,17 @@ route:
     name: traefik-gateway
     namespace: traefik
     sectionName: web
+
+postgresRoute:
+  enabled: true
+  gateway:
+    name: traefik-gateway
+    namespace: traefik
+    sectionName: postgres
+
+postgres:
+  enabled: true
+  auth:
+    username: genomics
+    password: genomics
+    database: genomics

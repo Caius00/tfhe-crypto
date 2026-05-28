@@ -34,3 +34,11 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
           resources: {{ toYaml .Values.resources | nindent 12 }}
+          {{- if .Values.postgres.enabled }}
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Release.Name }}-postgres"
+                  key: uri
+          {{- end }}

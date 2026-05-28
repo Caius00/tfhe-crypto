@@ -24,6 +24,12 @@ traefik:
       protocol: TCP
       expose:
         default: true
+    postgres:
+      port: 5432
+      exposedPort: 5432
+      protocol: TCP
+      expose:
+        default: true
 
   api:
     dashboard: true
