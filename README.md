@@ -27,6 +27,7 @@ Independent Rust binaries in `services/<name>/`, all exposing health endpoints o
 | | Link |
 |--|------|
 | ArgoCD | [http://159.195.145.100/argocd](http://159.195.145.100/argocd) |
+| Grafana Dashboards | [http://159.195.145.100/grafana/dashboards](http://159.195.145.100/grafana/dashboards) |
 | Traefik Dashboard | port-forward only (see below) |
 
 **Traefik Dashboard:**
