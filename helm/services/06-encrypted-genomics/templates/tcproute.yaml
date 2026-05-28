@@ -11,6 +11,6 @@ spec:
       sectionName: {{ .Values.postgresRoute.gateway.sectionName }}
   rules:
     - backendRefs:
-        - name: {{ .Release.Name }}-postgres
+        - name: {{ .Values.postgres.fullnameOverride }}
           port: 5432
 {{- end }}

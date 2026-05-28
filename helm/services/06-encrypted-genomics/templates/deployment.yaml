@@ -39,6 +39,6 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: "{{ .Release.Name }}-postgres"
+                  name: "{{ .Values.postgres.fullnameOverride }}"
                   key: uri
           {{- end }}

@@ -32,6 +32,7 @@ postgresRoute:
     sectionName: postgres
 
 postgres:
+  fullnameOverride: "genomics-postgres"
   enabled: true
   auth:
     username: genomics
