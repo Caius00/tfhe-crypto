@@ -489,22 +489,6 @@
       ],
       "title": "Recent Traces",
       "type": "table"
-    },
-    {
-      "datasource": { "type": "tempo", "uid": "$tempo_ds" },
-      "description": "Service Graph aus Tempo / Prometheus.",
-      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 52 },
-      "id": 31,
-      "options": {},
-      "targets": [
-        {
-          "datasource": { "type": "tempo", "uid": "$tempo_ds" },
-          "queryType": "serviceMap",
-          "refId": "A"
-        }
-      ],
-      "title": "Service Map",
-      "type": "nodeGraph"
     }
   ],
   "refresh": "30s",

@@ -6,6 +6,22 @@ kube-prometheus-stack:
   crds:
     enabled: true
 
+  # Default-Alert-Rules raus – wir haben keinen Alertmanager und keine
+  # Routing-Konfiguration. Spart einige PrometheusRule-CRDs und reduziert
+  # Operator-Reconcile-Last.
+  defaultRules:
+    create: false
+
+  # Alertmanager komplett aus – du nutzt ihn nicht. Spart 1 Pod, 1 PVC,
+  # ein ServiceMonitor und ~20 zusätzliche Time-Series.
+  alertmanager:
+    enabled: false
+
+  # CoreDNS-Stats brauchen wir nicht – DNS läuft im k3s und ist nicht
+  # Teil deines Dashboards.
+  coreDns:
+    enabled: false
+
   # --- Prometheus ---
   prometheus:
     prometheusSpec:
@@ -29,6 +45,7 @@ kube-prometheus-stack:
       # `prometheus.io/scrape: "true"` Annotation wird automatisch gescraped.
       additionalScrapeConfigs:
         - job_name: kubernetes-pods
+          scrape_interval: 30s
           kubernetes_sd_configs:
             - role: pod
           relabel_configs:
@@ -56,6 +73,16 @@ kube-prometheus-stack:
       retention: 15d
       retentionSize: "18GB"
 
+      # Tempo schreibt Service-Graph + Span-Metriken via remote_write rein.
+      # Ohne diesen Receiver kann der Tempo Metrics-Generator nicht pushen,
+      # und die Service Map in Grafana bleibt leer.
+      enableRemoteWriteReceiver: true
+
+      # Default-Scrape-Interval von 30s statt 15s halbiert die geschriebene
+      # Datenmenge bei für ein Dev-Cluster ausreichender Auflösung.
+      scrapeInterval: 30s
+      evaluationInterval: 30s
+
       resources:
         requests:
           cpu: 200m
@@ -73,24 +100,7 @@ kube-prometheus-stack:
               requests:
                 storage: 20Gi
 
-  # --- Alertmanager ---
-  alertmanager:
-    alertmanagerSpec:
-      resources:
-        requests:
-          cpu: 50m
-          memory: 64Mi
-        limits:
-          cpu: 200m
-          memory: 256Mi
-      storage:
-        volumeClaimTemplate:
-          spec:
-            storageClassName: local-path
-            accessModes: ["ReadWriteOnce"]
-            resources:
-              requests:
-                storage: 5Gi
+  # (Alertmanager-Block weiter oben mit `enabled: false` deaktiviert.)
 
   # --- Grafana ---
   grafana:
@@ -127,7 +137,12 @@ kube-prometheus-stack:
         cpu: 500m
         memory: 512Mi
 
-    defaultDashboardsEnabled: true
+    # Default-Dashboards (alertmanager-overview, kubelet, apiserver, coredns,
+    # networking, persistent-volumes, statefulset, etc.) komplett aus –
+    # die meisten zeigen ohnehin ins Leere weil die Komponenten deaktiviert
+    # sind. Übrig bleibt nur das selbstgebaute "Service Overview" aus der
+    # ConfigMap mit Label `grafana_dashboard: "1"`.
+    defaultDashboardsEnabled: false
     defaultDashboardsTimezone: Europe/Berlin
 
     # Tempo als zusätzliche Datasource direkt registrieren – damit ist die
@@ -139,12 +154,8 @@ kube-prometheus-stack:
         url: http://monitoring-tempo.monitoring.svc.cluster.local:3200
         jsonData:
           httpMethod: GET
-          serviceMap:
-            datasourceUid: prometheus
           tracesToMetrics:
             datasourceUid: prometheus
-          nodeGraph:
-            enabled: true
 
     sidecar:
       dashboards:
@@ -202,6 +213,28 @@ kube-prometheus-stack:
   kubeEtcd:
     enabled: false
 
+  # API-Server-Metriken sind im Dashboard nicht referenziert und kosten
+  # ~5000 Time-Series. Bei Bedarf wieder aktivieren.
+  kubeApiServer:
+    enabled: false
+
+  # Kubelet liefert via cAdvisor pro Container ~70 Metriken. Wir brauchen
+  # nur CPU, Memory, Network und CPU-Throttling – der Rest wird beim Scrape
+  # via metricRelabelings weggekippt. Spart ~80% der Container-Metriken.
+  kubelet:
+    enabled: true
+    serviceMonitor:
+      cAdvisorMetricRelabelings:
+        - sourceLabels: [__name__]
+          regex: "container_cpu_usage_seconds_total|container_memory_working_set_bytes|container_network_receive_bytes_total|container_network_transmit_bytes_total|container_cpu_cfs_throttled_periods_total|container_cpu_cfs_periods_total"
+          action: keep
+      # Probes-Metriken (HTTP-Probe-Latenzen für jede Probe im Cluster)
+      # sind im Dashboard ungenutzt.
+      probesMetricRelabelings:
+        - sourceLabels: [__name__]
+          regex: ".*"
+          action: drop
+
 
 # =========================================================================
 # Tempo: Single-Binary für Traces
@@ -244,6 +277,24 @@ tempo:
           path: /var/tempo/traces
         wal:
           path: /var/tempo/wal
+
+    # Metrics-Generator baut aus den eingehenden Spans Service-Graph und
+    # Span-Metriken (Request-Rate, Fehler, Latenz pro Service-Edge) und
+    # schreibt sie via remote_write nach Prometheus. Daraus zeichnet Grafana
+    # die Service Map.
+    # Metrics-Generator nur für Span-Metriken (Rate/Latency/Errors pro
+    # Endpoint, direkt aus Spans). Service Graph ist deaktiviert, weil bei
+    # einem einzelnen Service ohne tracing-fähigen Caller keine sinnvollen
+    # Edges entstehen.
+    metricsGenerator:
+      enabled: true
+      remoteWriteUrl: "http://monitoring-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090/api/v1/write"
+
+    overrides:
+      defaults:
+        metrics_generator:
+          processors:
+            - span-metrics
 
   persistence:
     enabled: true
