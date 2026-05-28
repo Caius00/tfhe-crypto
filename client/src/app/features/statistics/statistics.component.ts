@@ -11,10 +11,10 @@ type Step = 'init' | 'generating' | 'enter-list' | 'computing' | 'result' | 'err
 export interface StatisticsResult {
   sum: bigint;
   count: number;
-  min: bigint;
-  max: bigint;
+  min: number;
+  max: number;
   average: bigint;
-  median: bigint;
+  median: number;
 }
 
 @Component({
@@ -51,7 +51,7 @@ export class StatisticsComponent {
 
   async compute(): Promise<void> {
     // Komma-getrennte Eingabe parsen
-    let numbers: bigint[];
+    let numbers: number[];
     try {
       numbers = this.listInput()
         .split(',')
@@ -60,7 +60,9 @@ export class StatisticsComponent {
         .map((s) => {
           const n = Number(s);
           if (!Number.isInteger(n)) throw new Error(`Kein gültiger Wert: "${s}"`);
-          return BigInt(n);
+          if (n < -2147483648 || n > 2147483647)
+            throw new Error(`Wert außerhalb des i32-Bereichs [-2147483648, 2147483647]: "${s}"`);
+          return n;
         });
     } catch (e: any) {
       this.errorMessage.set(e.message ?? 'Ungültige Eingabe.');
@@ -79,21 +81,20 @@ export class StatisticsComponent {
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     try {
-      // Jede Zahl als FheInt64 verschlüsseln
+      // Jede Zahl als FheInt32 verschlüsseln
       const encryptedList = numbers.map((n) => {
-        const bytes = this.tfhe.encryptInt64(n, this.keyPair!.clientKey);
+        const bytes = this.tfhe.encryptInt32(n, this.keyPair!.clientKey);
         return this.tfhe.toBase64(bytes);
       });
       const serverKeyB64 = this.tfhe.toBase64(this.keyPair.serverKeyBytes);
 
       this.api.compute(encryptedList, serverKeyB64).subscribe({
         next: (res) => {
-          // Ergebnisse entschlüsseln – alle als FheInt64 (bigint)
           const sum     = this.tfhe.decryptInt64(this.tfhe.fromBase64(res.sum),     this.keyPair!.clientKey);
-          const min     = this.tfhe.decryptInt64(this.tfhe.fromBase64(res.min),     this.keyPair!.clientKey);
-          const max     = this.tfhe.decryptInt64(this.tfhe.fromBase64(res.max),     this.keyPair!.clientKey);
+          const min     = this.tfhe.decryptInt32(this.tfhe.fromBase64(res.min),     this.keyPair!.clientKey);
+          const max     = this.tfhe.decryptInt32(this.tfhe.fromBase64(res.max),     this.keyPair!.clientKey);
           const average = this.tfhe.decryptInt64(this.tfhe.fromBase64(res.average), this.keyPair!.clientKey);
-          const median  = this.tfhe.decryptInt64(this.tfhe.fromBase64(res.median),  this.keyPair!.clientKey);
+          const median  = this.tfhe.decryptInt32(this.tfhe.fromBase64(res.median),  this.keyPair!.clientKey);
 
           this.result.set({ sum, count: res.count, min, max, average, median });
           this.step.set('result');
