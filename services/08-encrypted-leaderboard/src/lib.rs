@@ -15,6 +15,8 @@ use crate::state::AppState;
 // Wird vom Binary mit der Paket-Version aufgerufen und kann von Tests
 // mit beliebigen State-/Versions-Werten wiederverwendet werden.
 pub fn app(state: AppState, version: &'static str) -> Router {
+    let (metrics_layer, metrics_router) = metrics_exporter::setup();
+
     let api_router = ApiRouter::new()
         .api_route(
             "/create",
@@ -56,6 +58,9 @@ pub fn app(state: AppState, version: &'static str) -> Router {
         version,
     )
     .merge(health::router(version))
+    .merge(metrics_router)
     // FHE-ServerKeys können bei /create > 100 MB groß sein
     .layer(DefaultBodyLimit::max(2 * 1024 * 1024 * 1024))
+    .layer(metrics_layer)
+    .layer(observability::http_trace_layer())
 }

@@ -9,7 +9,10 @@ description = "Encrypted Leaderboard"
 tfhe = { workspace = true, features = ["software-prng"] }
 axum.workspace = true
 health.workspace = true
+metrics-exporter.workspace = true
+observability.workspace = true
 openapi-docs.workspace = true
+tracing = "0.1"
 tokio = { workspace = true, features = ["full"] }
 serde.workspace = true
 base64 = "0.22.1"

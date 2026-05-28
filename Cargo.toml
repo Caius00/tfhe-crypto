@@ -2,6 +2,8 @@
 resolver = "2"
 members = [
     "shared/health",
+    "shared/metrics",
+    "shared/observability",
     "shared/openapi-docs",
     "services/01-encrypted-key-value-store",
     "services/02-encrypted-age-verification",
@@ -17,6 +19,8 @@ members = [
 [workspace.dependencies]
 axum = "0.8.9"
 health = { path = "shared/health" }
+metrics-exporter = { path = "shared/metrics" }
+observability = { path = "shared/observability" }
 openapi-docs = { path = "shared/openapi-docs" }
 tokio = { version = "1.52.2", features = ["full"] }
 serde = { version = "1.0.228", features = ["derive"] }

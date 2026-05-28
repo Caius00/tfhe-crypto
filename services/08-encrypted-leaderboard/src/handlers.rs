@@ -98,6 +98,7 @@ async fn require_session(state: &AppState, code: &str) -> Result<Arc<Session>, A
 
 // Erstellt einen Raum: dekomprimiert den ServerKey einmalig und legt eine Session an.
 // Antwortet mit einem 6-stelligen Raumcode, den E mit Spielern teilen kann.
+#[tracing::instrument(skip_all)]
 pub async fn create_session(
     State(state): State<AppState>,
     Json(req): Json<CreateRequest>,
@@ -140,6 +141,7 @@ pub async fn get_public_key(
 //   - Neuer Spieler: direkt aufnehmen (sofern der Raum nicht voll ist).
 //   - Bekannter Spieler: FHE-Maximum von alt und neu wird übernommen.
 // Ein Hintergrund-Sort wird angetriggert (Single-Flight, siehe spawn_sort_if_idle).
+#[tracing::instrument(skip_all, fields(code = %code))]
 pub async fn submit_score(
     State(state): State<AppState>,
     Path(CodePath { code }): Path<CodePath>,
@@ -241,6 +243,7 @@ pub async fn get_entries(
 // Rang-Abfrage: E sendet eine verschlüsselte Kennung und bekommt für jede
 // Position der sortierten Liste einen verschlüsselten Bool zurück (Treffer ja/nein).
 // Lokale Auswertung bei E ergibt 0..n Ränge — funktioniert auch bei Mehrfach-Treffern.
+#[tracing::instrument(skip_all, fields(code = %code))]
 pub async fn query_rank(
     State(state): State<AppState>,
     Path(CodePath { code }): Path<CodePath>,
@@ -293,6 +296,8 @@ pub async fn query_rank(
 // weiteren Pass nach. So fallen Burst-Submits in höchstens "current+1" Sorts
 // zusammen, statt sich zu stauen.
 fn spawn_sort_if_idle(session: Arc<Session>) {
+    use tracing::Instrument;
+    let span = tracing::info_span!("background_sort");
     tokio::spawn(async move {
         // Beanspruche den Sort-Slot — oder markiere nur Bedarf, wenn schon gesortet wird
         {
@@ -350,5 +355,5 @@ fn spawn_sort_if_idle(session: Arc<Session>) {
             }
             s.dirty = false;
         }
-    });
+    }.instrument(span));
 }

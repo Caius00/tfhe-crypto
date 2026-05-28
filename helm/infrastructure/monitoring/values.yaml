@@ -1,0 +1,257 @@
+# =========================================================================
+# kube-prometheus-stack: Prometheus + Alertmanager + Grafana + Exporters
+# =========================================================================
+kube-prometheus-stack:
+
+  crds:
+    enabled: true
+
+  # --- Prometheus ---
+  prometheus:
+    prometheusSpec:
+      # Alle ServiceMonitors / PodMonitors / Rules / Probes im Cluster
+      # einsammeln, egal in welchem Namespace und ohne Helm-Label-Filter.
+      # → "scannt alle Pods" sobald sie einen Monitor mitliefern.
+      serviceMonitorSelectorNilUsesHelmValues: false
+      podMonitorSelectorNilUsesHelmValues: false
+      ruleSelectorNilUsesHelmValues: false
+      probeSelectorNilUsesHelmValues: false
+      serviceMonitorSelector: {}
+      podMonitorSelector: {}
+      ruleSelector: {}
+      probeSelector: {}
+      serviceMonitorNamespaceSelector: {}
+      podMonitorNamespaceSelector: {}
+      ruleNamespaceSelector: {}
+      probeNamespaceSelector: {}
+
+      # Discovery für Pods ohne ServiceMonitor: jeder Pod mit
+      # `prometheus.io/scrape: "true"` Annotation wird automatisch gescraped.
+      additionalScrapeConfigs:
+        - job_name: kubernetes-pods
+          kubernetes_sd_configs:
+            - role: pod
+          relabel_configs:
+            - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+              action: keep
+              regex: "true"
+            - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+              action: replace
+              target_label: __metrics_path__
+              regex: (.+)
+            - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+              action: replace
+              regex: ([^:]+)(?::\d+)?;(\d+)
+              replacement: $1:$2
+              target_label: __address__
+            - action: labelmap
+              regex: __meta_kubernetes_pod_label_(.+)
+            - source_labels: [__meta_kubernetes_namespace]
+              action: replace
+              target_label: namespace
+            - source_labels: [__meta_kubernetes_pod_name]
+              action: replace
+              target_label: pod
+
+      retention: 15d
+      retentionSize: "18GB"
+
+      resources:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: "1"
+          memory: 2Gi
+
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: local-path
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 20Gi
+
+  # --- Alertmanager ---
+  alertmanager:
+    alertmanagerSpec:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+      storage:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: local-path
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 5Gi
+
+  # --- Grafana ---
+  grafana:
+    enabled: true
+
+    # Admin Login. Passwort vor Produktiv-Use per Secret/SealedSecret überschreiben.
+    adminPassword: "admin"
+
+    service:
+      type: ClusterIP
+      port: 80
+
+    # Reverse-Proxy Setup: Grafana hängt unter /grafana am Traefik-Gateway.
+    grafana.ini:
+      server:
+        root_url: "http://159.195.145.100/grafana/"
+        serve_from_sub_path: true
+      analytics:
+        check_for_updates: false
+        reporting_enabled: false
+
+    persistence:
+      enabled: true
+      type: pvc
+      storageClassName: local-path
+      accessModes: ["ReadWriteOnce"]
+      size: 5Gi
+
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+    defaultDashboardsEnabled: true
+    defaultDashboardsTimezone: Europe/Berlin
+
+    # Tempo als zusätzliche Datasource direkt registrieren – damit ist die
+    # Trace-Ansicht und Span-Lookup aus Logs/Metriken heraus sofort verfügbar.
+    additionalDataSources:
+      - name: Tempo
+        type: tempo
+        access: proxy
+        url: http://monitoring-tempo.monitoring.svc.cluster.local:3200
+        jsonData:
+          httpMethod: GET
+          serviceMap:
+            datasourceUid: prometheus
+          tracesToMetrics:
+            datasourceUid: prometheus
+          nodeGraph:
+            enabled: true
+
+    sidecar:
+      dashboards:
+        enabled: true
+        # ConfigMaps mit Label `grafana_dashboard: "1"` aus allen Namespaces einlesen
+        searchNamespace: ALL
+        label: grafana_dashboard
+      datasources:
+        enabled: true
+        searchNamespace: ALL
+        label: grafana_datasource
+
+  # --- Komponenten ---
+  kubeStateMetrics:
+    enabled: true
+  nodeExporter:
+    enabled: true
+
+  prometheus-node-exporter:
+    resources:
+      requests:
+        cpu: 20m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+
+  kube-state-metrics:
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+  prometheusOperator:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 300m
+        memory: 384Mi
+
+  # k3s-Cluster: kube-controller-manager / kube-scheduler / kube-proxy / etcd
+  # laufen entweder im k3s-Binary oder gar nicht als separate Pods.
+  # Default-ServiceMonitors für diese Komponenten würden ins Leere zeigen → aus.
+  kubeControllerManager:
+    enabled: false
+  kubeScheduler:
+    enabled: false
+  kubeProxy:
+    enabled: false
+  kubeEtcd:
+    enabled: false
+
+
+# =========================================================================
+# Tempo: Single-Binary für Traces
+# =========================================================================
+tempo:
+
+  tempo:
+    repository: grafana/tempo
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+
+    # OTLP HTTP + gRPC sowie Zipkin/Jaeger Receiver aktivieren.
+    # Services können Traces via OpenTelemetry SDK pushen.
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:4318
+          grpc:
+            endpoint: 0.0.0.0:4317
+      jaeger:
+        protocols:
+          thrift_http:
+            endpoint: 0.0.0.0:14268
+          grpc:
+            endpoint: 0.0.0.0:14250
+      zipkin:
+        endpoint: 0.0.0.0:9411
+
+    storage:
+      trace:
+        backend: local
+        local:
+          path: /var/tempo/traces
+        wal:
+          path: /var/tempo/wal
+
+  persistence:
+    enabled: true
+    storageClassName: local-path
+    accessModes: ["ReadWriteOnce"]
+    size: 10Gi
+
+  # ServiceMonitor wird vom Prometheus-Operator gepickt → Tempo exportiert
+  # ebenfalls Metriken an Prometheus.
+  serviceMonitor:
+    enabled: true

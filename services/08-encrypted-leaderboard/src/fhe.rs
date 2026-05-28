@@ -19,6 +19,7 @@ pub struct FheEngine {
 impl FheEngine {
     // Baut die Engine aus den vom Client gesendeten ServerKey-Bytes auf.
     // Dekomprimierung passiert genau einmal pro Session (teuer).
+    #[tracing::instrument(skip(bytes), fields(bytes_len = bytes.len()))]
     pub fn from_compressed_bytes(bytes: &[u8]) -> Result<Self, String> {
         let compressed: CompressedServerKey =
             bincode::deserialize(bytes).map_err(|e| format!("Invalid server key: {e}"))?;
@@ -50,6 +51,7 @@ impl FheEngine {
 
     // Liefert das bessere von zwei (Score, ID)-Paaren zurück (Maximum nach Score).
     // Genutzt bei Re-Submits desselben Spielers — der höhere Score überschreibt.
+    #[tracing::instrument(skip_all)]
     pub fn keep_max(
         &self,
         old_score: &[u8],
@@ -82,6 +84,7 @@ impl FheEngine {
     // Pro Layer laufen die Compare-and-Swap-Paare echt parallel auf dem Pool —
     // Latenz O(log² n) statt O(n²). Ciphertexts werden nur einmal deserialisiert
     // und am Ende einmal serialisiert (Layer-Schritte arbeiten in-memory).
+    #[tracing::instrument(skip(self, pairs), fields(n = pairs.len()))]
     pub fn sort_by_score_desc(&self, pairs: &mut [(Vec<u8>, Vec<u8>)]) -> Result<(), String> {
         let n = pairs.len();
         if n < 2 {
@@ -149,6 +152,7 @@ impl FheEngine {
     // ("ist die ID hier == target_id?"). E entschlüsselt jede Antwort —
     // jede true-Position ist ein Rang (1-basiert). Unterstützt automatisch
     // Mehrfach-Treffer falls mehrere Einträge dieselbe ID hätten.
+    #[tracing::instrument(skip_all, fields(n = sorted.len()))]
     pub fn rank_matches(
         &self,
         sorted: &[(Vec<u8>, Vec<u8>)],
