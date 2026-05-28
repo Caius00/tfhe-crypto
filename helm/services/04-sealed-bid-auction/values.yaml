@@ -3,7 +3,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/caius00/sealed-bid-auction
-  tag: "0.1.14"
+  tag: "0.1.16"
   pullPolicy: IfNotPresent
 
 service:
