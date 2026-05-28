@@ -5,4 +5,4 @@ edition = "2021"
 
 [dependencies]
 axum.workspace = true
-axum-prometheus = "0.10"
+axum-prometheus = "0.10.0"

@@ -56,7 +56,9 @@ async fn test_corrupt_server_key_bytes() {
 }
 
 /// Ungültiges Base64 in einem Listenelement → 400
-#[tokio::test]
+// multi_thread weil der Handler bei validem server_key auf
+// tokio::task::block_in_place trifft — das panicked auf single-thread.
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_invalid_list_item_base64() {
     let (_, sk) = get_test_setup();
     let payload = serde_json::json!({
@@ -68,7 +70,7 @@ async fn test_invalid_list_item_base64() {
 }
 
 /// Gültiges Base64, aber kein FheInt32 im Listenelement → 400
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_corrupt_list_item_bytes() {
     let (_, sk) = get_test_setup();
     let payload = serde_json::json!({
@@ -80,7 +82,7 @@ async fn test_corrupt_list_item_bytes() {
 }
 
 /// Leere Liste → 400
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_empty_list() {
     let (_, sk) = get_test_setup();
     let payload = serde_json::json!({

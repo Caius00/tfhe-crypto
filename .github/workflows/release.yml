@@ -134,6 +134,10 @@ jobs:
           echo "matrix=$UPDATED" >> $GITHUB_OUTPUT
           echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
+  # Test + Docker-Push pro Service. `fail-fast: false` damit ein
+  # fehlschlagender Service nicht die anderen Matrix-Jobs abbricht.
+  # Jeder erfolgreiche Service lädt einen Marker-Artifact hoch –
+  # `update-readme` / `update-helm` lesen die und bearbeiten nur diese.
   build-push:
     needs: [setup, bump]
     if: needs.setup.outputs.any == 'true'
@@ -142,6 +146,7 @@ jobs:
       contents: read
       packages: write
     strategy:
+      fail-fast: false
       matrix: ${{ fromJson(needs.bump.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
@@ -179,8 +184,24 @@ jobs:
           build-args: SERVICE_NAME=${{ matrix.service }}
           tags: ${{ steps.meta.outputs.tags }}
 
+      # Wird nur erreicht, wenn Tests + Docker-Push erfolgreich waren.
+      - name: Mark service as released
+        run: |
+          mkdir -p _released
+          echo '${{ toJson(matrix) }}' > "_released/${{ matrix.nr }}.json"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: released-${{ matrix.nr }}
+          path: _released/${{ matrix.nr }}.json
+          retention-days: 1
+
+  # Readme-Badges + Helm-Tags nur für Services, die `build-push`
+  # erfolgreich durchlaufen haben. `if: always()` damit der Job auch
+  # läuft, wenn ein Service in build-push gescheitert ist.
   update-readme:
     needs: [bump, build-push]
+    if: always() && needs.bump.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -190,15 +211,28 @@ jobs:
           ref: main
           token: ${{ secrets.GH_PAT }}
 
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: released-*
+          path: _released
+          merge-multiple: true
+
       - name: Update version badges
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          for row in $(echo '${{ needs.bump.outputs.matrix }}' | jq -c '.include[]'); do
-            SERVICE=$(echo "$row" | jq -r '.service')
-            DIR=$(echo "$row"     | jq -r '.dir')
-            VERSION=$(echo "$row" | jq -r '.version')
+          shopt -s nullglob
+          files=(_released/*.json)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "Kein Service hat build-push erfolgreich abgeschlossen – nichts zu aktualisieren."
+            exit 0
+          fi
+
+          for f in "${files[@]}"; do
+            SERVICE=$(jq -r '.service' "$f")
+            DIR=$(jq -r '.dir' "$f")
+            VERSION=$(jq -r '.version' "$f")
 
             sed -i "s|version-[0-9]*\.[0-9]*\.[0-9]*-blue|version-$VERSION-blue|g" "services/$DIR/README.md" 2>/dev/null || true
             sed -i "/$SERVICE/s|version-[0-9]*\.[0-9]*\.[0-9]*-blue|version-$VERSION-blue|g" README.md 2>/dev/null || true
@@ -210,6 +244,7 @@ jobs:
 
   update-helm:
     needs: [bump, build-push, update-readme]
+    if: always() && needs.bump.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -219,14 +254,27 @@ jobs:
           ref: main
           token: ${{ secrets.GH_PAT }}
 
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: released-*
+          path: _released
+          merge-multiple: true
+
       - name: Update Helm chart image tags
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          for row in $(echo '${{ needs.bump.outputs.matrix }}' | jq -c '.include[]'); do
-            DIR=$(echo "$row"     | jq -r '.dir')
-            VERSION=$(echo "$row" | jq -r '.version')
+          shopt -s nullglob
+          files=(_released/*.json)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "Kein Service hat build-push erfolgreich abgeschlossen – nichts zu aktualisieren."
+            exit 0
+          fi
+
+          for f in "${files[@]}"; do
+            DIR=$(jq -r '.dir' "$f")
+            VERSION=$(jq -r '.version' "$f")
 
             sed -i "s/^  tag: .*/  tag: \"$VERSION\"/" "helm/services/$DIR/values.yaml"
           done
