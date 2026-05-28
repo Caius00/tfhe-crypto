@@ -1,25 +1,10 @@
 use aide::axum::{routing::post_with, ApiRouter};
 use axum::extract::DefaultBodyLimit;
-use axum::{http::StatusCode, Json};
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 
 mod functions;
 
-/*
-#[derive(Serialize, Deserialize, JsonSchema)]
-struct TestResponse {
-    message: String,
-}
-
-pub(crate) async fn testfun() -> Result<Json<TestResponse>, (StatusCode, String)> {
-    Ok(Json(TestResponse {
-        message: "Success".to_string(),
-    }))
-}
-*/
 #[tokio::main]
 async fn main() {
     let cors = CorsLayer::new()
@@ -33,37 +18,28 @@ async fn main() {
         .api_route(
             "/encrypt",
             post_with(functions::encrypt_handler, |op| {
-                op.description("DNA verschlüsseln")
+                op.description("Encrypt dna")
             }),
         )
         .api_route(
             "/process",
             post_with(functions::process_handler, |op| {
-                op.description("Homomorphe Risikomuster-Prüfung")
+                op.description("Check homomorph risk pattern hamming")
             }),
         )
         .api_route(
             "/decrypt",
             post_with(functions::decrypt_handler, |op| {
-                op.description("Ergebnisse entschlüsseln")
+                op.description("Decrypt results homomorph risk-pattern hamming")
+            }),
+        )
+        .api_route(
+            "/compare-db",
+            post_with(functions::compare_database_handler, |op| {
+                op.description("Compare encrypted DNA against encrypted DNA database")
             }),
         )
         .with_state(shared_state);
-    /*
-    .api_route(
-        "/",
-        post_with(testfun, |op| {
-            op.description("")
-            .response::<200, Json<TestResponse>>()
-    }))
-    .api_route(
-        "/test",
-        get_with(testfun, |op| {
-            op.description("")
-            .response::<200, Json<TestResponse>>()
-        })
-    );
-    */
 
     let app = openapi_docs::attach(api_router, "tammoloco", "0.1", "")
         .merge(health::router(env!("CARGO_PKG_VERSION")))
@@ -124,7 +100,7 @@ encrypt testsequence in body
     $enc
 
 
-check risk pattern , risk pattern in body
+check risk pattern with hamming distance , risk pattern in body
     $proc = Invoke-RestMethod `
     -Uri "http://localhost:8080/process" `
     -Method Post `
@@ -136,8 +112,7 @@ check risk pattern , risk pattern in body
 
     $proc
 
-
-decrypt
+decrypt risk marker hamming compare
     $dec = Invoke-RestMethod `
     -Uri "http://localhost:8080/decrypt" `
     -Method Post `
@@ -147,4 +122,44 @@ decrypt
     } | ConvertTo-Json)
 
     $dec.plain_data
+
+check dna against every other stored dna in db (currently just function stored values)
+    $cmp = Invoke-RestMethod `
+        -Uri "http://localhost:8080/compare-db" `
+        -Method Post `
+        -ContentType "application/json" `
+        -Body (@{
+            encrypted_sequence = $enc.encrypted_data
+        } | ConvertTo-Json)
+
+    $cmp
+
+decrypt dna-dna from db compares, currently has 3 values callable by [value], so [0], [1], [2]
+
+   $allResults = @{}
+
+    for($i = 0; $i -lt $cmp.encrypted_results.Count; $i++) {
+
+        $dec = Invoke-RestMethod `
+            -Uri "http://localhost:8080/decrypt" `
+            -Method Post `
+            -ContentType "application/json" `
+            -Body (@{
+                encrypted_data = $cmp.encrypted_results[$i]
+            } | ConvertTo-Json)
+
+        $allResults["db_sequence_$i"] = $dec.plain_data
+    }
+
+    foreach($key in $allResults.Keys) {
+        Write-Host ""
+        Write-Host "$key"
+        Write-Host ($allResults[$key] -join ", ")
+    }
+
+
+
+
+
+
 */

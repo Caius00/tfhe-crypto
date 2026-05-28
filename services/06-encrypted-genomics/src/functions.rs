@@ -104,6 +104,30 @@ pub fn homomorphic_sliding_window(
         .collect()
 }
 
+pub fn compare_against_database(
+    input_sequence: &[FheUint8],
+    database_sequences: &[Vec<FheUint8>],
+    public_key: &PublicKey,
+) -> Vec<Vec<FheUint8>> {
+    database_sequences
+        .par_iter()
+        .map(|db_sequence| {
+            let input_len = input_sequence.len();
+            let db_len = db_sequence.len();
+            // smaller sequence = "risk pattern"
+            // enables check of bigger sequence against smaller
+            let (sequence, pattern) = if input_len >= db_len {
+                (input_sequence, db_sequence.as_slice())
+            } else {
+                (db_sequence.as_slice(), input_sequence)
+            };
+
+            // sliding window + hamming
+            homomorphic_sliding_window(sequence, pattern, public_key)
+        })
+        .collect()
+}
+
 pub fn serialize_fhe_vec(data: &[FheUint8]) -> Vec<u8> {
     bincode::serialize(&data.to_vec()).expect("serializing failed (ง'̀-'́)ง")
 }
@@ -144,6 +168,17 @@ pub struct DecryptRequest {
 #[derive(Serialize, JsonSchema)]
 pub struct DecryptResponse {
     pub plain_data: Vec<u8>,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema)]
+pub struct CompareDatabaseRequest {
+    pub encrypted_sequence: String,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct CompareDatabaseResponse {
+    pub encrypted_results: Vec<String>,
+    pub compared_sequences: usize,
 }
 
 // API Handler
@@ -231,4 +266,75 @@ pub async fn decrypt_handler(
     println!("decryption finished in {:?}", now.elapsed());
 
     Ok(axum::Json(DecryptResponse { plain_data: plain }))
+}
+
+pub async fn compare_database_handler(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    axum::Json(req): axum::Json<CompareDatabaseRequest>,
+) -> Result<axum::Json<CompareDatabaseResponse>, (axum::http::StatusCode, String)> {
+    set_server_key(state.server_key.clone());
+
+    let now = Instant::now();
+
+    // decode client dna
+    let enc_bytes = BASE64.decode(&req.encrypted_sequence).map_err(|e| {
+        (
+            axum::http::StatusCode::BAD_REQUEST,
+            format!("Base64-Fehler: {}", e),
+        )
+    })?;
+
+    let enc_input_sequence = deserialize_fhe_vec(&enc_bytes);
+
+    let encrypted_db_sequences: Vec<Vec<FheUint8>> = vec![
+        // testseq 1
+        {
+            let seq = encode_dna("ATC").unwrap();
+
+            seq.iter()
+                .map(|&b| FheUint8::try_encrypt(b, &state.public_key).unwrap())
+                .collect()
+        },
+        //testseq 2
+        {
+            let seq = encode_dna("GGTT").unwrap();
+
+            seq.iter()
+                .map(|&b| FheUint8::try_encrypt(b, &state.public_key).unwrap())
+                .collect()
+        },
+        // testseq 3
+        {
+            let seq = encode_dna("TA").unwrap();
+
+            seq.iter()
+                .map(|&b| FheUint8::try_encrypt(b, &state.public_key).unwrap())
+                .collect()
+        },
+    ];
+
+    // compare
+    let results = compare_against_database(
+        &enc_input_sequence,
+        &encrypted_db_sequences,
+        &state.public_key,
+    );
+
+    println!("database comparison finished in {:?}", now.elapsed());
+
+    // serialize
+    let encrypted_results: Vec<String> = results
+        .iter()
+        .map(|distances| {
+            let bytes = serialize_fhe_vec(distances);
+
+            BASE64.encode(bytes)
+        })
+        .collect();
+
+    Ok(axum::Json(CompareDatabaseResponse {
+        encrypted_results,
+
+        compared_sequences: encrypted_db_sequences.len(),
+    }))
 }
