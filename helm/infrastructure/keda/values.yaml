@@ -1,0 +1,19 @@
+# KEDA Core (Operator + Metrics Adapter)
+keda:
+  # Beide Komponenten brauchen nicht viel — KEDA polling + Pod-Watching ist
+  # leichtgewichtig. Bei <50 Workloads reicht das Default sehr klar.
+  resources:
+    operator:
+      limits:
+        cpu: 500m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 64Mi
+    metricServer:
+      limits:
+        cpu: 500m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 64Mi

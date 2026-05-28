@@ -6,6 +6,8 @@ Cluster-Basiskomponenten. Reihenfolge beim erstmaligen Aufsetzen:
 2. `traefik/` – API Gateway / LoadBalancer
 3. `argocd/` – GitOps-Sync für alle weiteren Services
 4. `monitoring/` – Prometheus + Grafana + Alertmanager + Tempo
+5. `keda/` – KEDA Core (Operator + CRDs), muss VOR `keda-http/` kommen
+6. `keda-http/` – KEDA HTTP Add-on (Interceptor) für Scale-to-Zero
 
 ## Gateway API CRDs (Bootstrap)
 
@@ -88,3 +90,48 @@ helm install monitoring helm/infrastructure/monitoring -n monitoring --create-na
 `kube-scheduler`, `kube-proxy` und `kube-etcd` sind deaktiviert – diese
 Komponenten laufen bei k3s im Hauptbinary und exponieren keine eigenen
 Endpoints.
+
+## KEDA (Scale-to-Zero)
+
+KEDA + HTTP Add-on skalieren alle Service-Pods automatisch auf 0, wenn kein
+Traffic kommt — beim ersten Request fährt der Interceptor den Ziel-Pod hoch
+und hält den Request so lange fest, bis der Pod `readyz=200` antwortet.
+Cold-Start ca. 3–5 s für ein Rust-Binary.
+
+**Install in zwei Schritten** (KEDA-Core stellt CRDs bereit, die das HTTP-Add-on
+beim Render schon braucht — daher zwei `helm install`-Aufrufe statt einer):
+
+```bash
+# 1. KEDA Core + CRDs
+helm dependency update helm/infrastructure/keda
+helm install keda helm/infrastructure/keda -n keda --create-namespace
+
+# 2. HTTP Add-on (in den gleichen Namespace)
+helm dependency update helm/infrastructure/keda-http
+helm install keda-http helm/infrastructure/keda-http -n keda
+```
+
+**Architektur**:
+
+```
+User → Traefik (HTTPRoute, PathPrefix-Match)
+     → URLRewrite: Host=<chart-name>.keda.local, Path=/
+     → keda-add-ons-http-interceptor-proxy (Namespace: keda)
+     → Service-Pod (Namespace: <service>)
+```
+
+- Pro Service ein `HTTPScaledObject` (siehe `helm/services/*/templates/httpscaledobject.yaml`).
+- Pro Service ein `HTTPRoute`, der den Backend von `<service>` auf den KEDA-Interceptor
+  umbiegt und gleichzeitig den Host-Header auf `<chart-name>.keda.local` setzt.
+- Ein `ReferenceGrant` in der `keda`-Namespace erlaubt den Cross-Namespace-Backend-Ref.
+
+**Manuelles Skalieren**: ArgoCD ignoriert `/spec/replicas` und
+`/spec/template/spec/containers/0/resources` (siehe
+`helm/infrastructure/argocd/templates/applications.yaml`). Wer nicht warten
+will, kann den Pod direkt in der ArgoCD UI hochziehen — KEDA übernimmt danach
+wieder das Scale-down nach `scaledownPeriod` (Default 5 min).
+
+**Konfiguration**: `scaledownPeriod` (idle-Zeit bis Scale-down) und `replicas.max`
+liegen pro Service in `helm/services/*/templates/httpscaledobject.yaml`. Falls
+mehrere Services parallel laufen können sollen, dort `replicas.max` anheben —
+beachte das Memory-Budget des Clusters.

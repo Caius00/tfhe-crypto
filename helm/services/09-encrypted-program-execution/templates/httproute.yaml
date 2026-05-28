@@ -16,10 +16,22 @@ spec:
       filters:
         - type: URLRewrite
           urlRewrite:
+            # KEDA Interceptor matcht Requests per Host-Header gegen das
+            # zugehörige HTTPScaledObject (siehe templates/httpscaledobject.yaml).
+            # ".keda.local" existiert nicht in DNS — wir setzen den Header nur,
+            # damit der Interceptor weiß welches Deployment hochzufahren ist.
+            hostname: {{ .Chart.Name }}.keda.local
             path:
               type: ReplacePrefixMatch
               replacePrefixMatch: /
       backendRefs:
-        - name: {{ .Chart.Name }}
+        # Statt direkt zum Service: über den KEDA-Interceptor leiten.
+        # Wenn das Service-Deployment auf 0 Replicas steht, hält der Interceptor
+        # den Request fest, triggert das Hochfahren und leitet erst weiter,
+        # wenn der Pod /readyz=200 antwortet. Cross-Namespace-Referenz auf "keda"
+        # ist durch ReferenceGrant in helm/infrastructure/keda/templates/referencegrant.yaml
+        # explizit erlaubt.
+        - name: keda-add-ons-http-interceptor-proxy
+          namespace: keda
           kind: Service
-          port: {{ .Values.service.port }}
+          port: 8080
