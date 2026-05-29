@@ -14,6 +14,7 @@
 pub mod codec;
 pub mod fhe;
 pub mod handlers;
+pub mod loadtest_support;
 pub mod state;
 
 use aide::axum::{

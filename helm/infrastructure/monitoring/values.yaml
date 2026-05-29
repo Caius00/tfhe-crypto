@@ -76,6 +76,10 @@ kube-prometheus-stack:
       # Tempo schreibt Service-Graph + Span-Metriken via remote_write rein.
       # Ohne diesen Receiver kann der Tempo Metrics-Generator nicht pushen,
       # und die Service Map in Grafana bleibt leer.
+      # Zusätzlich nutzt der k6-Loadtest des Leaderboard-Services
+      # (services/08-encrypted-leaderboard/loadtest/k6/) denselben Receiver,
+      # um seine Client-seitigen Latenz-Metriken live nach Prometheus zu pushen
+      # — siehe Dashboard `leaderboard-perf`.
       enableRemoteWriteReceiver: true
 
       # Default-Scrape-Interval von 30s statt 15s halbiert die geschriebene
