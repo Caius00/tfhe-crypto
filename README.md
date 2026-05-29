@@ -17,7 +17,7 @@ Independent Rust binaries in `services/<name>/`, all exposing health endpoints o
 | [05](services/05-encrypted-statistics-service/README.md) | Encrypted Statistics Service | ![version](https://img.shields.io/badge/version-0.1.17-blue) | `http://159.195.145.100/statistics` |
 | [06](services/06-encrypted-genomics/README.md) | Encrypted Genomics | ![version](https://img.shields.io/badge/version-0.1.16-blue) | `http://159.195.145.100/genomics` |
 | [07](services/07-encrypted-image-processing/README.md) | Encrypted Image Processing | ![version](https://img.shields.io/badge/version-0.1.16-blue) | `http://159.195.145.100/image-processing` |
-| [08](services/08-encrypted-leaderboard/README.md) | Encrypted Leaderboard | ![version](https://img.shields.io/badge/version-0.1.19-blue) | `http://159.195.145.100/leaderboard` |
+| [08](services/08-encrypted-leaderboard/README.md) | Encrypted Leaderboard | ![version](https://img.shields.io/badge/version-0.1.20-blue) | `http://159.195.145.100/leaderboard` |
 | [09](services/09-encrypted-program-execution/README.md) | Encrypted Program Execution | ![version](https://img.shields.io/badge/version-0.1.16-blue) | `http://159.195.145.100/program-execution` |
 
 ---
