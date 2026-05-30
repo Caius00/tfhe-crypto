@@ -13,8 +13,8 @@ use axum::extract::DefaultBodyLimit;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::voting::logic::{
-    approve_participant, create_session, finalize_session, get_results, get_session,
-    get_status, join_session, submit_vote, get_participants
+    approve_participant, create_session, finalize_session, get_participants, get_results,
+    get_session, get_status, join_session, submit_vote,
 };
 use crate::voting::types::AppState;
 

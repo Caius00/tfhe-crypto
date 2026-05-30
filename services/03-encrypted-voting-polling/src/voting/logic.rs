@@ -1,7 +1,8 @@
 use crate::voting::types::{
     AppState, ApproveRequest, CreateSessionRequest, CreateSessionResponse, JoinRequest,
-    JoinResponse, ParticipantState, ParticipantStatusResponse, Question, QuestionType,
-    ResultResponse, SessionInfoResponse, SessionState, StatusResponse, VoteRequest, VoteResponse, ParticipantAdminView,
+    JoinResponse, ParticipantAdminView, ParticipantState, ParticipantStatusResponse, Question,
+    QuestionType, ResultResponse, SessionInfoResponse, SessionState, StatusResponse, VoteRequest,
+    VoteResponse,
 };
 use axum::http::StatusCode;
 use axum::{
@@ -10,7 +11,7 @@ use axum::{
 };
 use base64::{engine::general_purpose, Engine as _};
 use schemars::JsonSchema;
-use serde::{Deserialize};
+use serde::Deserialize;
 use std::collections::HashMap;
 use tfhe::{CompressedServerKey, FheUint32};
 use uuid::Uuid;
@@ -118,7 +119,7 @@ pub async fn approve_participant(
     }
 
     if session.finalized {
-    return Err(err("Session bereits beendet"));
+        return Err(err("Session bereits beendet"));
     }
 
     if req.approved {
@@ -357,7 +358,10 @@ pub async fn get_session(
 
 pub async fn get_participants(
     State(state): State<AppState>,
-    Path(SessionCreatorPath { session_id, creator_id }): Path<SessionCreatorPath>,
+    Path(SessionCreatorPath {
+        session_id,
+        creator_id,
+    }): Path<SessionCreatorPath>,
 ) -> ApiResult<Vec<ParticipantAdminView>> {
     let map = state.lock().unwrap();
     let session = map.get(&session_id).ok_or(err("Session nicht gefunden"))?;

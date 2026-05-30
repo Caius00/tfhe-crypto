@@ -15,8 +15,8 @@ mod integration_tests {
     use tower::util::ServiceExt;
 
     use encrypted_voting_polling::voting::logic::{
-        approve_participant, create_session, finalize_session, get_results,
-        get_session, get_status, join_session, submit_vote, get_participants
+        approve_participant, create_session, finalize_session, get_participants, get_results,
+        get_session, get_status, join_session, submit_vote,
     };
     use encrypted_voting_polling::voting::types::AppState;
 
@@ -41,7 +41,10 @@ mod integration_tests {
         let app = Router::new()
             .route("/session", post(create_session))
             .route("/join", post(join_session))
-            .route("/participants/{session_id}/{creator_id}", get(get_participants))
+            .route(
+                "/participants/{session_id}/{creator_id}",
+                get(get_participants),
+            )
             .route("/approve", post(approve_participant))
             .route("/vote", post(submit_vote))
             .route("/results/{session_id}/{creator_id}", get(get_results))
@@ -610,17 +613,13 @@ mod integration_tests {
         println!("✅ Teilnehmer erfolgreich abgelehnt");
 
         // Teilnehmerliste abrufen
-        let (status, body) = get_json(
-            &app,
-            &format!("/participants/{}/alice", session_id)
-        ).await;
+        let (status, body) = get_json(&app, &format!("/participants/{}/alice", session_id)).await;
 
         assert_eq!(status, StatusCode::OK);
 
         let participants = body.as_array().unwrap();
 
-        let bob = participants.iter()
-            .find(|p| p["participant_id"] == "bob");
+        let bob = participants.iter().find(|p| p["participant_id"] == "bob");
 
         assert!(bob.is_none(), "bob sollte nach Ablehnung entfernt sein");
     }
@@ -679,248 +678,236 @@ mod integration_tests {
     }
 
     #[tokio::test]
-async fn test_double_join_same_participant() {
-    let (app, _) = build_app();
-    let sk_b64 = get_server_key_b64();
+    async fn test_double_join_same_participant() {
+        let (app, _) = build_app();
+        let sk_b64 = get_server_key_b64();
 
-    let session_id = create_test_session(&app, &sk_b64).await;
+        let session_id = create_test_session(&app, &sk_b64).await;
 
-    post_json(
-        &app,
-        "/join",
-        json!({
-            "session_id": session_id,
-            "participant_id": "bob",
-            "enc_name_chunks": null
-        }),
-    )
-    .await;
+        post_json(
+            &app,
+            "/join",
+            json!({
+                "session_id": session_id,
+                "participant_id": "bob",
+                "enc_name_chunks": null
+            }),
+        )
+        .await;
 
-    // second join (should overwrite or be ignored depending on design)
-    let (status, _) = post_json(
-        &app,
-        "/join",
-        json!({
-            "session_id": session_id,
-            "participant_id": "bob",
-            "enc_name_chunks": null
-        }),
-    )
-    .await;
+        // second join (should overwrite or be ignored depending on design)
+        let (status, _) = post_json(
+            &app,
+            "/join",
+            json!({
+                "session_id": session_id,
+                "participant_id": "bob",
+                "enc_name_chunks": null
+            }),
+        )
+        .await;
 
-    assert_eq!(status, StatusCode::OK);
+        assert_eq!(status, StatusCode::OK);
 
-    let (_, participants) = get_json(
-        &app,
-        &format!("/participants/{}/alice", session_id)
-    ).await;
+        let (_, participants) =
+            get_json(&app, &format!("/participants/{}/alice", session_id)).await;
 
-    let list = participants.as_array().unwrap();
-    let bob_count = list.iter()
-        .filter(|p| p["participant_id"] == "bob")
-        .count();
+        let list = participants.as_array().unwrap();
+        let bob_count = list.iter().filter(|p| p["participant_id"] == "bob").count();
 
-    assert_eq!(bob_count, 1);
-}
+        assert_eq!(bob_count, 1);
+    }
 
-#[tokio::test]
-async fn test_vote_without_join() {
-    let (app, _) = build_app();
-    let sk_b64 = get_server_key_b64();
-    let (client_key, _) = generate_fhe_keys();
+    #[tokio::test]
+    async fn test_vote_without_join() {
+        let (app, _) = build_app();
+        let sk_b64 = get_server_key_b64();
+        let (client_key, _) = generate_fhe_keys();
 
-    let session_id = create_test_session(&app, &sk_b64).await;
+        let session_id = create_test_session(&app, &sk_b64).await;
 
-    let vote = encrypt_uint8(1, &client_key);
+        let vote = encrypt_uint8(1, &client_key);
 
-    let (status, _) = post_json(
-        &app,
-        "/vote",
-        json!({
-            "session_id": session_id,
-            "participant_id": "ghost",
-            "encrypted_votes": [[vote]]
-        }),
-    )
-    .await;
+        let (status, _) = post_json(
+            &app,
+            "/vote",
+            json!({
+                "session_id": session_id,
+                "participant_id": "ghost",
+                "encrypted_votes": [[vote]]
+            }),
+        )
+        .await;
 
-    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-}
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    }
 
-#[tokio::test]
-async fn test_approve_after_finalize() {
-    let (app, _) = build_app();
-    let sk_b64 = get_server_key_b64();
+    #[tokio::test]
+    async fn test_approve_after_finalize() {
+        let (app, _) = build_app();
+        let sk_b64 = get_server_key_b64();
 
-    let session_id = create_test_session(&app, &sk_b64).await;
+        let session_id = create_test_session(&app, &sk_b64).await;
 
-    get_json(&app, &format!("/finalize/{}/alice", session_id)).await;
+        get_json(&app, &format!("/finalize/{}/alice", session_id)).await;
 
-    let (status, _) = post_json(
-        &app,
-        "/approve",
-        json!({
-            "session_id": session_id,
-            "creator_id": "alice",
-            "participant_id": "bob",
-            "approved": true
-        }),
-    )
-    .await;
+        let (status, _) = post_json(
+            &app,
+            "/approve",
+            json!({
+                "session_id": session_id,
+                "creator_id": "alice",
+                "participant_id": "bob",
+                "approved": true
+            }),
+        )
+        .await;
 
-    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-}
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    }
 
-#[tokio::test]
-async fn test_join_after_votes_exist() {
-    let (app, _) = build_app();
-    let sk_b64 = get_server_key_b64();
-    let (client_key, _) = generate_fhe_keys();
+    #[tokio::test]
+    async fn test_join_after_votes_exist() {
+        let (app, _) = build_app();
+        let sk_b64 = get_server_key_b64();
+        let (client_key, _) = generate_fhe_keys();
 
-    let session_id = create_test_session(&app, &sk_b64).await;
+        let session_id = create_test_session(&app, &sk_b64).await;
 
-    post_json(
-        &app,
-        "/join",
-        json!({
-            "session_id": session_id,
-            "participant_id": "bob",
-            "enc_name_chunks": null
-        }),
-    )
-    .await;
+        post_json(
+            &app,
+            "/join",
+            json!({
+                "session_id": session_id,
+                "participant_id": "bob",
+                "enc_name_chunks": null
+            }),
+        )
+        .await;
 
-    post_json(
-        &app,
-        "/approve",
-        json!({
-            "session_id": session_id,
-            "creator_id": "alice",
-            "participant_id": "bob",
-            "approved": true
-        }),
-    )
-    .await;
+        post_json(
+            &app,
+            "/approve",
+            json!({
+                "session_id": session_id,
+                "creator_id": "alice",
+                "participant_id": "bob",
+                "approved": true
+            }),
+        )
+        .await;
 
-    let vote = encrypt_uint8(1, &client_key);
+        let vote = encrypt_uint8(1, &client_key);
 
-    post_json(
-        &app,
-        "/vote",
-        json!({
-            "session_id": session_id,
-            "participant_id": "bob",
-            "encrypted_votes": [[vote]]
-        }),
-    )
-    .await;
+        post_json(
+            &app,
+            "/vote",
+            json!({
+                "session_id": session_id,
+                "participant_id": "bob",
+                "encrypted_votes": [[vote]]
+            }),
+        )
+        .await;
 
-    // neuer participant nach vote
-    let (status, _) = post_json(
-        &app,
-        "/join",
-        json!({
-            "session_id": session_id,
-            "participant_id": "carol",
-            "enc_name_chunks": null
-        }),
-    )
-    .await;
+        // neuer participant nach vote
+        let (status, _) = post_json(
+            &app,
+            "/join",
+            json!({
+                "session_id": session_id,
+                "participant_id": "carol",
+                "enc_name_chunks": null
+            }),
+        )
+        .await;
 
-    // je nach design: entweder erlaubt oder verboten
-    assert_eq!(status, StatusCode::OK);
-}
+        // je nach design: entweder erlaubt oder verboten
+        assert_eq!(status, StatusCode::OK);
+    }
 
-#[tokio::test]
-async fn test_results_with_no_votes() {
-    let (app, _) = build_app();
-    let sk_b64 = get_server_key_b64();
+    #[tokio::test]
+    async fn test_results_with_no_votes() {
+        let (app, _) = build_app();
+        let sk_b64 = get_server_key_b64();
 
-    let session_id = create_test_session(&app, &sk_b64).await;
+        let session_id = create_test_session(&app, &sk_b64).await;
 
-    post_json(
-        &app,
-        "/join",
-        json!({
-            "session_id": session_id,
-            "participant_id": "bob",
-            "enc_name_chunks": null
-        }),
-    )
-    .await;
+        post_json(
+            &app,
+            "/join",
+            json!({
+                "session_id": session_id,
+                "participant_id": "bob",
+                "enc_name_chunks": null
+            }),
+        )
+        .await;
 
-    post_json(
-        &app,
-        "/approve",
-        json!({
-            "session_id": session_id,
-            "creator_id": "alice",
-            "participant_id": "bob",
-            "approved": true
-        }),
-    )
-    .await;
+        post_json(
+            &app,
+            "/approve",
+            json!({
+                "session_id": session_id,
+                "creator_id": "alice",
+                "participant_id": "bob",
+                "approved": true
+            }),
+        )
+        .await;
 
-    let (status, body) = get_json(
-        &app,
-        &format!("/results/{}/alice", session_id)
-    ).await;
+        let (status, body) = get_json(&app, &format!("/results/{}/alice", session_id)).await;
 
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["ready"], false);
-}
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["ready"], false);
+    }
 
-#[tokio::test]
-async fn test_status_spoofing() {
-    let (app, _) = build_app();
-    let sk_b64 = get_server_key_b64();
+    #[tokio::test]
+    async fn test_status_spoofing() {
+        let (app, _) = build_app();
+        let sk_b64 = get_server_key_b64();
 
-    let session_id = create_test_session(&app, &sk_b64).await;
+        let session_id = create_test_session(&app, &sk_b64).await;
 
-    let (status, body) = get_json(
-        &app,
-        &format!("/status/{}/alice", session_id)
-    ).await;
+        let (status, body) = get_json(&app, &format!("/status/{}/alice", session_id)).await;
 
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["status"], "not_found");
-}
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "not_found");
+    }
 
-#[tokio::test]
-async fn test_vote_empty_session_questions() {
-    let (app, _) = build_app();
+    #[tokio::test]
+    async fn test_vote_empty_session_questions() {
+        let (app, _) = build_app();
 
-    let sk_b64 = get_server_key_b64();
+        let sk_b64 = get_server_key_b64();
 
-    let (_, body) = post_json(
-        &app,
-        "/session",
-        json!({
-            "creator_id": "alice",
-            "server_key": sk_b64,
-            "questions": []
-        }),
-    )
-    .await;
+        let (_, body) = post_json(
+            &app,
+            "/session",
+            json!({
+                "creator_id": "alice",
+                "server_key": sk_b64,
+                "questions": []
+            }),
+        )
+        .await;
 
-    let session_id = body["session_id"].as_str().unwrap();
+        let session_id = body["session_id"].as_str().unwrap();
 
-    let (client_key, _) = generate_fhe_keys();
-    let vote = encrypt_uint8(1, &client_key);
+        let (client_key, _) = generate_fhe_keys();
+        let vote = encrypt_uint8(1, &client_key);
 
-    let (status, _) = post_json(
-        &app,
-        "/vote",
-        json!({
-            "session_id": session_id,
-            "participant_id": "bob",
-            "encrypted_votes": []
-        }),
-    )
-    .await;
+        let (status, _) = post_json(
+            &app,
+            "/vote",
+            json!({
+                "session_id": session_id,
+                "participant_id": "bob",
+                "encrypted_votes": []
+            }),
+        )
+        .await;
 
-    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-}
-
-
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    }
 }
