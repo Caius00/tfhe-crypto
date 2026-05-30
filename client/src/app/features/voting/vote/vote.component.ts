@@ -193,12 +193,7 @@ export class VoteComponent implements OnInit {
       const v = ans[i];
 
       if (q.question_type === 'numeric') {
-        if (
-          typeof v !== 'number' ||
-          !Number.isInteger(v) ||
-          v < 0 ||
-          v > 255
-        ){
+        if (typeof v !== 'number' || !Number.isInteger(v) || v < 0 || v > 255) {
           throw new Error(`Ungültiger Zahlenwert bei Frage ${i + 1}: ${String(v)}`);
         } else {
           flatValues.push(v);
@@ -225,6 +220,11 @@ export class VoteComponent implements OnInit {
 
     // 2) Eine einzige Krypto-Operation für ALLE Werte
     const encryptedFlat = this.tfhe.encryptUint32Compact(pk, flatValues);
+    // ────────────────────────────────────────────────────────────────────────
+    console.log('=== HIER SIND DEINE TFHE CHUNKS FÜR DEN LASTTEST ===');
+    console.log(JSON.stringify(encryptedFlat));
+    console.log("====================================================");
+    // ────────────────────────────────────────────────────────────────────────
 
     // 3) Zurück in die Form "ein Array pro Frage" splitten
     const result: string[][] = [];

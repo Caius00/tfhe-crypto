@@ -700,6 +700,8 @@ dependencies = [
  "base64",
  "bincode",
  "health",
+ "metrics-exporter",
+ "observability",
  "openapi-docs",
  "schemars",
  "serde",
