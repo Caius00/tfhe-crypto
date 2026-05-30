@@ -114,7 +114,6 @@ export class CreateSessionComponent {
       this.isGeneratingKeys.set(false);
     }
   }
-
   // --- Fragen-Management ----------------------------------------------------
 
   /** Update einer Frage (von QuestionEditor emittiert) */

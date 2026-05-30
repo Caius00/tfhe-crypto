@@ -11,6 +11,8 @@ base64 = "0.22.1"
 uuid = { version = "1", features = ["v4"] }
 axum.workspace = true
 health.workspace = true
+metrics-exporter.workspace = true
+observability.workspace = true
 openapi-docs.workspace = true
 tokio = { workspace = true, features = ["full"] }
 serde.workspace = true

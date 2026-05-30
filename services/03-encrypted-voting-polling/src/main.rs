@@ -28,6 +28,9 @@ async fn main() {
         .allow_methods(Any)
         .allow_headers(Any);
 
+    // Prometheus-Exporter + Layer
+    let (metrics_layer, metrics_router) = metrics_exporter::setup();
+
     let api_router = ApiRouter::new()
         .api_route(
             "/session",
@@ -94,7 +97,10 @@ async fn main() {
         env!("CARGO_PKG_VERSION"),
     )
     .merge(health::router(env!("CARGO_PKG_VERSION")))
+    .merge(metrics_router)
     .layer(DefaultBodyLimit::max(2 * 1024 * 1024 * 1024))
+    .layer(metrics_layer)
+    .layer(observability::http_trace_layer())
     .layer(cors);
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));
