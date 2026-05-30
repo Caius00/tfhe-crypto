@@ -61,19 +61,123 @@
     </app-card>
   }
 
-  <!-- Pending -->
-  <app-card>
-    <h2 class="section-title">Teilnehmer-Anfragen</h2>
-    <p class="section-desc">
-      Live-Polling alle {{ 2 }} Sekunden. Du kannst Namen einzeln entschlüsseln, um zu prüfen
-      wer beitreten möchte.
-    </p>
-    <app-pending-list
-      [entries]="pending()"
-      (decrypt)="decryptName($event)"
-      (approve)="approve($event)"
-      (reject)="reject($event)" />
-  </app-card>
+
+<app-card>
+  <h2 class="section-title">Teilnehmer</h2>
+
+  <p class="section-desc">
+    Teilnehmer können direkt entschlüsselt, freigegeben oder abgelehnt werden.
+  </p>
+
+  <div class="table">
+
+    <!-- HEADER -->
+    <div class="table-row header">
+      <div>Teilnehmer</div>
+      <div>Name</div>
+      <div>Status</div>
+      <div>Abstimmung</div>
+      <div>Aktionen</div>
+    </div>
+
+    <!-- ROWS -->
+    @for (p of participants(); track p.participant_id) {
+
+      <div class="table-row">
+
+        <!-- ID -->
+        <div class="cell id-cell">
+          {{ p.participant_id }}
+        </div>
+
+        <!-- NAME -->
+<div class="cell name-cell">
+
+  @if (p.decrypted_name) {
+
+    {{ p.decrypted_name }}
+
+  } @else {
+
+    <span class="encrypted-label">
+      Verschlüsselt
+    </span>
+
+  }
+
+</div>
+
+        <!-- STATUS -->
+        <div class="cell">
+          <span
+            class="badge"
+            [class.ok]="p.approved"
+            [class.pending]="!p.approved">
+
+            {{ p.approved ? 'Freigegeben' : 'Pending' }}
+
+          </span>
+        </div>
+
+        <!-- VOTING -->
+        <div class="cell">
+          <span
+            class="badge"
+            [class.voted]="p.has_voted">
+
+            {{ p.has_voted ? 'Abgestimmt' : 'Offen' }}
+
+          </span>
+        </div>
+
+        <!-- ACTIONS -->
+<div class="cell actions-cell">
+
+  <!-- Entschlüsseln -->
+  @if (!p.decrypted_name) {
+    <button
+      class="icon-btn"
+      title="Entschlüsseln"
+      (click)="decryptParticipant(p)">
+
+      🔓
+
+    </button>
+  }
+
+  <!-- Approve / Reject -->
+  @if (!p.approved) {
+
+    <button
+      class="icon-btn success"
+      title="Zulassen"
+      (click)="approve(p.participant_id)">
+
+      ✓
+
+    </button>
+
+    <button
+      class="icon-btn danger"
+      title="Ablehnen"
+      (click)="reject(p.participant_id)">
+
+      ✕
+
+    </button>
+
+  }
+
+</div>
+
+
+      </div>
+
+    }
+
+  </div>
+</app-card>
+
 
   <!-- Ergebnisse -->
   <app-card>
@@ -89,6 +193,13 @@
         variant="primary"
         [loading]="isLoadingResults()"
         (clicked)="showResults()" />
+
+        <app-button
+        label="Ergebnisse entschlüsseln"
+        variant="primary"
+        [disabled]="encryptedResults().length === 0"
+        [loading]="isLoadingResults()"
+        (clicked)="decrypt()" />
     </div>
 
     <!-- Lokale Status-Meldung direkt beim Button (statt nur ganz oben) -->
@@ -100,7 +211,8 @@
 
     <app-results-view
       [questions]="questions()"
-      [results]="decryptedResults()" />
+      [results]="decryptedResults()"
+      [isDecrypted]="viewMode() === 'decrypted'"></app-results-view>
   </app-card>
 
   <!-- Session beenden -->
