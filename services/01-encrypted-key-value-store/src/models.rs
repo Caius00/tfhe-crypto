@@ -1,25 +1,43 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
-pub struct PutKeyRequest {
+#[derive(Deserialize)]
+pub struct PutRequest {
     pub key: Vec<u8>,
     pub value: Vec<u8>,
 }
 
-#[derive(Debug, Serialize)]
-pub struct KeyValueResponse {
+#[derive(Deserialize)]
+pub struct GetRequest {
     pub key: Vec<u8>,
-    pub value: Vec<u8>,
+    pub server_key: Vec<u8>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Deserialize)]
+pub struct ExistsRequest {
+    pub key: Vec<u8>,
+    pub server_key: Vec<u8>,
+}
+
+#[derive(Serialize)]
 pub struct ExistsResponse {
-    pub exists: bool,
+    pub exists: Vec<u8>,
 }
 
-#[derive(Debug, Serialize)]
-pub struct KeyListResponse {
-    pub keys: Vec<String>,
+#[derive(Deserialize)]
+pub struct DeleteRequest {
+    pub key: Vec<u8>,
+    pub server_key: Vec<u8>,
+}
+
+#[derive(Deserialize)]
+pub struct DeleteMultipleRequest {
+    pub key: Vec<Vec<u8>>,
+    pub server_key: Vec<u8>,
+}
+
+#[derive(Serialize)]
+pub struct ValueResponse {
+    pub value: Vec<u8>,
 }
 
 #[derive(Debug, Serialize)]

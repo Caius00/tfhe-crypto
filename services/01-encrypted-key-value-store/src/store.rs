@@ -1,11 +1,34 @@
+use std::env;
 use std::sync::Arc;
-use redis::{AsyncCommands, Client};
-use tfhe::{ClientKey, FheAsciiString, FheBool};
+use redis::{AsyncCommands, Client, ConnectionAddr, ConnectionInfo, RedisConnectionInfo};
+use tfhe::{FheBool};
 use tfhe::prelude::{FheEq, IfThenElse};
 use std::error::Error;
 use std::ops::BitOr;
+use dotenvy::from_path;
 use rayon::prelude::*;
 use crate::custom_fhe_ascii_string::CustomFheAsciiString;
+
+fn get_redis_client() -> Client {
+    let password = env::var("REDIS_PASSWORD").unwrap_or_default();
+    let host = env::var("REDIS_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+
+    let port = env::var("REDIS_PORT")
+        .unwrap_or_else(|_| "6379".to_string())
+        .parse()
+        .unwrap_or(6379);
+
+    let conn_info = ConnectionInfo {
+        addr: ConnectionAddr::Tcp(host, port),
+        redis: RedisConnectionInfo {
+            db: 0,
+            username: None,
+            password: if password.is_empty() { None } else { Some(password) },
+        },
+    };
+
+    Client::open(conn_info).expect("Failed to connect to Redis")
+}
 
 pub struct AppState {
     pub client: Client,
@@ -16,16 +39,22 @@ pub struct AppState {
 pub type SharedState = Arc<AppState>;
 
 impl AppState {
-    pub fn new(redis_url: &str, cks: &ClientKey, ttl_sec: u64) -> Result<Self, Box<dyn Error>>  {
-        let client = Client::open(redis_url)?;
-        let mut con = client.get_connection()?;
+    pub fn new() -> Self {
+        if let Err(e) = from_path("./services/01-encrypted-key-value-store/.env") {
+            eprintln!("Warning: could not load .env: {}. Falling back to localhost defaults.", e);
+        }
 
-        let pong: String = redis::cmd("PING").query(&mut con)?;
-        println!("{pong}. DB alive");
+        let ttl_minutes = env::var("TTL_MINUTES")
+            .unwrap_or_else(|_| "5".to_string())
+            .parse()
+            .unwrap_or(5);
+        let ttl_sec = ttl_minutes * 60;
+        let client = get_redis_client();
 
-        Ok(Self {client, ttl_sec})
+        Self {client, ttl_sec}
     }
 
+    // Possibly dont take serialized arguments
     pub async fn put(
         &self,
         key: &CustomFheAsciiString,

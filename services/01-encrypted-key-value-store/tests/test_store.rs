@@ -1,21 +1,7 @@
-use tfhe::{generate_keys, set_server_key, ConfigBuilder, FheAsciiString, ServerKey};
-use tfhe::prelude::{FheDecrypt, FheTryEncrypt};
+use tfhe::{generate_keys, set_server_key, ConfigBuilder, ServerKey};
+use tfhe::prelude::{FheDecrypt};
 use encrypted_key_value_store::custom_fhe_ascii_string::CustomFheAsciiString;
 use encrypted_key_value_store::store::AppState;
-
-async fn setup() -> (AppState, ServerKey, CustomFheAsciiString, CustomFheAsciiString) {
-    let ttl_sec = 60u64;
-    let config = ConfigBuilder::default().build();
-    let (client_key, server_key) = generate_keys(config);
-
-    const REDIS_URL: &str = "redis://localhost:6379";
-    let app_state = AppState::new(REDIS_URL, &client_key, ttl_sec).expect("Failed to connect to Redis.");
-
-    let key = CustomFheAsciiString::new("Hello Key", &client_key);
-    let value = CustomFheAsciiString::new("Hello Value", &client_key);
-
-    (app_state, server_key, key, value)
-}
 
 #[cfg(test)]
 mod test_set{
@@ -25,20 +11,18 @@ mod test_set{
     #[tokio::test]
     async fn single_insert() {
         // CLIENT
-        let ttl_sec = 60u64;
         let config = ConfigBuilder::default().build();
         let (client_key, server_key) = generate_keys(config);
-        const REDIS_URL: &str = "redis://localhost:6379";
-        let app_state = AppState::new(REDIS_URL, &client_key, ttl_sec).expect("Failed to connect to Redis.");
-        let mut con = app_state.client.get_connection().unwrap();
-        redis::cmd("FLUSHDB").query::<()>(&mut con).unwrap();
 
         let key = "Hello Key";
         let value = "Hello Value";
         let mut enc_key = CustomFheAsciiString::new(key, &client_key);
         let enc_value = CustomFheAsciiString::new(value, &client_key);
-
         // SERVER
+        let app_state = AppState::new();
+        let mut con = app_state.client.get_connection().unwrap();
+        redis::cmd("FLUSHDB").query::<()>(&mut con).unwrap();
+
         let server = tokio::spawn(async move {
             set_server_key(server_key);
             app_state.put(&enc_key, &enc_value).await;
@@ -52,5 +36,95 @@ mod test_set{
 
         assert_eq!(db_size, 1);
         assert_eq!("Hello Value", &found_value);
+    }
+    /// TODO() how to handle this?
+    #[tokio::test]
+    async fn different_lengths() {
+        // CLIENT
+        let config = ConfigBuilder::default().build();
+        let (client_key, server_key) = generate_keys(config);
+
+        let key = "Hello Key";
+        let value = "Hello Value";
+        let mut enc_key = CustomFheAsciiString::new(key, &client_key);
+        let enc_value = CustomFheAsciiString::new(value, &client_key);
+        let key_two = "Hello Key Longer";
+        let value_two = "Hello Value Longer";
+        let mut enc_key_two = CustomFheAsciiString::new(key_two, &client_key);
+        let enc_value_two = CustomFheAsciiString::new(value_two, &client_key);
+        // SERVER
+        let app_state = AppState::new();
+        let mut con = app_state.client.get_connection().unwrap();
+        redis::cmd("FLUSHDB").query::<()>(&mut con).unwrap();
+
+        let server = tokio::spawn(async move {
+            set_server_key(server_key);
+            app_state.put(&enc_key, &enc_value).await;
+            app_state.put(&enc_key_two, &enc_value_two).await;
+            (enc_key, enc_key_two)
+        });
+        // CLIENT
+        (enc_key, enc_key_two) = server.await.unwrap();
+        let db_size: usize = redis::cmd("DBSIZE").query(&mut con).unwrap();
+        let entry: Vec<u8> = con.get(enc_key.serialize().string).unwrap();
+        let entry_two: Vec<u8> = con.get(enc_key_two.serialize().string).unwrap();
+        let found_value = CustomFheAsciiString::from(&entry).decrypt(&client_key);
+        let found_value_two = CustomFheAsciiString::from(&entry_two).decrypt(&client_key);
+
+        assert_eq!(db_size, 2);
+        assert_eq!(value, &found_value);
+        assert_eq!(value_two, &found_value_two);
+    }
+
+    #[tokio::test]
+    async fn multi_users() {
+        let client_a = tokio::spawn(async move {
+            let config = ConfigBuilder::default().build();
+            let (client_key, server_key) = generate_keys(config);
+
+            let key = "Hello Key A";
+            let value = "Hello Value A";
+            let enc_key = CustomFheAsciiString::new(key, &client_key);
+            let enc_value = CustomFheAsciiString::new(value, &client_key);
+
+            (enc_key, enc_value, client_key, server_key)
+        });
+        let client_b = tokio::spawn(async move {
+            let config = ConfigBuilder::default().build();
+            let (client_key, server_key) = generate_keys(config);
+
+            let key = "Hello Key B";
+            let value = "Hello Value B";
+            let enc_key = CustomFheAsciiString::new(key, &client_key);
+            let enc_value = CustomFheAsciiString::new(value, &client_key);
+
+            (enc_key, enc_value, client_key, server_key)
+        });
+
+        let (enc_key_a, enc_value_a, client_key_a, server_key_a) = client_a.await.unwrap();
+        let (enc_key_b, enc_value_b, client_key_b, server_key_b) = client_b.await.unwrap();
+
+        // SERVER
+        let app_state = AppState::new();
+        let mut con = app_state.client.get_connection().unwrap();
+        redis::cmd("FLUSHDB").query::<()>(&mut con).unwrap();
+
+        let server = tokio::spawn(async move {
+            set_server_key(server_key);
+            app_state.put(&enc_key, &enc_value).await;
+            app_state.put(&enc_key_two, &enc_value_two).await;
+            (enc_key, enc_key_two)
+        });
+        // CLIENT
+        (enc_key, enc_key_two) = server.await.unwrap();
+        let db_size: usize = redis::cmd("DBSIZE").query(&mut con).unwrap();
+        let entry: Vec<u8> = con.get(enc_key.serialize().string).unwrap();
+        let entry_two: Vec<u8> = con.get(enc_key_two.serialize().string).unwrap();
+        let found_value = CustomFheAsciiString::from(&entry).decrypt(&client_key);
+        let found_value_two = CustomFheAsciiString::from(&entry_two).decrypt(&client_key);
+
+        assert_eq!(db_size, 2);
+        assert_eq!(value, &found_value);
+        assert_eq!(value_two, &found_value_two);
     }
 }
