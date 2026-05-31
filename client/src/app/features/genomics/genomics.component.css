@@ -1,0 +1,73 @@
+.action-card {
+    background-color: white;
+    border-radius: 1vh;
+    padding: 10px 20px;
+    margin: 10px;
+    box-shadow: 0 5px 5px rgba(77, 77, 77, 0.19);
+}
+
+.action-grid {
+    display: grid;
+    object-fit: fill;
+    grid-template-columns: 50% 50%;
+}
+
+.action-flex {
+    display: flex;
+    flex-direction: column;
+}
+
+.action-card p {
+    margin-top: 10px;
+    margin-bottom: 0;
+}
+
+p.card-info {
+    color: rgb(114, 114, 114);
+}
+
+p.card-title {
+    color: black;
+    font-weight: bold;
+    font-size: large;
+}
+
+.submit-button {
+    color: white;
+    background-color: rgb(102, 100, 206);
+    border-radius: 1vh;
+    width: fit-content;
+    padding: 10px 15px;
+    font-weight: bold;
+    margin-top: 10px;
+    cursor: pointer;
+}
+
+.submit-button:hover {
+    background-color: rgb(92, 91, 189);
+    transform: scale(1.025);
+}
+
+.action-card textarea {
+    width: 100%;
+    resize: vertical;
+    overflow: auto;
+    border-radius: 1vh;
+    padding: 5px;
+    margin-top: 10px;
+}
+
+p.id-indicator {
+    color: rgb(134, 134, 134);
+}
+
+input.id-input {
+    margin-top: 10px;
+    border-radius: 1vh;
+    padding: 5px;
+}
+
+.button-spread {
+    display: flex;
+    justify-content: space-between;
+}
