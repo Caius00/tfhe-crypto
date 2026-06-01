@@ -1,0 +1,50 @@
+.alert-row { margin-bottom: 1rem; }
+
+.questions {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.submit-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.hint {
+  font-size: 0.75rem;
+  color: var(--c-text-muted);
+}
+
+.done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.5rem;
+  padding: 1.5rem 1rem;
+}
+
+.done-icon {
+  font-size: 3rem;
+  margin-bottom: 0.5rem;
+}
+
+.done-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0;
+  color: var(--c-text);
+}
+
+.done-desc {
+  font-size: 0.85rem;
+  color: var(--c-text-muted);
+  max-width: 26rem;
+  margin: 0 0 0.75rem 0;
+  line-height: 1.5;
+}

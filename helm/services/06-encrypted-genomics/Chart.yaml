@@ -4,3 +4,8 @@ description: Encrypted Genomics Service
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
+
+dependencies:
+  - name: postgres
+    version: 0.19.5
+    repository: oci://ghcr.io/cloudpirates-io/helm-charts

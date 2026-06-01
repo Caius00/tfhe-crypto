@@ -1,6 +1,6 @@
 [package]
 name = "encrypted-program-execution"
-version = "0.1.7"
+version = "0.1.16"
 edition = "2021"
 publish = false
 description = "Encrypted Program Execution"

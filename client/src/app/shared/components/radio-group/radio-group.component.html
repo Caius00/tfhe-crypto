@@ -1,0 +1,18 @@
+<div class="radio-group" [class.disabled]="disabled">
+  @if (label) {
+    <span class="group-label">{{ label }}</span>
+  }
+  @for (opt of options; track opt.value) {
+    <label class="radio">
+      <input
+        type="radio"
+        [name]="name"
+        [checked]="value === opt.value"
+        [disabled]="disabled"
+        (change)="select(opt)"
+      />
+      <span class="dot" aria-hidden="true"></span>
+      <span class="opt-label">{{ opt.label }}</span>
+    </label>
+  }
+</div>

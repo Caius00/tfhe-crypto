@@ -6,7 +6,10 @@
 main {
   flex: 1;
   padding: 2rem;
-  overflow: hidden;
+  /* Wichtig: vertikales Scrollen erlauben, sonst werden lange Seiten
+     (z.B. Voting mit vielen Fragen oder die Verwaltungsansicht) abgeschnitten. */
+  overflow-y: auto;
+  overflow-x: hidden;
   box-sizing: border-box;
   height: 100vh;
 }

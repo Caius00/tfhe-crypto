@@ -1,0 +1,67 @@
+\ProvidesPackage{sethesis}
+
+%\RequirePackage[standard-baselineskips]{cmbright}
+%\RequirePackage{palatino}
+
+%\def\usedfonts{CM-Bright}
+
+\newcommand{\@uniname}{}
+\newcommand{\@thesistype}{}
+\newcommand{\@studiengang}{}
+\newcommand{\@modul}{}
+\newcommand{\@erstpru}{}
+\newcommand{\@ort}{}
+\newcommand{\@datum}{}
+\newcommand{\@quartal}{}
+
+\newcommand{\unilogo}[1]{\def\@unilogo{#1}}
+\newcommand{\uniname}[1]{\def\@uniname{#1}}
+\newcommand{\thesistype}[1]{\def\@thesistype{#1}}
+\newcommand{\studiengang}[1]{\def\@studiengang{#1}}
+\newcommand{\modul}[1]{\def\@modul{#1}}
+\newcommand{\erstpru}[1]{\def\@erstpru{#1}}
+\newcommand{\ort}[1]{\def\@ort{#1}}
+\newcommand{\datum}[1]{\def\@datum{#1}}
+\newcommand{\quartal}[1]{\def\@quartal{#1}}
+
+\renewcommand{\maketitle}{
+\begin{titlepage}
+%
+	\begin{center}
+		%
+	\end{center}
+	%
+	\vfill
+	%
+	\begin{center}
+		\@unilogo
+	\end{center}
+	%
+	\begin{center}
+		\large { \expandafter{\@studiengang} }
+	\end{center}
+	%
+	\begin{center}
+		\LARGE { \expandafter{\@modul} }
+	\end{center}
+	%
+	\begin{center}
+		\Huge { \textbf{ \expandafter{\@thesistype}} }
+	\end{center}
+	%
+	\begin{center}
+		\LARGE {\expandafter{\@ort}, \expandafter{\@datum}}
+	\end{center}
+	%
+	\begin{center}
+		\large {\expandafter{\@quartal}}
+	\end{center}
+	%
+	\vfill
+	%
+	\begin{center}
+		\footnotesize {Nina Neumann, Johanna Amini, Amirreza Ahmadi Darani, Xuan-Loc Tran, Franz Müller, Tammo Lütten, Jannes Breuer, Bjarne Möller, Darko Marjanovic, Oliver Knöbl, Rafael Ulmer}
+	\end{center}
+	%
+\end{titlepage}%
+}

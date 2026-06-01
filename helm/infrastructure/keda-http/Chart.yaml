@@ -1,0 +1,13 @@
+apiVersion: v2
+name: keda-http
+description: |
+  KEDA HTTP Add-on (Interceptor + External Scaler) für echtes Scale-to-Zero
+  aller Service-Pods. Setzt voraus, dass das `keda`-Chart bereits installiert
+  ist (stellt die KEDA CRDs bereit, die das Add-on braucht).
+type: application
+version: 0.1.0
+
+dependencies:
+  - name: keda-add-ons-http
+    version: "0.14.1"
+    repository: https://kedacore.github.io/charts

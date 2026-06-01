@@ -1,0 +1,226 @@
+<app-page-header
+  title="Session verwalten"
+  subtitle="Genehmige Teilnehmer und werte am Ende die verschlüsselten Stimmen aus.">
+  <app-badge [label]="statusLabel()" [variant]="statusVariant()" />
+</app-page-header>
+
+@if (isInitializing()) {
+  <app-loading-overlay
+    message="Session wird geladen..."
+    hint="Schlüssel und Fragen werden vorbereitet." />
+} @else {
+  <!-- Globale Hinweise -->
+  @if (errorMessage()) {
+    <div class="alert-row">
+      <app-alert variant="error" [message]="errorMessage()!" />
+    </div>
+  }
+  @if (infoMessage()) {
+    <div class="alert-row">
+      <app-alert variant="info" [message]="infoMessage()!" />
+    </div>
+  }
+
+  <!-- Session-Info mit Copy-Button für die ID -->
+  <app-card variant="flat">
+    <div class="session-info">
+      <div class="info-block">
+        <span class="info-label">Session-ID</span>
+        <div class="info-value-row">
+          <code class="info-value mono">{{ sessionId }}</code>
+          <app-copy-button [value]="sessionId" label="Kopieren" />
+        </div>
+      </div>
+      <div class="info-block">
+        <span class="info-label">Creator</span>
+        <span class="info-value">{{ creatorId }}</span>
+      </div>
+    </div>
+  </app-card>
+
+  <!-- Schlüssel-Bereich (ausklappbar) -->
+  @if (sessionKeys().length > 0) {
+    <app-card>
+      <div class="keys-head">
+        <div>
+          <h2 class="section-title">Schlüssel</h2>
+          <p class="section-desc">
+            Die FHE-Schlüssel dieser Session. Inhalte sind versteckt – mit "Anzeigen"
+            sichtbar machen oder direkt kopieren.
+          </p>
+        </div>
+        <app-button
+          [label]="showKeys() ? 'Bereich einklappen' : 'Schlüssel anzeigen'"
+          variant="secondary"
+          size="sm"
+          (clicked)="showKeys.set(!showKeys())" />
+      </div>
+      @if (showKeys()) {
+        <app-key-display [keys]="sessionKeys()" />
+      }
+    </app-card>
+  }
+
+
+<app-card>
+  <h2 class="section-title">Teilnehmer</h2>
+
+  <p class="section-desc">
+    Teilnehmer können direkt entschlüsselt, freigegeben oder abgelehnt werden.
+  </p>
+
+  <div class="table">
+
+    <!-- HEADER -->
+    <div class="table-row header">
+      <div>Teilnehmer</div>
+      <div>Name</div>
+      <div>Status</div>
+      <div>Abstimmung</div>
+      <div>Aktionen</div>
+    </div>
+
+    <!-- ROWS -->
+    @for (p of participants(); track p.participant_id) {
+
+      <div class="table-row">
+
+        <!-- ID -->
+        <div class="cell id-cell">
+          {{ p.participant_id }}
+        </div>
+
+        <!-- NAME -->
+<div class="cell name-cell">
+
+  @if (p.decrypted_name) {
+
+    {{ p.decrypted_name }}
+
+  } @else {
+
+    <span class="encrypted-label">
+      Verschlüsselt
+    </span>
+
+  }
+
+</div>
+
+        <!-- STATUS -->
+        <div class="cell">
+          <span
+            class="badge"
+            [class.ok]="p.approved"
+            [class.pending]="!p.approved">
+
+            {{ p.approved ? 'Freigegeben' : 'Pending' }}
+
+          </span>
+        </div>
+
+        <!-- VOTING -->
+        <div class="cell">
+          <span
+            class="badge"
+            [class.voted]="p.has_voted">
+
+            {{ p.has_voted ? 'Abgestimmt' : 'Offen' }}
+
+          </span>
+        </div>
+
+        <!-- ACTIONS -->
+<div class="cell actions-cell">
+
+  <!-- Entschlüsseln -->
+  @if (!p.decrypted_name) {
+    <button
+      class="icon-btn"
+      title="Entschlüsseln"
+      (click)="decryptParticipant(p)">
+
+      🔓
+
+    </button>
+  }
+
+  <!-- Approve / Reject -->
+  @if (!p.approved) {
+
+    <button
+      class="icon-btn success"
+      title="Zulassen"
+      (click)="approve(p.participant_id)">
+
+      ✓
+
+    </button>
+
+    <button
+      class="icon-btn danger"
+      title="Ablehnen"
+      (click)="reject(p.participant_id)">
+
+      ✕
+
+    </button>
+
+  }
+
+</div>
+
+
+      </div>
+
+    }
+
+  </div>
+</app-card>
+
+
+  <!-- Ergebnisse -->
+  <app-card>
+    <h2 class="section-title">Auswertung</h2>
+    <p class="section-desc">
+      Sobald alle freigegebenen Teilnehmer abgestimmt haben, kannst du die verschlüsselten
+      Aggregate laden und mit deinem Client-Key entschlüsseln.
+    </p>
+
+    <div class="result-actions">
+      <app-button
+        label="Auswertung anzeigen"
+        variant="primary"
+        [loading]="isLoadingResults()"
+        (clicked)="showResults()" />
+
+        <app-button
+        label="Ergebnisse entschlüsseln"
+        variant="primary"
+        [disabled]="encryptedResults().length === 0"
+        [loading]="isLoadingResults()"
+        (clicked)="decrypt()" />
+    </div>
+
+    <!-- Lokale Status-Meldung direkt beim Button (statt nur ganz oben) -->
+    @if (resultsStatus(); as status) {
+      <div class="result-status">
+        <app-alert [variant]="status.kind" [message]="status.message" />
+      </div>
+    }
+
+    <app-results-view
+      [questions]="questions()"
+      [results]="decryptedResults()"
+      [isDecrypted]="viewMode() === 'decrypted'"></app-results-view>
+  </app-card>
+
+  <!-- Session beenden -->
+  <div class="finalize-row">
+    <app-button
+      label="Voting beenden"
+      variant="danger"
+      [loading]="isFinalizing()"
+      (clicked)="finalize()" />
+  </div>
+}

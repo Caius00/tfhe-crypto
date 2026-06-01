@@ -2,6 +2,9 @@
 resolver = "2"
 members = [
     "shared/health",
+    "shared/metrics",
+    "shared/observability",
+    "shared/openapi-docs",
     "services/01-encrypted-key-value-store",
     "services/02-encrypted-age-verification",
     "services/03-encrypted-voting-polling",
@@ -14,9 +17,24 @@ members = [
 ]
 
 [workspace.dependencies]
-axum = "0.8"
+axum = "0.8.9"
 health = { path = "shared/health" }
-tokio = { version = "1", features = ["full"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-tfhe = { version = "1.5.4", features = ["boolean", "shortint", "integer"] }
+metrics-exporter = { path = "shared/metrics" }
+observability = { path = "shared/observability" }
+openapi-docs = { path = "shared/openapi-docs" }
+tokio = { version = "1.52.2", features = ["full"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+tfhe = { version = "1.6.1", features = ["boolean", "shortint", "integer"] }
+aide = { version = "0.15", features = ["axum", "axum-json", "macros", "swagger"] }
+schemars = "0.9"
+
+# tfhe-rs ist ohne Optimierung praktisch unbenutzbar (Schlüsselgenerierung
+# dauert dann Minuten statt Sekunden, FHE-Ops sind ~10× langsamer). Wir
+# optimieren nur die `tfhe`-Crate selbst — der eigene Code bleibt im Debug
+# (Breakpoints/Logs funktionieren weiter, nichts wird länger zu kompilieren).
+[profile.dev.package.tfhe]
+opt-level = 3
+
+[profile.test.package.tfhe]
+opt-level = 3
