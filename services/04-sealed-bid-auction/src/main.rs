@@ -1,10 +1,6 @@
-
-
-
-
 use axum::{routing::{get, post}, Json, Router};
 use base64::{engine::general_purpose, Engine as _};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize};
 use std::sync::Mutex;
 use tfhe::prelude::*;
 use tfhe::{CompressedServerKey, FheBool, FheUint32};
