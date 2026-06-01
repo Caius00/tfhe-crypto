@@ -90,8 +90,8 @@ echo "$dec" | jq '.plain_data'
 
 
 win
-use format list to see sequence original length ($enc | format-list), window length ($proc | format-list)
-encrypt testsequence in body
+# use format list to see sequence original length ($enc | format-list), window length ($proc | format-list)
+# encrypt testsequence in body
     $enc = Invoke-RestMethod `
     -Uri "http://localhost:8080/encrypt" `
     -Method Post `
@@ -100,7 +100,7 @@ encrypt testsequence in body
     $enc
 
 
-check risk pattern with hamming distance , risk pattern in body
+# check risk pattern with hamming distance , risk pattern in body
     $proc = Invoke-RestMethod `
     -Uri "http://localhost:8080/process" `
     -Method Post `
@@ -112,7 +112,7 @@ check risk pattern with hamming distance , risk pattern in body
 
     $proc
 
-decrypt risk marker hamming compare
+# decrypt risk marker hamming compare
     $dec = Invoke-RestMethod `
     -Uri "http://localhost:8080/decrypt" `
     -Method Post `
@@ -123,7 +123,7 @@ decrypt risk marker hamming compare
 
     $dec.plain_data
 
-check dna against every other stored dna in db (currently just function stored values)
+# check dna against every other stored dna in db (currently just function stored values)
     $cmp = Invoke-RestMethod `
         -Uri "http://localhost:8080/compare-db" `
         -Method Post `
@@ -134,7 +134,7 @@ check dna against every other stored dna in db (currently just function stored v
 
     $cmp
 
-decrypt dna-dna from db compares, currently has 3 values callable by [value], so [0], [1], [2]
+# decrypt dna-dna from db compares, currently has 3 values callable by [value], so [0], [1], [2]
 
    $allResults = @{}
 

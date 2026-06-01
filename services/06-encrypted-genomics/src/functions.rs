@@ -68,8 +68,8 @@ fn homomorphic_hamming_distance(
     public_key: &PublicKey,
 ) -> FheUint8 {
     let diffs: Vec<FheUint8> = window
-        .iter()
-        .zip(enc_pattern.iter())
+        .par_iter()
+        .zip(enc_pattern.par_iter())
         .map(|(w, p)| {
             let ne = w.ne(p);
             FheUint8::cast_from(ne)
@@ -97,6 +97,7 @@ pub fn homomorphic_sliding_window(
         panic!("pattern > sequence (ノಠ益ಠ)ノ彡┻━┻");
     }
     (0..=(n - m))
+        .into_par_iter()
         .map(|start| {
             let window = &enc_seq[start..start + m];
             homomorphic_hamming_distance(window, enc_pattern, public_key)
