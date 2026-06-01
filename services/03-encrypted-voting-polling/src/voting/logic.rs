@@ -1,7 +1,8 @@
 use crate::voting::types::{
     AppState, ApproveRequest, CreateSessionRequest, CreateSessionResponse, JoinRequest,
-    JoinResponse, ParticipantState, ParticipantStatusResponse, Question, QuestionType,
-    ResultResponse, SessionInfoResponse, SessionState, StatusResponse, VoteRequest, VoteResponse,
+    JoinResponse, ParticipantAdminView, ParticipantState, ParticipantStatusResponse, Question,
+    QuestionType, ResultResponse, SessionInfoResponse, SessionState, StatusResponse, VoteRequest,
+    VoteResponse,
 };
 use axum::http::StatusCode;
 use axum::{
@@ -10,7 +11,7 @@ use axum::{
 };
 use base64::{engine::general_purpose, Engine as _};
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::HashMap;
 use tfhe::{CompressedServerKey, FheUint32};
 use uuid::Uuid;
@@ -72,18 +73,13 @@ pub async fn join_session(
         ParticipantState {
             approved: false,
             enc_name_chunks: req.enc_name_chunks.clone(),
+            has_voted: false,
         },
     );
 
     Ok(Json(JoinResponse {
         status: "pending".to_string(),
     }))
-}
-
-#[derive(Serialize, Deserialize, JsonSchema)]
-pub struct PendingEntry {
-    pub participant_id: String,
-    pub enc_name_chunks: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -108,33 +104,6 @@ pub struct SessionParticipantPath {
     pub participant_id: String,
 }
 
-pub async fn get_pending(
-    State(state): State<AppState>,
-    Path(SessionCreatorPath {
-        session_id,
-        creator_id,
-    }): Path<SessionCreatorPath>,
-) -> ApiResult<Vec<PendingEntry>> {
-    let map = state.lock().unwrap();
-    let session = map.get(&session_id).ok_or(err("Session nicht gefunden"))?;
-
-    if session.creator_id != creator_id {
-        return Err(err("Nicht autorisiert"));
-    }
-
-    let pending: Vec<PendingEntry> = session
-        .participants
-        .iter()
-        .filter(|(_, p)| !p.approved)
-        .map(|(id, p)| PendingEntry {
-            participant_id: id.clone(),
-            enc_name_chunks: p.enc_name_chunks.clone(),
-        })
-        .collect();
-
-    Ok(Json(pending))
-}
-
 /// POST /approve – Ersteller genehmigt oder lehnt Teilnehmer ab
 pub async fn approve_participant(
     State(state): State<AppState>,
@@ -147,6 +116,10 @@ pub async fn approve_participant(
 
     if session.creator_id != req.creator_id {
         return Err(err("Nicht autorisiert"));
+    }
+
+    if session.finalized {
+        return Err(err("Session bereits beendet"));
     }
 
     if req.approved {
@@ -176,7 +149,7 @@ pub async fn submit_vote(
     // Hole ParticipantState
     let participant = session
         .participants
-        .get(&req.participant_id)
+        .get_mut(&req.participant_id)
         .ok_or(err("Teilnehmer nicht in Session"))?;
 
     if !participant.approved {
@@ -189,6 +162,8 @@ pub async fn submit_vote(
     if req.encrypted_votes.len() != session.questions.len() {
         return Err(err("Anzahl der Stimmen stimmt nicht mit Fragen überein"));
     }
+
+    participant.has_voted = true;
 
     session
         .votes
@@ -379,4 +354,32 @@ pub async fn get_session(
         questions: session.questions.clone(),
         public_key: session.public_key.clone(),
     }))
+}
+
+pub async fn get_participants(
+    State(state): State<AppState>,
+    Path(SessionCreatorPath {
+        session_id,
+        creator_id,
+    }): Path<SessionCreatorPath>,
+) -> ApiResult<Vec<ParticipantAdminView>> {
+    let map = state.lock().unwrap();
+    let session = map.get(&session_id).ok_or(err("Session nicht gefunden"))?;
+
+    if session.creator_id != creator_id {
+        return Err(err("Nicht autorisiert"));
+    }
+
+    let result: Vec<ParticipantAdminView> = session
+        .participants
+        .iter()
+        .map(|(id, p)| ParticipantAdminView {
+            participant_id: id.clone(),
+            approved: p.approved,
+            has_voted: p.has_voted,
+            enc_name_chunks: p.enc_name_chunks.clone(),
+        })
+        .collect();
+
+    Ok(Json(result))
 }

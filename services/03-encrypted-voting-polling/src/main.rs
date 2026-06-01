@@ -13,8 +13,8 @@ use axum::extract::DefaultBodyLimit;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::voting::logic::{
-    approve_participant, create_session, finalize_session, get_pending, get_results, get_session,
-    get_status, join_session, submit_vote,
+    approve_participant, create_session, finalize_session, get_participants, get_results,
+    get_session, get_status, join_session, submit_vote,
 };
 use crate::voting::types::AppState;
 
@@ -51,12 +51,6 @@ async fn main() {
             }),
         )
         .api_route(
-            "/pending/{session_id}/{creator_id}",
-            get_with(get_pending, |op| {
-                op.description("List participants pending approval (creator only).")
-            }),
-        )
-        .api_route(
             "/approve",
             post_with(approve_participant, |op| {
                 op.description("Approve or reject a pending participant.")
@@ -78,6 +72,12 @@ async fn main() {
             "/results/{session_id}/{creator_id}",
             get_with(get_results, |op| {
                 op.description("Fetch homomorphically aggregated results (creator only).")
+            }),
+        )
+        .api_route(
+            "/participants/{session_id}/{creator_id}",
+            get_with(get_participants, |op| {
+                op.description("Get full participant status (approved + voting state).")
             }),
         )
         .api_route(
