@@ -2,3 +2,4 @@
 .idea
 client/.angular/
 client/node_modules/
+graphify-out/

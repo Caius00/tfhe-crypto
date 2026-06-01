@@ -1,9 +1,12 @@
-<div class="input-wrapper">
-  <label>{{ label }}</label>
+<div class="field">
+  @if (label) {
+    <label class="field-label">{{ label }}</label>
+  }
   <input
     [type]="type"
     [placeholder]="placeholder"
     [value]="value"
+    class="field-input"
     (input)="onInput($any($event.target).value)"
   />
 </div>

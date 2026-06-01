@@ -1,0 +1,297 @@
+.alert-row { margin-bottom: 1rem; }
+
+app-card {
+  display: block;
+  margin-bottom: 1.25rem;
+}
+
+/* =========================
+   TITLES
+========================= */
+
+.section-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 0.4rem 0;
+  color: var(--c-text);
+}
+
+.section-desc {
+  font-size: 0.78rem;
+  color: var(--c-text-muted);
+  margin: 0 0 1rem 0;
+  line-height: 1.5;
+}
+
+/* =========================
+   SESSION INFO
+========================= */
+
+.session-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+}
+
+.info-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.info-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--c-text-muted);
+}
+
+.info-value {
+  font-size: 0.85rem;
+  color: var(--c-text);
+  word-break: break-all;
+  font-family: inherit;
+}
+
+.info-value.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.info-value-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* =========================
+   KEYS + ACTIONS
+========================= */
+
+.keys-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.result-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.result-status {
+  margin-bottom: 1rem;
+}
+
+.finalize-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+
+/* =========================
+   TABLE
+========================= */
+
+.table {
+  width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: white;
+}
+
+/* =========================
+   ROWS
+========================= */
+
+.table-row {
+  display: grid;
+
+  /* KOMPAKTER */
+  grid-template-columns:
+    270px   /* Teilnehmer */
+    100px     /* Name */
+    100px   /* Status */
+    100px   /* Voting */
+    190px;  /* Aktionen */
+
+  align-items: center;
+}
+
+/* =========================
+   HEADER
+========================= */
+
+.table-row.header {
+  background: #f8fafc;
+  font-weight: 600;
+  color: #475569;
+}
+
+/* =========================
+   CELLS
+========================= */
+
+.table-row > div {
+  padding: 10px 12px;
+
+  display: flex;
+  align-items: center;
+
+  border-bottom: 1px solid #e2e8f0;
+
+  box-sizing: border-box;
+
+  font-size: 12px;
+  line-height: 1.1;
+
+  min-height: 52px;
+}
+
+/* HEADER BORDER */
+.table-row.header > div {
+  border-bottom: 2px solid #e2e8f0;
+}
+
+/* =========================
+   HOVER
+========================= */
+
+.table-row:not(.header):hover {
+  background: #f9fafb;
+}
+
+/* =========================
+   ID
+========================= */
+
+.id-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  font-family: ui-monospace, monospace;
+  color: #334155;
+
+  font-size: 11px;
+}
+
+/* =========================
+   NAME
+========================= */
+
+.name-cell {
+  color: #111827;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* =========================
+   BADGES
+========================= */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 90px;
+
+  padding: 4px 8px;
+
+  border-radius: 999px;
+
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.badge.ok {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.badge.pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.badge.voted {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+/* =========================
+   ACTIONS
+========================= */
+
+.actions-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* =========================
+   ICON BUTTONS
+========================= */
+
+.icon-btn {
+  width: 30px;
+  height: 30px;
+
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+
+  background: white;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  cursor: pointer;
+
+  font-size: 14px;
+
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.1s ease;
+}
+
+.icon-btn:hover {
+  background: #f8fafc;
+  border-color: #94a3b8;
+}
+
+.icon-btn:active {
+  transform: scale(0.96);
+}
+
+/* SUCCESS */
+.icon-btn.success {
+  color: #166534;
+  border-color: #bbf7d0;
+}
+
+.icon-btn.success:hover {
+  background: #dcfce7;
+}
+
+/* DANGER */
+.icon-btn.danger {
+  color: #991b1b;
+  border-color: #fecaca;
+}
+
+.icon-btn.danger:hover {
+  background: #fee2e2;
+}

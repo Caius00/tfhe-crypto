@@ -1,6 +1,6 @@
 [package]
 name = "encrypted-statistics-service"
-version = "0.1.7"
+version = "0.1.17"
 edition = "2021"
 publish = false
 description = "Encrypted Statistics Service"
@@ -15,3 +15,7 @@ serde_json.workspace = true
 rayon = "1"
 bincode = "1"
 base64 = "0.22"
+
+[dev-dependencies]
+serial_test = "3"
+tower = "0.5"

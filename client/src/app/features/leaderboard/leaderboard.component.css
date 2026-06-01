@@ -1,18 +1,87 @@
-:host {
-  display: block;
-  position: relative;
-  height: 100%;
+.lb-page {
   margin: -2rem;
-  overflow: hidden;
+  padding: 2rem;
+  min-height: 100vh;
+  box-sizing: border-box;
+  background:
+    url('/games/flappy-bird/images/background.png') center/cover no-repeat,
+    linear-gradient(180deg, #1a2b3c 0%, #0a1520 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
 }
 
-h1 {
-  position: absolute;
-  top: 1.5rem;
-  left: 1.5rem;
-  z-index: 10;
-  margin: 0;
-  color: #fff;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+/* Dunkle Overlay-Schicht für bessere Lesbarkeit */
+.lb-page::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(180deg,
+    rgba(10,20,30,0.55) 0%,
+    rgba(10,20,30,0.3) 50%,
+    rgba(10,20,30,0.65) 100%
+  );
   pointer-events: none;
+  z-index: 0;
 }
+
+.lb-page > * { position: relative; z-index: 1; }
+
+/* Header */
+.lb-page-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.page-bird {
+  width: 52px;
+  height: auto;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 4px 12px rgba(0,0,0,0.5));
+  animation: hover-bird 2s ease-in-out infinite;
+}
+
+@keyframes hover-bird {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-5px); }
+}
+
+.page-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.9rem;
+  color: #ffffff;
+  margin: 0;
+  line-height: 1.6;
+  text-shadow: 2px 2px 0 rgba(0,0,0,0.5);
+}
+
+.page-title.accent { color: #52b788; text-shadow: 0 0 20px rgba(82,183,136,0.4), 2px 2px 0 rgba(0,0,0,0.5); }
+
+/* Status panel (creating / error) */
+.status-panel {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  background: rgba(10,20,30,0.8);
+  backdrop-filter: blur(8px);
+  border: 2px solid rgba(82,183,136,0.3);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.status-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.6rem;
+  color: #d8f3dc;
+  margin: 0 0 0.4rem;
+}
+
+.status-hint {
+  font-size: 0.65rem;
+  color: #64748b;
+  margin: 0;
+}
+
+.error-panel { border-color: rgba(239,68,68,0.4); }
+.error-title { color: #fca5a5 !important; }

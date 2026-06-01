@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import init, {
+  CompactCiphertextList,
   FheBool,
   FheInt8,
   FheInt16,
@@ -10,8 +11,10 @@ import init, {
   FheUint32,
   FheUint64,
   TfheClientKey,
+  TfheCompactPublicKey,
   TfheCompressedServerKey,
   TfheConfigBuilder,
+  TfheCompressedPublicKey, // anstelle des PublicKeys
 } from 'tfhe';
 import { KeyPair } from './key-pair.model';
 
@@ -58,6 +61,130 @@ export class TfheService {
     return { clientKey, serverKeyBytes };
   }
 
+  generateCompressedPublicKey(clientKey: TfheClientKey): Uint8Array {
+    const pk = TfheCompressedPublicKey.new(clientKey);
+    const bytes = pk.serialize();
+    pk.free();
+    return bytes;
+  }
+
+  private deserializePublicKeyFromB64(publicKeyB64: string): TfheCompressedPublicKey {
+    const bytes = this.fromBase64(publicKeyB64);
+    return TfheCompressedPublicKey.deserialize(bytes);
+  }
+
+  encryptBoolWithPublic(publicKeyB64: string, value: boolean): Uint8Array {
+    const bytes = this.fromBase64(publicKeyB64);
+    const pk = TfheCompressedPublicKey.deserialize(bytes);
+    const enc = FheBool.encrypt_with_compressed_public_key(value, pk);
+    const result = enc.serialize();
+    enc.free();
+    pk.free();
+    return result;
+  }
+
+  encryptUint8WithPublic(publicKeyB64: string, value: number): Uint8Array {
+    const bytes = this.fromBase64(publicKeyB64);
+    const pk = TfheCompressedPublicKey.deserialize(bytes);
+    const enc = FheUint8.encrypt_with_compressed_public_key(value, pk);
+    const result = enc.serialize();
+    enc.free();
+    pk.free();
+    return result;
+  }
+
+// String -> Base64-Chunks (string[])
+  encryptStringWithPublic(publicKeyB64: string, text: string): string[] {
+    const bytes = this.fromBase64(publicKeyB64);
+    const pk = TfheCompressedPublicKey.deserialize(bytes);
+    const chunks: string[] = [];
+
+    for (const ch of text) {
+      const code = ch.charCodeAt(0);
+      const enc = FheUint8.encrypt_with_compressed_public_key(code, pk);
+      const encBytes = enc.serialize();
+      chunks.push(this.toBase64(encBytes));
+      enc.free();
+    }
+
+    pk.free();
+    return chunks;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Batch-Verschlüsselung via CompactCiphertextList
+  // Statt N separate Krypto-Operationen wird EINE Liste mit N Werten
+  // verschlüsselt und danach in einzelne Ciphertexts expandiert. Für längere
+  // Eingaben (Strings, viele Vote-Optionen) deutlich schneller (typ. 5–10×).
+  // Verlangt einen TfheCompactPublicKey statt TfheCompressedPublicKey.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Verschlüsselt einen String in EINEM Batch.
+   * Jedes Zeichen wird als FheUint8 (charCode 0–255) serialisiert und zurückgegeben.
+   *
+   * Hinweis: Funktioniert nur mit ASCII / Basic-Latin. Für Umlaute o.ä. müsste
+   * man auf UTF-8-Bytes umstellen – für Voting-Namen ist das Limit unkritisch.
+   */
+  encryptStringCompact(publicKeyB64: string, text: string): string[] {
+    const pkBytes = this.fromBase64(publicKeyB64);
+    const pk = TfheCompactPublicKey.deserialize(pkBytes);
+    const builder = CompactCiphertextList.builder(pk);
+
+    for (const ch of text) {
+      builder.push_u8(ch.charCodeAt(0) & 0xff);
+    }
+
+    const list = builder.build();
+    const expander = list.expand();
+
+    const chunks: string[] = [];
+    for (let i = 0; i < text.length; i++) {
+      const enc = expander.get_uint8(i);
+      chunks.push(this.toBase64(enc.serialize()));
+      enc.free();
+    }
+
+    expander.free();
+    list.free();
+    pk.free();
+    return chunks;
+  }
+
+  /**
+   * Verschlüsselt eine Liste von uint8-Werten (0–255) in EINEM Batch.
+   * Returnt ein Array von Base64-Strings in derselben Reihenfolge.
+   *
+   * Anwendung: alle Vote-Bits einer Session in einem Aufruf statt
+   * pro Frage einzeln.
+   */
+  encryptUint32Compact(publicKeyB64: string, values: number[]): string[] {
+    if (values.length === 0) return [];
+
+    const pkBytes = this.fromBase64(publicKeyB64);
+    const pk = TfheCompactPublicKey.deserialize(pkBytes);
+    const builder = CompactCiphertextList.builder(pk);
+
+    for (const v of values) {
+      builder.push_u32(Math.max(0, Math.min(255, Math.round(v))));
+    }
+
+    const list = builder.build();
+    const expander = list.expand();
+
+    const out: string[] = [];
+    for (let i = 0; i < values.length; i++) {
+      const enc = expander.get_uint32(i);
+      out.push(this.toBase64(enc.serialize()));
+      enc.free();
+    }
+
+    expander.free();
+    list.free();
+    pk.free();
+    return out;
+  }
+
   /**
    * Generiert ein reproduzierbares Schlüsselpaar anhand eines Seed-Werts.
    * Mit demselben Seed entsteht immer dasselbe Schlüsselpaar.
@@ -88,6 +215,9 @@ export class TfheService {
     const clientKeyBytes = keyPair.clientKey.serialize();
     sessionStorage.setItem(SESSION_KEY_CLIENT, this.toBase64(clientKeyBytes));
     sessionStorage.setItem(SESSION_KEY_SERVER, this.toBase64(keyPair.serverKeyBytes));
+    if (keyPair.publicKeyBytes) {
+      sessionStorage.setItem('tfhe_public_key', this.toBase64(keyPair.publicKeyBytes));
+    }
   }
 
   /**
@@ -97,11 +227,15 @@ export class TfheService {
   loadKeyPairFromSession(): KeyPair | null {
     const clientB64 = sessionStorage.getItem(SESSION_KEY_CLIENT);
     const serverB64 = sessionStorage.getItem(SESSION_KEY_SERVER);
-    if (!clientB64 || !serverB64) return null;
+    const publicB64 = sessionStorage.getItem('tfhe_public_key');
+
+    if (!clientB64 || !serverB64 || !publicB64) return null;
 
     const clientKey = TfheClientKey.deserialize(this.fromBase64(clientB64));
     const serverKeyBytes = this.fromBase64(serverB64);
-    return { clientKey, serverKeyBytes };
+    const publicKeyBytes = this.fromBase64(publicB64);
+
+    return { clientKey, serverKeyBytes, publicKeyBytes };
   }
 
   /**
@@ -110,6 +244,7 @@ export class TfheService {
   clearKeyPairFromSession(): void {
     sessionStorage.removeItem(SESSION_KEY_CLIENT);
     sessionStorage.removeItem(SESSION_KEY_SERVER);
+    sessionStorage.removeItem('tfhe_public_key');
   }
 
   // ---------------------------------------------------------------------------
@@ -323,6 +458,62 @@ export class TfheService {
   // Base64 ist KEINE Verschlüsselung, nur eine Textkodierung für Binärdaten.
   // Der eigentliche Ciphertext (FHE) steckt in den kodierten Bytes drin.
   // ---------------------------------------------------------------------------
+
+  // ---------------------------------------------------------------------------
+  // Compact-Public-Key-Verschlüsselung
+  // Ermöglicht Dritten, Werte zu verschlüsseln die nur E (Besitzer des Client-Key)
+  // entschlüsseln kann. Der Public-Key verlässt das Gerät, der Client-Key nie.
+  //
+  // Verwendung: TfheCompactPublicKey (WASM-kompatibel, kleinere Parameter als
+  // TfhePublicKey). Werte werden als CompactCiphertextList gebaut, auf
+  // Client-Seite expandiert und als Standard-Ciphertexts weitergesendet.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Erzeugt einen Compact-Public-Key aus dem Client-Key.
+   * Kann sicher an Spieler weitergegeben werden – Entschlüsselung ist damit
+   * nicht möglich, nur Verschlüsselung.
+   */
+  generatePublicKey(clientKey: TfheClientKey): Uint8Array {
+    const pk = TfheCompactPublicKey.new(clientKey);
+    const bytes = pk.serialize();
+    pk.free();
+    return bytes;
+  }
+
+  /**
+   * Verschlüsselt Score (uint16) und Spieler-ID (uint32) gemeinsam mit dem
+   * Compact-Public-Key und gibt beide als separate Ciphertext-Bytes zurück.
+   *
+   * Das Compact-Format wird clientseitig sofort wieder expandiert, sodass der
+   * Server Standard-FheUint16/FheUint32-Bytes erhält (identisch mit dem
+   * client-key-verschlüsselten Format).
+   */
+  encryptScoreAndId(
+    score: number,
+    playerId: number,
+    publicKeyBytes: Uint8Array,
+  ): { encryptedScore: Uint8Array; encryptedId: Uint8Array } {
+    const pk = TfheCompactPublicKey.deserialize(publicKeyBytes);
+    const builder = CompactCiphertextList.builder(pk);
+    builder.push_u16(score);
+    builder.push_u8(playerId);
+    const list = builder.build();
+    const expander = list.expand();
+
+    const scoreEnc = expander.get_uint16(0);
+    const idEnc = expander.get_uint8(1);
+    const encryptedScore = scoreEnc.serialize();
+    const encryptedId = idEnc.serialize();
+
+    scoreEnc.free();
+    idEnc.free();
+    expander.free();
+    list.free();
+    pk.free();
+
+    return { encryptedScore, encryptedId };
+  }
 
   /** Kodiert Bytes als Base64-String für den HTTP-Transport. Chunk-sicher für große Puffer. */
   toBase64(bytes: Uint8Array): string {

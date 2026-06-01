@@ -1,0 +1,97 @@
+% !TEX root = ../meinearbeit.tex
+
+\documentclass[12pt]{article}
+
+\usepackage[a4paper,margin=2cm]{geometry}
+
+\usepackage[T1]{fontenc}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{helvet} 
+\usepackage[utf8]{inputenc}
+\usepackage[ngerman]{babel}
+\usepackage{ngerman}
+
+\usepackage{listings}
+\usepackage{amssymb}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{url}
+\def\UrlBreaks{\do\/\do-} % Zeilenumbrüche in URLs bei Bindestrich oder Schrägstrich
+\usepackage{hyperref}
+\usepackage{xspace}
+\usepackage{csquotes}
+
+
+%avoid overfull hbox problem
+\setlength{\emergencystretch}{3em}
+%avoid underfull hbox problem in bibliography
+\usepackage{etoolbox}
+% Variant A
+\apptocmd{\sloppy}{\hbadness 2000\relax}{}{}
+% Variant B
+% \apptocmd{\thebibliography}{\raggedright}{}{}
+\hyphenpenalty=5000
+\tolerance=1000
+
+% standard scaling factor for graphics, to support homogenous looks.
+\newcommand{\stdScaleFactor}{0.45}
+
+% Titelseite und Erklaerung
+\usepackage{sethesis}
+
+% Angaben Titelseite
+\unilogo{\includegraphics[scale=0.5]{FHDW-Logo.eps}}
+\uniname{FHDW Hannover}
+\title{Fast Fully Homomorphic Encryption}
+\ort{Hannover}
+\thesistype{Spezifikationsdokument}
+\studiengang{Bachelor Informatik/Wirtschaftsinformatik}
+\modul{Integrationsprojekt Kryptographie Teil 2}
+\erstpru{Tristan Hörmann}
+\datum{\today}
+\quartal{Sommerquartal 2026}
+
+% Sonstiges
+%\allowdisplaybreaks
+\setlength{\parindent}{0em}
+\setlength{\parskip}{0em}
+%\makeatletter
+%\renewcommand{\fps@figure}{ht!}
+%\renewcommand{\fps@table}{ht!}
+%\setlength{\@fptop}{0pt}
+%\makeatother
+
+\begin{document}
+
+    \maketitle
+    \clearpage
+    \setlength{\parskip}{1em}
+
+    \input{contents/notice.tex}
+    \clearpage
+    \setlength{\parskip}{0em}
+
+    \tableofcontents
+    \clearpage
+    \setlength{\parskip}{1em}
+
+    \input{contents/einleitung.tex}
+    \clearpage
+    \input{contents/querschnittssektionen.tex}
+    \clearpage
+    \input{contents/client.tex}
+    \clearpage
+    \input{contents/usecases.tex}
+    % Hier können weitere Kapitel oder Abschnitte eingefügt werden
+
+    \appendix
+    \clearpage
+    \setlength{\parskip}{0em}
+
+    \input{contents/anhang.tex}
+    \clearpage
+
+    \bibliographystyle{halpha-abbrv} % Support curstom abbreviation labels, see https://www.math.cmu.edu/~gautam/sj/blog/20171114-bibtex-doi.html
+    \bibliography{meinearbeit}
+
+\end{document}

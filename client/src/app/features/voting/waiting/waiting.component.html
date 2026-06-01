@@ -1,0 +1,29 @@
+<app-page-header
+  title="Warten auf Freigabe"
+  subtitle="Der Session-Ersteller prüft gerade deinen Beitritt." />
+
+@if (errorMessage()) {
+  <div class="alert-row">
+    <app-alert variant="error" [message]="errorMessage()!" />
+    <div class="back-row">
+      <app-button label="Zurück zur Übersicht" variant="secondary" (clicked)="cancel()" />
+    </div>
+  </div>
+} @else {
+  <app-card variant="elevated">
+    <div class="waiting">
+      <app-spinner />
+      <div class="waiting-text">
+        <p class="waiting-title">Deine Anfrage wird bearbeitet</p>
+        <p class="waiting-desc">
+          Sobald der Ersteller dich freigibt, wirst du automatisch weitergeleitet.
+        </p>
+        <p class="waiting-attempts">Status-Abfragen: {{ attempts() }}</p>
+      </div>
+    </div>
+
+    <div class="cancel-row">
+      <app-button label="Abbrechen" variant="ghost" size="sm" (clicked)="cancel()" />
+    </div>
+  </app-card>
+}

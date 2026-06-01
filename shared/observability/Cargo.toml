@@ -1,0 +1,20 @@
+[package]
+name = "observability"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum.workspace = true
+tokio = { workspace = true, features = ["full"] }
+
+opentelemetry = "0.27"
+opentelemetry_sdk = { version = "0.27", features = ["rt-tokio", "trace"] }
+opentelemetry-otlp = { version = "0.27", features = ["grpc-tonic", "trace"] }
+opentelemetry-semantic-conventions = "0.27"
+
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-opentelemetry = "0.28"
+
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace"] }

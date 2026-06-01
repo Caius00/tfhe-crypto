@@ -1,0 +1,47 @@
+# Tests, die einen kompletten FHE-ServerKey laden (mehrere hundert MB) und
+# einen eigenen rayon-Pool spawnen, müssen seriell laufen — sonst belegen
+# parallel laufende Tests den RAM auf kleinen Runnern komplett.
+#
+# Jeder Service mit FHE-schweren Tests kommt hier als eigener Override-Block
+# rein und wird der `fhe-heavy`-Gruppe zugeordnet.
+[test-groups]
+fhe-heavy = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'package(encrypted-leaderboard)'
+test-group = 'fhe-heavy'
+
+# Wenn ein Service Tests bekommt, die einen ServerKey laden, einfach den
+# entsprechenden Block einkommentieren:
+
+# [[profile.default.overrides]]
+# filter = 'package(encrypted-key-value-store)'
+# test-group = 'fhe-heavy'
+
+# [[profile.default.overrides]]
+# filter = 'package(encrypted-age-verification)'
+# test-group = 'fhe-heavy'
+
+# [[profile.default.overrides]]
+# filter = 'package(encrypted-voting-polling)'
+# test-group = 'fhe-heavy'
+
+# [[profile.default.overrides]]
+# filter = 'package(sealed-bid-auction)'
+# test-group = 'fhe-heavy'
+
+# [[profile.default.overrides]]
+# filter = 'package(encrypted-statistics-service)'
+# test-group = 'fhe-heavy'
+
+# [[profile.default.overrides]]
+# filter = 'package(encrypted-genomics)'
+# test-group = 'fhe-heavy'
+
+# [[profile.default.overrides]]
+# filter = 'package(encrypted-image-processing)'
+# test-group = 'fhe-heavy'
+
+# [[profile.default.overrides]]
+# filter = 'package(encrypted-program-execution)'
+# test-group = 'fhe-heavy'

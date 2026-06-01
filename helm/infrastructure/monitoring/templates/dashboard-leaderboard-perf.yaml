@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-leaderboard-perf
+  namespace: monitoring
+  labels:
+    # Vom Grafana-Sidecar automatisch geladen (gleicher Mechanismus wie
+    # `service-overview`, siehe sidecar.dashboards.label in values.yaml).
+    grafana_dashboard: "1"
+data:
+  leaderboard-perf.json: |-
+{{ .Files.Get "dashboards/leaderboard-perf.json" | indent 4 }}

@@ -1,0 +1,42 @@
+.qe-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.qe-index {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--c-primary);
+}
+
+.qe-row { margin-bottom: 0.85rem; }
+
+.qe-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--c-border);
+  margin-top: 0.25rem;
+}
+
+.qe-options-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--c-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.1rem;
+}
+
+.qe-option-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.qe-option-row app-input { flex: 1; }

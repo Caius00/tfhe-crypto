@@ -1,0 +1,28 @@
+<div class="keys">
+  @for (k of keys; track k.label; let i = $index) {
+    <div class="key">
+      <div class="key-head">
+        <div class="key-meta">
+          <span class="key-label">{{ k.label }}</span>
+          <span class="key-desc">{{ k.description }}</span>
+        </div>
+        <div class="key-actions">
+          <app-button
+            [label]="isVisible(i) ? 'Verbergen' : 'Anzeigen'"
+            variant="ghost"
+            size="sm"
+            (clicked)="toggle(i)" />
+          <app-copy-button [value]="k.value" />
+        </div>
+      </div>
+
+      <div class="key-value" [class.masked]="!isVisible(i)">
+        @if (isVisible(i)) {
+          <code>{{ k.value }}</code>
+        } @else {
+          <code class="muted">{{ preview(k.value) }}</code>
+        }
+      </div>
+    </div>
+  }
+</div>

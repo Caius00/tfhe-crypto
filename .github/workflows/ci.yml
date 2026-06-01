@@ -8,16 +8,16 @@ on:
       - '**/*.md'
   workflow_dispatch:
 
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+#concurrency:
+#  group: ci-${{ github.ref }}
+#  cancel-in-progress: true
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   changes:
-    runs-on: arc-runners
+    runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
       any: ${{ steps.matrix.outputs.any }}
@@ -35,47 +35,38 @@ jobs:
               - 'services/01-encrypted-key-value-store/**'
               - 'shared/**'
               - 'Cargo.toml'
-              - 'Cargo.lock'
             s02:
               - 'services/02-encrypted-age-verification/**'
               - 'shared/**'
               - 'Cargo.toml'
-              - 'Cargo.lock'
             s03:
               - 'services/03-encrypted-voting-polling/**'
               - 'shared/**'
               - 'Cargo.toml'
-              - 'Cargo.lock'
             s04:
               - 'services/04-sealed-bid-auction/**'
               - 'shared/**'
               - 'Cargo.toml'
-              - 'Cargo.lock'
             s05:
               - 'services/05-encrypted-statistics-service/**'
               - 'shared/**'
               - 'Cargo.toml'
-              - 'Cargo.lock'
             s06:
               - 'services/06-encrypted-genomics/**'
               - 'shared/**'
               - 'Cargo.toml'
-              - 'Cargo.lock'
             s07:
               - 'services/07-encrypted-image-processing/**'
               - 'shared/**'
               - 'Cargo.toml'
-              - 'Cargo.lock'
             s08:
               - 'services/08-encrypted-leaderboard/**'
               - 'shared/**'
               - 'Cargo.toml'
-              - 'Cargo.lock'
             s09:
               - 'services/09-encrypted-program-execution/**'
               - 'shared/**'
               - 'Cargo.toml'
-              - 'Cargo.lock'
 
       - id: matrix
         run: |
@@ -99,7 +90,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.any == 'true'
     name: "${{ matrix.nr }} ${{ matrix.service }}"
-    runs-on: arc-runners
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.changes.outputs.matrix) }}
@@ -120,15 +112,55 @@ jobs:
         id: clippy
         run: cargo clippy -p ${{ matrix.service }} -- -D warnings
 
-      - name: Test
+      - name: Install nextest & cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest,cargo-llvm-cov
+
+      # Tests laufen im Release-Modus (FHE-Crates sind im Debug ~10× langsamer)
+      # und seriell (--test-threads=1), damit teure ServerKey-Allokationen sich
+      # nicht gegenseitig den Speicher wegnehmen.
+      - name: Test (mit Coverage)
         id: test
-        run: cargo nextest run -p ${{ matrix.service }} --no-tests=pass
+        run: |
+          cargo llvm-cov nextest --release \
+            -p ${{ matrix.service }} \
+            --no-tests=pass \
+            --test-threads=1 \
+            --summary-only \
+            | tee coverage.txt
+
+      # Liest die Line-Coverage aus der TOTAL-Zeile heraus.
+      # Wenn keine Tests etwas berührt haben (lines == missed), wird "—" gesetzt
+      # statt "0.00%" — sonst wäre der Wert für untestete Services irreführend.
+      - name: Coverage extrahieren
+        if: always()
+        id: coverage
+        run: |
+          TOTAL_LINE=$(grep -E '^TOTAL' coverage.txt 2>/dev/null | head -1 || true)
+          if [ -z "$TOTAL_LINE" ]; then
+            echo "lines=—" >> "$GITHUB_OUTPUT"
+          else
+            LINES=$(echo "$TOTAL_LINE" | awk '{print $8}')
+            MISSED=$(echo "$TOTAL_LINE" | awk '{print $9}')
+            PCT=$(echo "$TOTAL_LINE" | awk '{print $10}')
+            if [ "$LINES" = "$MISSED" ]; then
+              echo "lines=—" >> "$GITHUB_OUTPUT"
+            else
+              echo "lines=$PCT" >> "$GITHUB_OUTPUT"
+            fi
+          fi
 
       - name: Save result
         if: always()
         run: |
           mkdir result
-          printf 'fmt=${{ steps.fmt.outcome }}\nclippy=${{ steps.clippy.outcome }}\ntest=${{ steps.test.outcome }}' > result/outcome.txt
+          printf 'fmt=%s\nclippy=%s\ntest=%s\ncoverage=%s\n' \
+            '${{ steps.fmt.outcome }}' \
+            '${{ steps.clippy.outcome }}' \
+            '${{ steps.test.outcome }}' \
+            '${{ steps.coverage.outputs.lines }}' \
+            > result/outcome.txt
           echo '${{ matrix.nr }}' > result/nr.txt
 
       - name: Upload result
@@ -141,7 +173,7 @@ jobs:
   summary:
     needs: check
     if: always()
-    runs-on: arc-runners
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -153,14 +185,16 @@ jobs:
           icon() { case "$1" in success) echo "✅";; skipped) echo "⏭️";; *) echo "❌";; esac; }
 
           {
-            echo "| # | Service | Format | Clippy | Test |"
-            echo "|---|---------|:------:|:------:|:----:|"
+            echo "| # | Service | Format | Clippy | Test | Coverage |"
+            echo "|---|---------|:------:|:------:|:----:|:--------:|"
             for dir in $(ls -d results/result-* 2>/dev/null | sort); do
               service="${dir#results/result-??-}"
               nr=$(cat "$dir/nr.txt")
-              fmt=$(grep    "^fmt="    "$dir/outcome.txt" | cut -d= -f2)
-              clippy=$(grep "^clippy=" "$dir/outcome.txt" | cut -d= -f2)
-              test=$(grep   "^test="   "$dir/outcome.txt" | cut -d= -f2)
-              echo "| $nr | \`$service\` | $(icon $fmt) | $(icon $clippy) | $(icon $test) |"
+              fmt=$(grep    "^fmt="      "$dir/outcome.txt" | cut -d= -f2)
+              clippy=$(grep "^clippy="   "$dir/outcome.txt" | cut -d= -f2)
+              test=$(grep   "^test="     "$dir/outcome.txt" | cut -d= -f2)
+              cov=$(grep    "^coverage=" "$dir/outcome.txt" | cut -d= -f2)
+              [ -z "$cov" ] && cov="—"
+              echo "| $nr | \`$service\` | $(icon $fmt) | $(icon $clippy) | $(icon $test) | $cov |"
             done
           } >> "$GITHUB_STEP_SUMMARY"

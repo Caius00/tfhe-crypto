@@ -1,0 +1,16 @@
+{{- if .Values.redisRoute.enabled }}
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TCPRoute
+metadata:
+  name: {{ .Chart.Name }}-redis
+  namespace: {{ .Values.namespace }}
+spec:
+  parentRefs:
+    - name: {{ .Values.redisRoute.gateway.name }}
+      namespace: {{ .Values.redisRoute.gateway.namespace }}
+      sectionName: {{ .Values.redisRoute.gateway.sectionName }}
+  rules:
+    - backendRefs:
+        - name: {{ .Values.redisRoute.backend.service }}
+          port: {{ .Values.redisRoute.backend.port }}
+{{- end }}
