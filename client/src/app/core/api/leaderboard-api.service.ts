@@ -21,6 +21,16 @@ export interface EntryDto {
   encrypted_id: string;
 }
 
+export interface RosterEntryDto {
+  player_key: string;
+  encrypted_id: string;
+}
+
+export interface EntriesResponse {
+  entries: EntryDto[];
+  roster: RosterEntryDto[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class LeaderboardApiService {
   constructor(private http: HttpClient) {}
@@ -43,7 +53,7 @@ export class LeaderboardApiService {
     return this.http.post<void>(`${BASE}/${code}/submit`, body);
   }
 
-  getEntries(code: string): Observable<{ entries: EntryDto[] }> {
-    return this.http.get<{ entries: EntryDto[] }>(`${BASE}/${code}/entries`);
+  getEntries(code: string): Observable<EntriesResponse> {
+    return this.http.get<EntriesResponse>(`${BASE}/${code}/entries`);
   }
 }

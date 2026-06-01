@@ -1,22 +1,36 @@
 /**
- * Room-Fill: 1 Raum, 20 Spieler submitten SEQUENTIELL je einen Wert
- * (Spieler 2 wartet bis Spieler 1 fertig ist usw.).
+ * Room-Fill (Acceleration mit wachsender Spielerzahl): 1 Raum, in dem
+ * die Spielerzahl pro Runde um eins steigt — und innerhalb jeder Runde
+ * das Submit-Tempo stufenweise von „alle 10 s" auf „jede Sekunde" anzieht.
  *
- * Genau die Situation aus `MAX_ENTRIES = 20` (siehe `state.rs:25`): wir
- * füllen einen Raum bis zur Kapazitätsgrenze.
+ * Ablauf:
+ *   Runde 1 (Aktivität, 10 min):
+ *     - 1 Spieler
+ *     - Minute 0–1: alle 10 s ein Submit
+ *     - Minute 1–2: alle  9 s
+ *     - Minute 2–3: alle  8 s
+ *     - …
+ *     - Minute 9–10: jede Sekunde
+ *   Pause 2 min (kein Submit — Trennzeichen für's Dashboard)
+ *   Runde 2:
+ *     - 2 Spieler, beide laufen die gleichen 10 Stufen parallel
+ *   Pause 2 min
+ *   Runde 3 … bis Runde 20 (alle 20 Spieler aktiv)
  *
- * Pro Iteration `i ∈ [0..19]`:
- *   1. `POST /submit` mit player_key=`player_i`
- *   2. Kurz schlafen, damit der Hintergrund-Sort einen Pass machen kann
- *      bevor der nächste Spieler einreicht
+ * Pro Runde: 10 × 1 min Aktivität + 2 min Pause = 12 min.
+ * Gesamt: 20 × 12 min = 4 Stunden bei Defaults.
  *
- * Was du im Dashboard siehst:
- *   - Submit-Latenz konstant (immer eine einzelne Insertion, kein FHE keep_max)
- *   - Pod-CPU steigt mit jeder Iteration, weil der Sort immer mehr Elemente
- *     vergleichen muss (n=1 → n=2 → … → n=20)
- *   - Submit p95 sollte konstant bleiben; die echte Skalierungs-Aussage
- *     bekommst du aus der CPU-Last und dem Vergleich zur Sort-Komplexität
- *     (Batcher's Odd-Even Merge ~ O(n · log²n))
+ * Test endet automatisch bei `abortOnFailure` (>5 % Fehler) oder wenn alle
+ * 20 Runden durch sind. Da `MAX_ENTRIES = 20` (siehe `state.rs:25`), kann
+ * die letzte Runde den Raum exakt füllen.
+ *
+ * Konfiguration über ENV (kürzer für Smoke-Test):
+ *   MAX_PLAYERS=20          — Endpunkt der Wachstumskurve
+ *   STAGE_DURATION_SEC=60   — Dauer jeder Tempo-Stufe (10 Stufen pro Runde)
+ *   PAUSE_DURATION_SEC=120  — Pause zwischen Runden (Trennzeichen)
+ *
+ * Beispiel-Smoke-Test (~12 min statt 4 h):
+ *   k6 run … 02_room_fill.js -e MAX_PLAYERS=3 -e STAGE_DURATION_SEC=20 -e PAUSE_DURATION_SEC=30
  *
  * Aufruf:
  *   k6 run --out experimental-prometheus-rw 02_room_fill.js \
@@ -32,30 +46,50 @@ import {
   testId,
   summaryTrendStats,
   defaultThresholds,
+  abortOnFailure,
 } from './_common.js';
 
 const URL = baseUrl();
 const RUN_ID = testId('room-fill');
-const SETTLE_SEC = parseFloat(__ENV.SETTLE_SEC || '5');
+const MAX_PLAYERS = parseInt(__ENV.MAX_PLAYERS || '20', 10);
+const STAGE_DURATION_SEC = parseInt(__ENV.STAGE_DURATION_SEC || '60', 10);
+const PAUSE_DURATION_SEC = parseInt(__ENV.PAUSE_DURATION_SEC || '120', 10);
+
+// Pro Stufe die Sekunden-Pause zwischen zwei Submits desselben Spielers.
+const SLEEP_STAGES_SEC = [10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+
+const ROUND_ACTIVITY_SEC = STAGE_DURATION_SEC * SLEEP_STAGES_SEC.length;
+const ROUND_TOTAL_SEC = ROUND_ACTIVITY_SEC + PAUSE_DURATION_SEC;
+
+// Ramping-Stages bauen: am Anfang jeder Runde wird ein neuer VU dazugenommen.
+// Die kurze 5-s-Ramp gibt k6 Zeit, den VU zu starten, ohne dass die ersten
+// Submits außer Takt mit den Stufen geraten.
+const stages = [];
+for (let round = 1; round <= MAX_PLAYERS; round++) {
+  stages.push({ duration: '5s', target: round });
+  stages.push({ duration: `${ROUND_TOTAL_SEC - 5}s`, target: round });
+}
 
 export const options = {
   scenarios: {
     fill: {
-      executor: 'per-vu-iterations',
-      vus: 1,
-      iterations: 20,
-      // Großzügig: 20 × (submit + sort) kann je nach Hardware mehrere Minuten dauern
-      maxDuration: '15m',
+      executor: 'ramping-vus',
+      startVUs: 0,
+      stages,
+      gracefulRampDown: '5s',
     },
   },
-  thresholds: defaultThresholds,
+  thresholds: {
+    ...defaultThresholds,
+    ...abortOnFailure,
+  },
   summaryTrendStats,
   tags: { testid: RUN_ID, scenario: 'room_fill' },
 };
 
 const BODY = createBody();
 
-/** Legt den einen Raum an, gibt den Code an die Iterationen weiter. */
+/** Legt den einen Raum an, gibt den Code + Start-Zeitstempel an die VUs. */
 export function setup() {
   const r = http.post(`${URL}/create`, BODY, {
     headers: { 'Content-Type': 'application/json' },
@@ -67,13 +101,48 @@ export function setup() {
   }
   const code = r.json('code');
   console.log(`__LEADERBOARD_ROOM_CODE__=${code}`);
-  return { code };
+  return { code, startMs: Date.now() };
+}
+
+/**
+ * Zerlegt den seit Test-Start vergangenen Zeitraum in (Runde, Phase, Sleep).
+ * - `inActivity` true: gerade läuft die Submit-Phase
+ * - `sleepSec`: passendes Sleep-Intervall (Stage-Wert) bzw. Rest-Pause
+ */
+function currentPhase(elapsedSec) {
+  const elapsedInRound = elapsedSec % ROUND_TOTAL_SEC;
+
+  if (elapsedInRound >= ROUND_ACTIVITY_SEC) {
+    // Pause-Phase: bis zum Start der nächsten Aktivitäts-Phase schlafen.
+    return {
+      inActivity: false,
+      sleepSec: ROUND_TOTAL_SEC - elapsedInRound + 0.1,
+    };
+  }
+
+  const stageIdx = Math.min(
+    Math.floor(elapsedInRound / STAGE_DURATION_SEC),
+    SLEEP_STAGES_SEC.length - 1,
+  );
+  return {
+    inActivity: true,
+    sleepSec: SLEEP_STAGES_SEC[stageIdx],
+  };
 }
 
 export default function (data) {
-  // Pro Iteration ein eindeutiger Spieler — `__ITER` läuft 0..19.
-  const playerKey = `player_${__ITER}`;
-  const payload = submitPayloads[__ITER % submitPayloads.length];
+  const elapsedSec = (Date.now() - data.startMs) / 1000;
+  const phase = currentPhase(elapsedSec);
+
+  // Pause: einfach durchschlafen ohne Submit.
+  if (!phase.inActivity) {
+    sleep(phase.sleepSec);
+    return;
+  }
+
+  // VU N stellt Spieler N-1 dar — stabil über alle Iterationen.
+  const playerKey = `player_${__VU - 1}`;
+  const payload = submitPayloads[Math.floor(Math.random() * submitPayloads.length)];
 
   const r = http.post(
     `${URL}/${data.code}/submit`,
@@ -90,8 +159,5 @@ export default function (data) {
   );
   check(r, { 'submit 200': (x) => x.status === 200 });
 
-  // Dem Hintergrund-Sort kurz Luft geben, bevor der nächste Spieler reinkommt.
-  // Sonst stapeln sich Submits auf dem Single-Flight-Sort-Slot und Latenzen
-  // werden vom Warten dominiert statt von der reinen Submit-Verarbeitung.
-  sleep(SETTLE_SEC);
+  sleep(phase.sleepSec);
 }

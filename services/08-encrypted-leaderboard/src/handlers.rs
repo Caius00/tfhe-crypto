@@ -84,9 +84,24 @@ pub struct EntryDto {
     pub encrypted_id: String,
 }
 
+/// Klartext-Roster der bekannten Spieler im Raum (Insertion-Order).
+///
+/// Wird parallel zur sortierten `entries`-Liste ausgeliefert, damit der Creator
+/// nach Entschlüsselung der `encrypted_id` einer sortierten Position den
+/// passenden Namen daneben legen kann.
+///
+/// `player_key` ist bewusst Klartext — er ist es ohnehin schon im Submit-Request
+/// (siehe Threat-Model: server-seitiges Dedup-Token).
+#[derive(Serialize, JsonSchema)]
+pub struct RosterEntryDto {
+    pub player_key: String,
+    pub encrypted_id: String,
+}
+
 #[derive(Serialize, JsonSchema)]
 pub struct EntriesResponse {
     pub entries: Vec<EntryDto>,
+    pub roster: Vec<RosterEntryDto>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -299,7 +314,21 @@ pub async fn get_entries(
             .collect()
     };
 
-    Ok(Json(EntriesResponse { entries }))
+    // Roster aus der Quelle-der-Wahrheit `entries` (Insertion-Order), inklusive
+    // Klartext-player_key. Der Creator nutzt das, um die ID-Bytes der sortierten
+    // Liste auf Namen zu mappen.
+    let roster: Vec<RosterEntryDto> = session
+        .entries
+        .read()
+        .await
+        .iter()
+        .map(|e| RosterEntryDto {
+            player_key: e.player_key.clone(),
+            encrypted_id: b64_encode(&e.enc.id),
+        })
+        .collect();
+
+    Ok(Json(EntriesResponse { entries, roster }))
 }
 
 /// `POST /{code}/rank` — Rang einer verschlüsselten Spieler-ID abfragen.
