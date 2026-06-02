@@ -184,29 +184,6 @@ fn homomorphic_levenshtein_distance(
     dp[m][n].clone()
 }
 
-// O(m^2) per window
-pub fn homomorphic_sliding_window_levenshtein(
-    enc_seq: &[FheUint16],
-    enc_pattern: &[FheUint16],
-    public_key: &PublicKey,
-) -> Vec<FheUint16> {
-    let n = enc_seq.len();
-    let m = enc_pattern.len();
-
-    if m > n {
-        panic!("pattern > sequence");
-    }
-
-    (0..=(n - m))
-        .into_par_iter()
-        .map(|start| {
-            let window = &enc_seq[start..start + m];
-
-            homomorphic_levenshtein_distance(window, enc_pattern, public_key)
-        })
-        .collect()
-}
-
 pub fn compare_against_database_levenshtein(
     input_sequence: &[FheUint16],
     database_sequences: &[Vec<FheUint16>],
