@@ -425,10 +425,11 @@ pub async fn process_levenshtein_handler(
 ) -> Result<axum::Json<ProcessLevenshteinResponse>, (axum::http::StatusCode, String)> {
     set_server_key(state.server_key.clone());
 
+    let now = Instant::now();
     let enc_bytes = BASE64.decode(&req.encrypted_sequence).map_err(|e| {
         (
             axum::http::StatusCode::BAD_REQUEST,
-            format!("Base64-Fehler: {}", e),
+            format!("base64-error: {}", e),
         )
     })?;
 
@@ -445,6 +446,8 @@ pub async fn process_levenshtein_handler(
     let distance = homomorphic_levenshtein_distance(&enc_seq, &enc_pattern, &state.public_key);
 
     let bytes = bincode::serialize(&vec![distance]).unwrap();
+
+    println!("levenshtein distance finished in {:?}", now.elapsed());
 
     Ok(axum::Json(ProcessLevenshteinResponse {
         encrypted_distances: BASE64.encode(bytes),
