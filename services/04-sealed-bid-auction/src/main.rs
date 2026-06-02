@@ -1,8 +1,11 @@
+pub mod functions;
+#[cfg(test)]
+mod auktion_tests;
+
 use aide::axum::{routing::{get_with, post_with}, ApiRouter};
 use axum::extract::DefaultBodyLimit;
 use tower_http::cors::{Any, CorsLayer};
 
-mod functions;
 
 #[tokio::main]
 async fn main() {

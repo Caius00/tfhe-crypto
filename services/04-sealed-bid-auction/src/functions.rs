@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use tfhe::integer::server_key;
 use std::sync::Mutex;
 use base64::{engine::general_purpose, Engine as _};
 use tfhe::{CompressedServerKey, FheBool, FheUint32};
@@ -7,30 +8,38 @@ use schemars::JsonSchema;
 use axum::{Json, http::StatusCode};
 
 // Steckbrief --> client zum Server
-#[derive(Deserialize)]
-struct BidRequest {
-    bidder_name: String,
-    encrypted_amount: String, 
-    server_key: String,       
+#[derive(serde::Deserialize, serde::Serialize)]
+pub struct BidRequest {
+    pub bidder_name: String,
+    pub encrypted_amount: String, 
+    pub server_key: String,       
 }
+
+#[derive(Serialize, JsonSchema)]
+pub struct AuctionResponse {
+   pub  status: String,
+    pub encrypted_result: String, 
+}
+
+
 
 // Das Format für ein gebot in server-speicher
 #[derive(Clone)]
-struct Bid {
-    bidder_name: String,
-    encrypted_amount: FheUint32,
+pub struct Bid {
+    pub bidder_name: String,
+    pub encrypted_amount: FheUint32,
 }
 
 #[derive(Deserialize, Serialize, JsonSchema)]
-struct StringResponse {
+pub struct StringResponse {
     response: String,
 }
 
 // Liste für gebote
-static BIDS: Mutex<Vec<Bid>> = Mutex::new(Vec::new());
+pub static BIDS: Mutex<Vec<Bid>> = Mutex::new(Vec::new());
 
 //  empfängt das Gebot und entpackung 
-pub fn gebot_empfangen(Json(req): Json<BidRequest>) -> Result<&'static str, String> {
+pub async fn gebot_empfangen(Json(req): Json<BidRequest>) -> Result<&'static str, String> {
     // Server-Schlüssel aus Base64 decodieren und dekomprimieren
     let sk_bytes = general_purpose::STANDARD
         .decode(&req.server_key)
@@ -58,32 +67,43 @@ pub fn gebot_empfangen(Json(req): Json<BidRequest>) -> Result<&'static str, Stri
     let mut liste = BIDS.lock().unwrap();
     liste.push(neues_gebot);
 
+    tokio::task::block_in_place(|| {
+        tfhe::set_server_key(server_key);
+    });
+
     Ok("Gebot erfolgreich im Liste gespeichert!")
 }
 
 // Auswertung
-pub fn auktion_auswerten() -> Result<String, String> {
+pub async fn auktion_auswerten() -> Result<Json<AuctionResponse>, String> {
     let liste = BIDS.lock().unwrap();
 
     if liste.is_empty() {
-        return Ok("Keine Gebote vorhanden!".to_string());
+        return Err("Keine Gebote vorhanden!".to_string());
     }
 
     let _gewinner_nachricht = tokio::task::block_in_place(|| {
         let mut gewinner_index = 0;
 
-        for i in 1..liste.len() {
+// Wir nehmen einfach ein vorhandenes Gebot als Basis für den FHE-Kontext
+let mut finales_ergebnis = liste[0].encrypted_amount.gt(&liste[0].encrypted_amount);
+
+for i in 1..liste.len() {
           
             let _ist_neues_gebot_groesser: FheBool = liste[i]
                 .encrypted_amount
                 .gt(&liste[gewinner_index].encrypted_amount);
         }
         
-        format!("Die Auktion mit {} Geboten wurde blind ausgewertet!", liste.len())
+        bincode::serialize(&finales_ergebnis).unwrap()
     });
 
-    Ok("Die Auktion wurde erfolgreich im FHE-Modus verarbeitet!".to_string())
+    Ok(Json(AuctionResponse {
+        status: format!("Die Auktion mit {} Geboten wurde blind ausgewertet!", liste.len()),
+        encrypted_result: general_purpose::STANDARD.encode(_gewinner_nachricht),
+    }))
 }
+
 
 pub fn hallo_test() -> Result<Json<StringResponse>, (StatusCode, String)> {
     Ok(Json(StringResponse {    
