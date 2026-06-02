@@ -32,10 +32,19 @@ pub async fn create_session(
 ) -> ApiResult<CreateSessionResponse> {
     let sk_bytes = general_purpose::STANDARD
         .decode(&req.server_key)
-        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid ServerKey Base64: {}", e)))?;
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("Invalid ServerKey Base64: {}", e),
+            )
+        })?;
 
-    let _: CompressedServerKey = bincode::deserialize(&sk_bytes)
-        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid ServerKey bincode: {}", e)))?;
+    let _: CompressedServerKey = bincode::deserialize(&sk_bytes).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("Invalid ServerKey bincode: {}", e),
+        )
+    })?;
 
     let session_id = Uuid::new_v4().to_string();
 
@@ -126,10 +135,10 @@ pub async fn approve_participant(
     }
 
     if req.approved {
-        let participant = session
-            .participants
-            .get_mut(&req.participant_id)
-            .ok_or((StatusCode::NOT_FOUND, "Teilnehmer nicht gefunden".to_string()))?;
+        let participant = session.participants.get_mut(&req.participant_id).ok_or((
+            StatusCode::NOT_FOUND,
+            "Teilnehmer nicht gefunden".to_string(),
+        ))?;
 
         participant.approved = true;
     } else {
@@ -157,13 +166,16 @@ pub async fn submit_vote(
         return Err((StatusCode::CONFLICT, "Session bereits beendet".to_string()));
     }
 
-    let participant = session
-        .participants
-        .get_mut(&req.participant_id)
-        .ok_or((StatusCode::NOT_FOUND, "Teilnehmer nicht gefunden".to_string()))?;
+    let participant = session.participants.get_mut(&req.participant_id).ok_or((
+        StatusCode::NOT_FOUND,
+        "Teilnehmer nicht gefunden".to_string(),
+    ))?;
 
     if !participant.approved {
-        return Err((StatusCode::FORBIDDEN, "Teilnehmer noch nicht genehmigt".to_string()));
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Teilnehmer noch nicht genehmigt".to_string(),
+        ));
     }
 
     if req.encrypted_votes.len() != session.questions.len() {
@@ -307,7 +319,10 @@ pub async fn finalize_session(
     }
 
     if session.finalized {
-        return Err((StatusCode::CONFLICT, "Session bereits finalisiert".to_string()));
+        return Err((
+            StatusCode::CONFLICT,
+            "Session bereits finalisiert".to_string(),
+        ));
     }
 
     session.finalized = true;
