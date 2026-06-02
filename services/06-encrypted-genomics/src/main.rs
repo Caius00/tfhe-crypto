@@ -41,25 +41,15 @@ async fn main() {
         )
         .api_route(
             "/process-levenshtein",
-            post_with(
-                functions::process_levenshtein_handler,
-                |op| {
-                    op.description(
-                        "Check homomorph risk pattern levenshtein"
-                    )
-                },
-            ),
+            post_with(functions::process_levenshtein_handler, |op| {
+                op.description("Check homomorph risk pattern levenshtein")
+            }),
         )
         .api_route(
             "/compare-db-levenshtein",
-            post_with(
-                functions::compare_database_levenshtein_handler,
-                |op| {
-                    op.description(
-                        "Compare encrypted DNA using levenshtein"
-                    )
-                },
-            ),
+            post_with(functions::compare_database_levenshtein_handler, |op| {
+                op.description("Compare encrypted DNA using levenshtein")
+            }),
         )
         .with_state(shared_state);
 

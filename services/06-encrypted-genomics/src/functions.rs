@@ -6,7 +6,8 @@ use std::sync::Arc;
 use std::time::Instant;
 use tfhe::prelude::*;
 use tfhe::{
-    generate_keys, set_server_key, ClientKey, ConfigBuilder, FheUint8, FheUint16, FheBool, PublicKey, ServerKey,
+    generate_keys, set_server_key, ClientKey, ConfigBuilder, FheBool, FheUint16, FheUint8,
+    PublicKey, ServerKey,
 };
 
 #[derive(Clone)]
@@ -67,11 +68,7 @@ fn fhe_min(a: &FheUint16, b: &FheUint16) -> FheUint16 {
     cond.if_then_else(a, b)
 }
 
-fn fhe_min3(
-    a: &FheUint16,
-    b: &FheUint16,
-    c: &FheUint16,
-) -> FheUint16 {
+fn fhe_min3(a: &FheUint16, b: &FheUint16, c: &FheUint16) -> FheUint16 {
     let ab = fhe_min(a, b);
     fhe_min(&ab, c)
 }
@@ -154,10 +151,8 @@ fn homomorphic_levenshtein_distance(
     let m = seq_a.len();
     let n = seq_b.len();
 
-    let mut dp: Vec<Vec<FheUint16>> = vec![
-        vec![FheUint16::encrypt(0u16, public_key); n + 1];
-        m + 1
-    ];
+    let mut dp: Vec<Vec<FheUint16>> =
+        vec![vec![FheUint16::encrypt(0u16, public_key); n + 1]; m + 1];
 
     for i in 0..=m {
         dp[i][0] = FheUint16::encrypt(i as u16, public_key);
@@ -172,25 +167,17 @@ fn homomorphic_levenshtein_distance(
             let eq = seq_a[i - 1].eq(&seq_b[j - 1]);
 
             let zero = FheUint16::encrypt(0u16, public_key);
-            let one  = FheUint16::encrypt(1u16, public_key);
+            let one = FheUint16::encrypt(1u16, public_key);
 
             let cost = eq.if_then_else(&zero, &one);
 
-            let deletion =
-                &dp[i - 1][j] + FheUint16::encrypt(1u16, public_key);
+            let deletion = &dp[i - 1][j] + FheUint16::encrypt(1u16, public_key);
 
-            let insertion =
-                &dp[i][j - 1] + FheUint16::encrypt(1u16, public_key);
+            let insertion = &dp[i][j - 1] + FheUint16::encrypt(1u16, public_key);
 
-            let substitution =
-                &dp[i - 1][j - 1] + cost;
+            let substitution = &dp[i - 1][j - 1] + cost;
 
-            dp[i][j] =
-                fhe_min3(
-                    &deletion,
-                    &insertion,
-                    &substitution,
-                );
+            dp[i][j] = fhe_min3(&deletion, &insertion, &substitution);
         }
     }
 
@@ -213,14 +200,9 @@ pub fn homomorphic_sliding_window_levenshtein(
     (0..=(n - m))
         .into_par_iter()
         .map(|start| {
-            let window =
-                &enc_seq[start..start + m];
+            let window = &enc_seq[start..start + m];
 
-            homomorphic_levenshtein_distance(
-                window,
-                enc_pattern,
-                public_key,
-            )
+            homomorphic_levenshtein_distance(window, enc_pattern, public_key)
         })
         .collect()
 }
@@ -233,11 +215,7 @@ pub fn compare_against_database_levenshtein(
     database_sequences
         .par_iter()
         .map(|db_sequence| {
-            homomorphic_levenshtein_distance(
-                input_sequence,
-                db_sequence,
-                public_key,
-            )
+            homomorphic_levenshtein_distance(input_sequence, db_sequence, public_key)
         })
         .collect()
 }
@@ -466,160 +444,90 @@ pub async fn compare_database_handler(
 }
 
 pub async fn process_levenshtein_handler(
-    axum::extract::State(state):
-        axum::extract::State<Arc<AppState>>,
-    axum::Json(req):
-        axum::Json<ProcessRequest>,
-) -> Result<
-    axum::Json<ProcessLevenshteinResponse>,
-    (axum::http::StatusCode, String),
-> {
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    axum::Json(req): axum::Json<ProcessRequest>,
+) -> Result<axum::Json<ProcessLevenshteinResponse>, (axum::http::StatusCode, String)> {
     set_server_key(state.server_key.clone());
 
-    let enc_bytes =
-        BASE64.decode(&req.encrypted_sequence)
-        .map_err(|e| {
-            (
-                axum::http::StatusCode::BAD_REQUEST,
-                format!("Base64-Fehler: {}", e),
-            )
-        })?;
+    let enc_bytes = BASE64.decode(&req.encrypted_sequence).map_err(|e| {
+        (
+            axum::http::StatusCode::BAD_REQUEST,
+            format!("Base64-Fehler: {}", e),
+        )
+    })?;
 
-    let enc_seq =
-        deserialize_fhe_vec(&enc_bytes);
+    let enc_seq = deserialize_fhe_vec(&enc_bytes);
 
     let pattern =
-        parse_pattern(&req.risk_pattern)
-        .map_err(|e| {
-            (
-                axum::http::StatusCode::BAD_REQUEST,
-                e,
-            )
-        })?;
+        parse_pattern(&req.risk_pattern).map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e))?;
 
-    let enc_pattern: Vec<FheUint16> =
-        pattern
-            .iter()
-            .map(|&b| {
-                FheUint16::try_encrypt(
-                    b,
-                    &state.public_key,
-                )
-                .unwrap()
-            })
-            .collect();
+    let enc_pattern: Vec<FheUint16> = pattern
+        .iter()
+        .map(|&b| FheUint16::try_encrypt(b, &state.public_key).unwrap())
+        .collect();
 
-    let distance =
-        homomorphic_levenshtein_distance(
-            &enc_seq,
-            &enc_pattern,
-            &state.public_key,
-        );
+    let distance = homomorphic_levenshtein_distance(&enc_seq, &enc_pattern, &state.public_key);
 
-    let bytes =
-    bincode::serialize(&vec![distance]).unwrap();
+    let bytes = bincode::serialize(&vec![distance]).unwrap();
 
-    Ok(axum::Json(
-        ProcessLevenshteinResponse {
-            encrypted_distances:
-                BASE64.encode(bytes),
-            windows: 1,
-        },
-    ))
+    Ok(axum::Json(ProcessLevenshteinResponse {
+        encrypted_distances: BASE64.encode(bytes),
+        windows: 1,
+    }))
 }
 
 pub async fn compare_database_levenshtein_handler(
-    axum::extract::State(state):
-        axum::extract::State<Arc<AppState>>,
-    axum::Json(req):
-        axum::Json<CompareDatabaseRequest>,
-) -> Result<
-    axum::Json<
-        CompareDatabaseLevenshteinResponse
-    >,
-    (axum::http::StatusCode, String),
-> {
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    axum::Json(req): axum::Json<CompareDatabaseRequest>,
+) -> Result<axum::Json<CompareDatabaseLevenshteinResponse>, (axum::http::StatusCode, String)> {
     set_server_key(state.server_key.clone());
 
-    let enc_bytes =
-        BASE64.decode(&req.encrypted_sequence)
-        .map_err(|e| {
-            (
-                axum::http::StatusCode::BAD_REQUEST,
-                format!("Base64-Fehler: {}", e),
-            )
-        })?;
+    let enc_bytes = BASE64.decode(&req.encrypted_sequence).map_err(|e| {
+        (
+            axum::http::StatusCode::BAD_REQUEST,
+            format!("Base64-Fehler: {}", e),
+        )
+    })?;
 
-    let enc_input =
-        deserialize_fhe_vec(&enc_bytes);
+    let enc_input = deserialize_fhe_vec(&enc_bytes);
 
-    let encrypted_db_sequences:
-        Vec<Vec<FheUint16>> = vec![
+    let encrypted_db_sequences: Vec<Vec<FheUint16>> = vec![
         {
-            let seq =
-                encode_dna("ATC").unwrap();
+            let seq = encode_dna("ATC").unwrap();
 
             seq.iter()
-                .map(|&b| {
-                    FheUint16::try_encrypt(
-                        b,
-                        &state.public_key,
-                    )
-                    .unwrap()
-                })
+                .map(|&b| FheUint16::try_encrypt(b, &state.public_key).unwrap())
                 .collect()
         },
         {
-            let seq =
-                encode_dna("GGTT").unwrap();
+            let seq = encode_dna("GGTT").unwrap();
 
             seq.iter()
-                .map(|&b| {
-                    FheUint16::try_encrypt(
-                        b,
-                        &state.public_key,
-                    )
-                    .unwrap()
-                })
+                .map(|&b| FheUint16::try_encrypt(b, &state.public_key).unwrap())
                 .collect()
         },
         {
-            let seq =
-                encode_dna("TA").unwrap();
+            let seq = encode_dna("TA").unwrap();
 
             seq.iter()
-                .map(|&b| {
-                    FheUint16::try_encrypt(
-                        b,
-                        &state.public_key,
-                    )
-                    .unwrap()
-                })
+                .map(|&b| FheUint16::try_encrypt(b, &state.public_key).unwrap())
                 .collect()
         },
     ];
 
-    let results =
-        compare_against_database_levenshtein(
-            &enc_input,
-            &encrypted_db_sequences,
-            &state.public_key,
-        );
+    let results = compare_against_database_levenshtein(
+        &enc_input,
+        &encrypted_db_sequences,
+        &state.public_key,
+    );
 
     let encrypted_results: Vec<String> = results
-    .iter()
-    .map(|distance| {
-        BASE64.encode(
-            bincode::serialize(&vec![distance]).unwrap()
-        )
-    })
-    .collect();
+        .iter()
+        .map(|distance| BASE64.encode(bincode::serialize(&vec![distance]).unwrap()))
+        .collect();
 
-    Ok(axum::Json(
-        CompareDatabaseLevenshteinResponse {
-            encrypted_results,
-            compared_sequences:
-                encrypted_db_sequences.len(),
-        },
-    ))
+    Ok(axum::Json(CompareDatabaseLevenshteinResponse {
+        encrypted_results,
+        compared_sequences: encrypted_db_sequences.len(),
+    }))
 }
