@@ -1,8 +1,6 @@
-use std::fmt::{Debug, Formatter};
 use std::ops::{BitAnd, Not};
-use rayon::prelude::*;
-use tfhe::prelude::{FheDecrypt, FheEncrypt, FheEq, IfThenElse};
-use tfhe::{ClientKey, FheBool, FheUint8};
+use tfhe::prelude::{CiphertextList, FheDecrypt, FheEncrypt, FheEq, FheTrivialEncrypt, IfThenElse};
+use tfhe::{ClientKey, CompressedCiphertextList, CompressedCiphertextListBuilder, FheBool, FheUint8};
 
 #[derive(Clone)]
 pub struct CustomFheAsciiString {
@@ -36,6 +34,27 @@ impl From<&Vec<u8>> for SerializedCustomFheAsciiString {
     }
 }
 
+#[derive(Clone)]
+pub struct CompressedCustomFheAsciiString {
+    pub string: Vec<u8>,
+}
+
+impl CompressedCustomFheAsciiString {
+    pub fn new(compressed_string: Vec<u8>) -> Self {
+        CompressedCustomFheAsciiString {
+            string: compressed_string,
+        }
+    }
+    pub fn decompress(&self) -> CustomFheAsciiString {
+        let compressed_list: CompressedCiphertextList = bincode::deserialize(&self.string).unwrap();
+        let string = (0..compressed_list.len())
+            .map(|i| compressed_list.get(i).unwrap().unwrap())
+            .collect::<Vec<FheUint8>>();
+
+        CustomFheAsciiString{ string }
+    }
+}
+
 impl CustomFheAsciiString {
     pub fn new(str: &str, client_key: &ClientKey) -> CustomFheAsciiString {
         let string = str
@@ -48,6 +67,23 @@ impl CustomFheAsciiString {
         let string = bincode::serialize(&self.string).unwrap();
         SerializedCustomFheAsciiString { string }
     }
+
+    pub fn compress(&self) ->  CompressedCustomFheAsciiString {
+        let compressed_list = self.string.clone()
+            .into_iter()
+            .fold(
+                CompressedCiphertextListBuilder::new(),
+                |mut builder, s| {
+                    builder.push(s);
+                    builder
+                },
+            )
+            .build()
+            .unwrap();
+        let serialized = bincode::serialize(&compressed_list).unwrap();
+
+        CompressedCustomFheAsciiString{ string: serialized }
+    }
 }
 
 impl From<&SerializedCustomFheAsciiString> for CustomFheAsciiString {
@@ -59,7 +95,9 @@ impl From<&SerializedCustomFheAsciiString> for CustomFheAsciiString {
 // TODO() finds out if threading is faster or nah
 impl FheEq for CustomFheAsciiString {
     fn eq(&self, other: Self) -> FheBool {
-        assert_eq!(self.string.len(), other.string.len(), "Key length mismatch. ");
+        if self.string.len() != other.string.len() {
+            return FheBool::encrypt_trivial(false);
+        }
         self.string
             .iter()
             .zip(other.string.iter())

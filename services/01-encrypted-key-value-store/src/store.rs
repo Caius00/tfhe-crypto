@@ -1,12 +1,15 @@
-use std::env;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::{env, thread};
+use std::sync::{Arc};
 use redis::{AsyncCommands, Client, ConnectionAddr, ConnectionInfo, RedisConnectionInfo};
 use tfhe::{FheBool};
-use tfhe::prelude::{FheEq, IfThenElse};
+use tfhe::prelude::{FheEq, FheTrivialEncrypt, IfThenElse};
 use std::error::Error;
 use std::ops::BitOr;
 use dotenvy::from_path;
 use rayon::prelude::*;
+use tfhe::ServerKey;
+use tokio::sync::RwLock;
 use crate::custom_fhe_ascii_string::CustomFheAsciiString;
 
 fn get_redis_client() -> Client {
@@ -33,6 +36,7 @@ fn get_redis_client() -> Client {
 pub struct AppState {
     pub client: Client,
     pub ttl_sec: u64,
+    pub server_keys: RwLock<HashMap<String, ServerKey>>
 }
 
 // get state from router
@@ -50,8 +54,9 @@ impl AppState {
             .unwrap_or(5);
         let ttl_sec = ttl_minutes * 60;
         let client = get_redis_client();
+        let server_keys = RwLock::new(HashMap::new());
 
-        Self {client, ttl_sec}
+        Self {client, ttl_sec, server_keys}
     }
 
     // Possibly dont take serialized arguments
@@ -78,7 +83,9 @@ impl AppState {
     pub async fn get(
         &self,
         key: &CustomFheAsciiString,
+        // server_key: ServerKey,
     ) -> Result<(CustomFheAsciiString, FheBool), Box<dyn Error>> {
+        // set_server_key(server_key);
         let mut con = self.client.get_multiplexed_async_connection().await?;
         let mut iter: redis::AsyncIter<Vec<u8>> = con.scan().await?;
 
@@ -90,7 +97,6 @@ impl AppState {
 
         let values: Vec<Option<Vec<u8>>> = con.mget(&keys).await?;
 
-        println!("Setup finished. Trying to get value now!");
         let (is_match, last_found_value) = keys
             .iter()
             .zip(values.iter())
@@ -105,12 +111,12 @@ impl AppState {
             })
             .map(|(found_key, found_value)| (found_key.eq(key.clone()), found_value))
             .reduce(|(acc_match, acc_value), (is_match, found_value)| {
+                println!("Going through the loop of Thread: {:?}", thread::current().id());
                 let new_match = acc_match.bitor(is_match);
                 let next_found_value = new_match.if_then_else(&found_value, &acc_value);
                 (new_match, next_found_value)
             })
             .unwrap();
-        println!("Got value!");
 
         Ok((last_found_value, is_match))
     }
@@ -118,7 +124,8 @@ impl AppState {
     pub async fn exists(
         &self,
         key: &CustomFheAsciiString,
-    ) -> Result<FheBool, Box<dyn Error>> {
+    ) -> Result<FheBool, Box<dyn Error>>
+    {
         let mut con = self.client.get_multiplexed_async_connection().await?;
         let mut iter: redis::AsyncIter<Vec<u8>> = con.scan().await?;
 
@@ -128,17 +135,16 @@ impl AppState {
         }
         drop(iter);
 
-        println!("Setup finished. Trying to get value now!");
         let is_match = keys
             .iter()
             .map(|k| {
                 let found_key  = CustomFheAsciiString::from(k);
                 found_key.eq(key.clone())
             })
-            .reduce(|acc, is_match| {
+            .fold(FheBool::encrypt_trivial(false),
+                |acc, is_match| {
                 acc.bitor(is_match)
-            })
-            .unwrap();
+            });
 
         Ok(is_match)
     }
@@ -152,24 +158,6 @@ impl AppState {
         let serialized_key = key.serialize().string;
 
         con.del::<_, ()>(serialized_key).await?;
-
-        Ok(())
-    }
-
-    /// dont use. should just wait for entries to expire
-    pub async fn delete_multiple(
-        &self,
-        keys: &Vec<CustomFheAsciiString>,
-    ) -> Result<(), Box<dyn Error>> {
-        let mut con = self.client.get_multiplexed_async_connection().await?;
-        let serialized_keys = keys
-            .par_iter()
-            .map(|k| {
-                k.serialize().string
-            })
-            .collect::<Vec<Vec<u8>>>();
-
-        con.del::<_, ()>(serialized_keys).await?;
 
         Ok(())
     }
