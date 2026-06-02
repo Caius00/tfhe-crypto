@@ -11,13 +11,11 @@ pub struct Question {
     pub text: String,
     pub question_type: QuestionType,
     pub options: Option<Vec<String>>,
-    pub multiple: Option<bool>, // optional, falls Frontend dieses Feld nutzt
 }
 
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum QuestionType {
-    Bool,
     Single,
     Multiple,
     Numeric,

@@ -32,16 +32,17 @@ pub async fn create_session(
 ) -> ApiResult<CreateSessionResponse> {
     let sk_bytes = general_purpose::STANDARD
         .decode(&req.server_key)
-        .map_err(|e| err(&format!("Invalid ServerKey Base64: {}", e)))?;
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid ServerKey Base64: {}", e)))?;
+
     let _: CompressedServerKey = bincode::deserialize(&sk_bytes)
-        .map_err(|e| err(&format!("Failed to deserialize ServerKey: {}", e)))?;
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Invalid ServerKey bincode: {}", e)))?;
 
     let session_id = Uuid::new_v4().to_string();
-    // im Handler
+
     let session = SessionState {
         creator_id: req.creator_id,
         server_key_bytes: sk_bytes,
-        public_key: req.public_key.clone(), // neu
+        public_key: req.public_key.clone(),
         questions: req.questions,
         participants: HashMap::new(),
         votes: HashMap::new(),
@@ -50,6 +51,7 @@ pub async fn create_session(
     };
 
     state.lock().unwrap().insert(session_id.clone(), session);
+
     Ok(Json(CreateSessionResponse { session_id }))
 }
 
@@ -59,15 +61,15 @@ pub async fn join_session(
     Json(req): Json<JoinRequest>,
 ) -> ApiResult<JoinResponse> {
     let mut map = state.lock().unwrap();
+
     let session = map
         .get_mut(&req.session_id)
-        .ok_or(err("Session nicht gefunden"))?;
+        .ok_or((StatusCode::NOT_FOUND, "Session nicht gefunden".to_string()))?;
 
     if session.finalized {
-        return Err(err("Session bereits beendet"));
+        return Err((StatusCode::CONFLICT, "Session bereits beendet".to_string()));
     }
 
-    // Speichere participant state mit enc_name_chunks
     session.participants.insert(
         req.participant_id.clone(),
         ParticipantState {
@@ -110,22 +112,26 @@ pub async fn approve_participant(
     Json(req): Json<ApproveRequest>,
 ) -> ApiResult<StatusResponse> {
     let mut map = state.lock().unwrap();
+
     let session = map
         .get_mut(&req.session_id)
-        .ok_or(err("Session nicht gefunden"))?;
+        .ok_or((StatusCode::NOT_FOUND, "Session nicht gefunden".to_string()))?;
 
     if session.creator_id != req.creator_id {
-        return Err(err("Nicht autorisiert"));
+        return Err((StatusCode::FORBIDDEN, "Nicht autorisiert".to_string()));
     }
 
     if session.finalized {
-        return Err(err("Session bereits beendet"));
+        return Err((StatusCode::CONFLICT, "Session bereits beendet".to_string()));
     }
 
     if req.approved {
-        if let Some(p) = session.participants.get_mut(&req.participant_id) {
-            p.approved = true;
-        }
+        let participant = session
+            .participants
+            .get_mut(&req.participant_id)
+            .ok_or((StatusCode::NOT_FOUND, "Teilnehmer nicht gefunden".to_string()))?;
+
+        participant.approved = true;
     } else {
         session.participants.remove(&req.participant_id);
     }
@@ -142,25 +148,29 @@ pub async fn submit_vote(
     Json(req): Json<VoteRequest>,
 ) -> ApiResult<VoteResponse> {
     let mut map = state.lock().unwrap();
+
     let session = map
         .get_mut(&req.session_id)
-        .ok_or(err("Session nicht gefunden"))?;
+        .ok_or((StatusCode::NOT_FOUND, "Session nicht gefunden".to_string()))?;
 
-    // Hole ParticipantState
+    if session.finalized {
+        return Err((StatusCode::CONFLICT, "Session bereits beendet".to_string()));
+    }
+
     let participant = session
         .participants
         .get_mut(&req.participant_id)
-        .ok_or(err("Teilnehmer nicht in Session"))?;
+        .ok_or((StatusCode::NOT_FOUND, "Teilnehmer nicht gefunden".to_string()))?;
 
     if !participant.approved {
-        return Err(err("Teilnehmer noch nicht genehmigt"));
+        return Err((StatusCode::FORBIDDEN, "Teilnehmer noch nicht genehmigt".to_string()));
     }
 
-    if session.finalized {
-        return Err(err("Session bereits beendet"));
-    }
     if req.encrypted_votes.len() != session.questions.len() {
-        return Err(err("Anzahl der Stimmen stimmt nicht mit Fragen überein"));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Anzahl der Stimmen stimmt nicht mit Fragen überein".to_string(),
+        ));
     }
 
     participant.has_voted = true;
@@ -168,11 +178,6 @@ pub async fn submit_vote(
     session
         .votes
         .insert(req.participant_id.clone(), req.encrypted_votes);
-
-    println!("=== VOTE STORED ===");
-    println!("participant: {}", req.participant_id);
-    println!("votes per question: {:?}", session.votes.len());
-    println!("raw votes: {:?}", session.votes);
 
     Ok(Json(VoteResponse {
         status: "vote received".to_string(),
@@ -193,8 +198,8 @@ pub fn aggregate_votes_ciphertext_only(
 
     for (q_idx, question) in questions.iter().enumerate() {
         match question.question_type {
-            //  BOOL / NUMERIC → einzelne Summe
-            QuestionType::Bool | QuestionType::Numeric => {
+            //  NUMERIC → einzelne Summe
+            QuestionType::Numeric => {
                 let mut acc: Option<FheUint32> = None;
 
                 for v in votes {
@@ -255,25 +260,24 @@ pub async fn get_results(
 ) -> ApiResult<ResultResponse> {
     let map = state.lock().unwrap();
 
-    let session = map.get(&session_id).ok_or(err("Session nicht gefunden"))?;
+    let session = map
+        .get(&session_id)
+        .ok_or((StatusCode::NOT_FOUND, "Session nicht gefunden".to_string()))?;
 
     if session.creator_id != creator_id {
-        return Err(err("Nicht autorisiert"));
+        return Err((StatusCode::FORBIDDEN, "Nicht autorisiert".to_string()));
     }
+
     let approved_count = session.participants.values().filter(|p| p.approved).count();
     let voted_count = session.votes.len();
 
-    println!("=== GET RESULTS DEBUG ===");
-    println!("approved_count: {}", approved_count);
-    println!("voted_count: {}", voted_count);
-
     if voted_count == 0 || voted_count < approved_count {
-        println!("→ ready: false");
         return Ok(Json(ResultResponse {
             encrypted_results: vec![],
             ready: false,
         }));
     }
+
     let votes: Vec<Vec<Vec<String>>> = session.votes.values().cloned().collect();
 
     let results =
@@ -296,10 +300,14 @@ pub async fn finalize_session(
 
     let session = map
         .get_mut(&session_id)
-        .ok_or(err("Session nicht gefunden"))?;
+        .ok_or((StatusCode::NOT_FOUND, "Session nicht gefunden".to_string()))?;
 
     if session.creator_id != creator_id {
-        return Err(err("Nicht autorisiert"));
+        return Err((StatusCode::FORBIDDEN, "Nicht autorisiert".to_string()));
+    }
+
+    if session.finalized {
+        return Err((StatusCode::CONFLICT, "Session bereits finalisiert".to_string()));
     }
 
     session.finalized = true;
@@ -322,11 +330,6 @@ pub async fn get_status(
         .get(&session_id)
         .ok_or((StatusCode::NOT_FOUND, "Session nicht gefunden".to_string()))?;
 
-    println!(
-        "STATUS CHECK -> session: {}, participant: {}",
-        session_id, participant_id
-    );
-
     let status = match session.participants.get(&participant_id) {
         Some(p) if p.approved => "approved",
         Some(_) => "pending",
@@ -347,7 +350,9 @@ pub async fn get_session(
 ) -> ApiResult<SessionInfoResponse> {
     let map = state.lock().unwrap();
 
-    let session = map.get(&session_id).ok_or(err("Session nicht gefunden"))?;
+    let session = map
+        .get(&session_id)
+        .ok_or((StatusCode::NOT_FOUND, "Session nicht gefunden".to_string()))?;
 
     Ok(Json(SessionInfoResponse {
         session_id,
@@ -364,10 +369,13 @@ pub async fn get_participants(
     }): Path<SessionCreatorPath>,
 ) -> ApiResult<Vec<ParticipantAdminView>> {
     let map = state.lock().unwrap();
-    let session = map.get(&session_id).ok_or(err("Session nicht gefunden"))?;
+
+    let session = map
+        .get(&session_id)
+        .ok_or((StatusCode::NOT_FOUND, "Session nicht gefunden".to_string()))?;
 
     if session.creator_id != creator_id {
-        return Err(err("Nicht autorisiert"));
+        return Err((StatusCode::FORBIDDEN, "Nicht autorisiert".to_string()));
     }
 
     let result: Vec<ParticipantAdminView> = session
