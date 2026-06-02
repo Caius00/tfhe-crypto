@@ -19,10 +19,6 @@ use uuid::Uuid;
 type ApiError = (StatusCode, String);
 type ApiResult<T> = Result<Json<T>, ApiError>;
 
-fn err(msg: &str) -> ApiError {
-    (StatusCode::INTERNAL_SERVER_ERROR, msg.to_string())
-}
-
 /// POST /session – Ersteller legt neue Voting-Session an
 /// erstellen einer neuen SessionState mit leeren participants, votes, usw.
 /// generiert zufällig eine UUID als session_id und speichert die Session in HashMap
