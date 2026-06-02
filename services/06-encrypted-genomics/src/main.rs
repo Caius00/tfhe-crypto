@@ -39,6 +39,28 @@ async fn main() {
                 op.description("Compare encrypted DNA against encrypted DNA database")
             }),
         )
+        .api_route(
+            "/process-levenshtein",
+            post_with(
+                functions::process_levenshtein_handler,
+                |op| {
+                    op.description(
+                        "Check homomorph risk pattern levenshtein"
+                    )
+                },
+            ),
+        )
+        .api_route(
+            "/compare-db-levenshtein",
+            post_with(
+                functions::compare_database_levenshtein_handler,
+                |op| {
+                    op.description(
+                        "Compare encrypted DNA using levenshtein"
+                    )
+                },
+            ),
+        )
         .with_state(shared_state);
 
     let app = openapi_docs::attach(api_router, "tammoloco", "0.1", "")
@@ -96,7 +118,7 @@ win
     -Uri "http://localhost:8080/encrypt" `
     -Method Post `
     -ContentType "application/json" `
-    -Body '{"sequence":"ATCGATCG"}'
+    -Body '{"sequence":"ATCGATCGAAAA"}'
     $enc
 
 
@@ -158,8 +180,61 @@ win
     }
 
 
+    # levenshtein single
+    $procLev = Invoke-RestMethod `
+        -Uri "http://localhost:8080/process-levenshtein" `
+        -Method Post `
+        -ContentType "application/json" `
+        -Body (@{
+            encrypted_sequence = $enc.encrypted_data
+            risk_pattern = "012"
+        } | ConvertTo-Json)
 
+    $procLev
 
+    # decode levenshtein single
+    $decLev = Invoke-RestMethod `
+        -Uri "http://localhost:8080/decrypt-levenshtein" `
+        -Method Post `
+        -ContentType "application/json" `
+        -Body (@{
+            encrypted_data = $procLev.encrypted_distances
+        } | ConvertTo-Json)
 
+    $decLev.plain_data
+
+    # db levenshtein
+        $cmpLev = Invoke-RestMethod `
+        -Uri "http://localhost:8080/compare-db-levenshtein" `
+        -Method Post `
+        -ContentType "application/json" `
+        -Body (@{
+            encrypted_sequence = $enc.encrypted_data
+        } | ConvertTo-Json)
+
+    $cmpLev
+
+    # result db levenshtein
+    $allResults = @{}
+
+    for($i = 0; $i -lt $cmpLev.encrypted_results.Count; $i++) {
+
+        $dec = Invoke-RestMethod `
+            -Uri "http://localhost:8080/decrypt-levenshtein" `
+            -Method Post `
+            -ContentType "application/json" `
+            -Body (@{
+                encrypted_data = $cmpLev.encrypted_results[$i]
+            } | ConvertTo-Json)
+
+        $allResults["db_sequence_$i"] = $dec.plain_data
+    }
+
+    foreach($key in $allResults.Keys) {
+
+        Write-Host ""
+        Write-Host $key
+        Write-Host ($allResults[$key] -join ", ")
+    }
 
 */
