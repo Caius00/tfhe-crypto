@@ -6,8 +6,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tfhe::prelude::*;
 use tfhe::{
-    generate_keys, set_server_key, ClientKey, ConfigBuilder, FheBool, FheUint16, FheUint8,
-    PublicKey, ServerKey,
+    generate_keys, set_server_key, ClientKey, ConfigBuilder, FheUint16, PublicKey, ServerKey,
 };
 
 #[derive(Clone)]
