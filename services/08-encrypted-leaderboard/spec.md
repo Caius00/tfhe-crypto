@@ -208,7 +208,7 @@ Wir verwenden TFHE-rs 1.6.1 mit `ConfigBuilder::default()`, also die Standard-Pa
 
 **Genutzte Operationen**
 
-- `FheUint16::lt` ist der einzige Vergleich, den wir brauchen. Absteigend sortieren heißt nichts anderes als „tausche, wenn links kleiner ist".
+- `FheUint16::lt` ist der einzige Vergleich, den wir brauchen. Absteigend sortieren heißt: „tausche, wenn links kleiner ist".
 - `FheBool::if_then_else` schaltet Score und ID synchron um, ohne dass der Server weiß, welcher Branch gewinnt. Das nutzen wir in `keep_max` (zweimal für Score, zweimal für ID) und im Sort-Comparator (viermal pro Vergleich).
 - `FheUint8::eq` kommt nur in `rank_matches` zum Einsatz, dem Endpoint für die Positions-Abfrage.
 
@@ -218,11 +218,11 @@ Add, Mul und Bit-Shift brauchen wir nicht. Die Logik reduziert sich vollständig
 
 - `f32`/Float-Score wäre semantisch näher an „Punkten mit Nachkomma", aber TFHE-rs hat keine sinnvolle FHE-Float-Arithmetik, insbesondere keine Division. Wir bilden Hundertstel-Scores stattdessen auf `u16` ab (z.B. „12.34 s" wird zu 1234), das reicht für jede Quiz- oder Spiel-Skala.
 - `FheUint32` für mehr Headroom wurde verworfen, weil jede zusätzliche Bitbreite die FHE-Vergleichszeit etwa verdoppelt und 16 Bit für diesen Use Case ausreichen.
-- Klartext-Score mit ZKP (Spieler beweist „mein Score liegt im erlaubten Bereich") ist semantisch interessant, aber dann sieht der Server den Score. Genau das wollten wir vermeiden.
+- Klartext-Score mit ZKP (Spieler beweist „mein Score liegt im erlaubten Bereich") ist semantisch interessant, aber dann sieht der Server den Score. Das wollten wir vermeiden.
 - Ein voller homomorpher Sort mit datenabhängigen Branches geht in TFHE-rs prinzipiell nicht, weil Branches auf Ciphertexts unmöglich sind. Die Lösung ist ein datenunabhängiges Sortiernetzwerk (siehe §Komplexität).
-- Den `player_key` zu verschlüsseln wäre technisch möglich, aber unverhältnismäßig teuer. Der Server braucht den Schlüssel, um beim Submit nachzusehen, ob es schon einen Eintrag desselben Spielers gibt, und gegebenenfalls `keep_max` anzustoßen. Im Klartext geht das mit einem simplen String-Vergleich in O(1). Verschlüsselt müsste der Server pro Submit jeden existierenden Eintrag homomorph vergleichen (`eq`) und jede Score- und ID-Position bedingt überschreiben (`if_then_else`). Hinzu kommt: auf einem verschlüsselten Bool kann der Server nicht „branchen", er kann also nicht entscheiden „gab es überhaupt einen Treffer?". Er müsste jeden Submit gleichzeitig als neuen Eintrag anhängen und auf alle alten Einträge bedingt anpassen, was die Submit-Kosten von O(1) auf O(n) FHE-Operationen treibt und die Listenlänge sprengt. Den minimalen Privacy-Gewinn (Pseudonym statt Name) ist uns das nicht wert, zumal der Creator ohnehin weiß, wer in seinem Raum mitspielt.
+- Den `player_key` zu verschlüsseln wäre technisch möglich, aber unverhältnismäßig teuer. Der Server braucht den Schlüssel, um beim Submit nachzusehen, ob es schon einen Eintrag desselben Spielers gibt, und gegebenenfalls `keep_max` anzustoßen. Im Klartext geht das mit einem simplen String-Vergleich in O(1). Verschlüsselt müsste der Server pro Submit jeden existierenden Eintrag homomorph vergleichen (`eq`) und jede Score- und ID-Position bedingt überschreiben (`if_then_else`). Außerdem kann der Server auf einem verschlüsselten Bool nicht „branchen", er kann also nicht entscheiden „gab es überhaupt einen Treffer?". Er müsste jeden Submit gleichzeitig als neuen Eintrag anhängen und auf alle alten Einträge bedingt anpassen, was die Submit-Kosten von O(1) auf O(n) FHE-Operationen treibt und die Listenlänge sprengt. Den minimalen Privacy-Gewinn (Pseudonym statt Name) ist uns das nicht wert, zumal der Creator ohnehin weiß, wer in seinem Raum mitspielt.
 
-**Approximationen.** Keine. Alle Operationen liefern exakte Resultate, solange die ServerKey-Parameter korrekt installiert sind. Es gibt kein Fehlerprofil im Sinne von Rauschen, das wir akzeptieren müssten, weil TFHE-rs intern bootstrappt und der Output deterministisch ist.
+**Approximationen.** Keine. Alle Operationen liefern exakte Resultate, solange die ServerKey-Parameter korrekt installiert sind. Es gibt kein Rauschen, das wir akzeptieren müssten, weil TFHE-rs intern bootstrappt und der Output deterministisch ist.
 
 ### Komplexität der eigenen Algorithmen
 
@@ -230,7 +230,7 @@ Wir betrachten n als Spielerzahl im Raum (höchstens 20) und zählen eine einzel
 
 **Submit (`keep_max`).** Schickt ein Spieler einen neuen Score und hat schon einen alten, behält der Server verschlüsselt den höheren. Das sind immer dieselben fünf FHE-Ops, egal wie voll der Raum ist, also O(1).
 
-**Sortieren (`sort_by_score_desc`).** Nach jedem Submit muss die Liste neu sortiert werden. Auf verschlüsselten Zahlen kann der Server aber nicht „schauen, welche größer ist" und danach entscheiden. Er muss die Vergleiche blind machen, und zwar in einer festen Reihenfolge, die unabhängig vom Inhalt funktioniert. Genau das macht ein Sortiernetzwerk: eine vorher festgelegte Folge von „Vergleiche zwei Positionen und tausche sie, falls links kleiner ist". Wir verwenden Batcher's Odd-Even Mergesort, weil seine Vergleiche in Schichten organisiert sind, in denen alle Paare disjunkt sind. Eine ganze Schicht läuft also parallel auf mehreren CPU-Kernen. Der Aufwand liegt bei O(n · log² n) Vergleichen insgesamt und O(log² n) Schichten der Tiefe nach. Für n = 20 sind das rund 120 Vergleiche in etwa 15 Schichten. Die Korrektheit ist im Test `batcher_layers_form_a_valid_sorting_network` per 0/1-Prinzip nachgewiesen.
+**Sortieren (`sort_by_score_desc`).** Nach jedem Submit muss die Liste neu sortiert werden. Auf verschlüsselten Zahlen kann der Server aber nicht „schauen, welche größer ist" und danach entscheiden. Er muss die Vergleiche blind machen, und zwar in einer festen Reihenfolge, die unabhängig vom Inhalt funktioniert. Das ist ein Sortiernetzwerk: eine vorher festgelegte Folge von „Vergleiche zwei Positionen und tausche sie, falls links kleiner ist". Wir verwenden Batcher's Odd-Even Mergesort, weil seine Vergleiche in Schichten organisiert sind, in denen alle Paare disjunkt sind. Eine ganze Schicht läuft damit parallel auf mehreren CPU-Kernen. Der Aufwand liegt bei O(n · log² n) Vergleichen insgesamt und O(log² n) Schichten der Tiefe nach. Für n = 20 sind das rund 120 Vergleiche in etwa 15 Schichten. Die Korrektheit ist im Test `batcher_layers_form_a_valid_sorting_network` per 0/1-Prinzip nachgewiesen.
 
 Der Platzbedarf ist linear in n (die Liste der Ciphertexte). `keep_max` braucht nur konstanten Zusatzspeicher.
 
@@ -242,7 +242,7 @@ Da `keep_max` konstant ist und der teure Sort im Hintergrund läuft, ist der Sub
 
 Gemessen werden die FHE-Endpunkte: `POST /create` (ServerKey-Decompress) und `POST /{code}/submit` (`keep_max` plus Background-Sort). Bewusst ausgeklammert sind `GET /entries`, `GET /{code}/public-key` und `POST /rank`, weil sie kein FHE machen und nur Grundrauschen liefern.
 
-#### Test 1 — Room-Growth (2026-05-29)
+#### Test 1 - Room-Growth (2026-05-29)
 
 Jede Minute wird ein neuer Raum mit einem Spieler und einem Submit angelegt, mit einem Keepalive alle 9 Minuten. Skript: `01_room_growth.js`.
 
@@ -258,7 +258,7 @@ Die CPU-Last bleibt während des gesamten Tests nahezu konstant niedrig. Jeder R
 
 Volldaten: [`docs/perf/01_room_growth.md`](docs/perf/01_room_growth.md).
 
-#### Test 2 — Room-Fill (2026-05-30)
+#### Test 2 - Room-Fill (2026-05-30)
 
 Ein Raum, in dem die Spielerzahl in 20 Runden von 1 auf 20 wächst. Pro Runde gibt es 10 Tempo-Stufen (Sleep 10 s herunter auf 1 s) und danach 2 Minuten Pause. Skript: `02_room_fill.js`.
 
@@ -272,7 +272,7 @@ Ein Raum, in dem die Spielerzahl in 20 Runden von 1 auf 20 wächst. Pro Runde gi
 | **Erste p95-Sprünge** | **ab Runde 7 (= 7 Spieler)**, danach mit jeder Runde größer werdende Spitzen |
 | **6 Timeouts** | Runde 18 (Sek 12 317), sofortige Recovery |
 
-![Test 2 — p50/p95/p99 über die Zeit](docs/perf/test2_latency.png)
+![Test 2 - p50/p95/p99 über die Zeit](docs/perf/test2_latency.png)
 
 Im Latenz-Verlauf zeigt sich:
 - p50 (grün) steigt gleichmäßig mit jeder zusätzlichen Spielerzahl.
@@ -283,7 +283,7 @@ Die p95/p99-Spitzen treten systematisch zu Beginn jeder Runde auf. Nach der 2-mi
 
 Volldaten: [`docs/perf/02_room_fill.md`](docs/perf/02_room_fill.md).
 
-#### Test 3 — Happy-Flow (2026-05-30)
+#### Test 3 - Happy-Flow (2026-05-30)
 
 Ein Spieler durchläuft 20-mal sequentiell den Ablauf `public-key → 5× submit → entries → rank` (8 Requests pro Iteration). Skript: `03_happy_flow.js`.
 

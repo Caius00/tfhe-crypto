@@ -1,4 +1,4 @@
-# Test 3 — Happy-Flow
+# Test 3 - Happy-Flow
 
 ## Setup
 - **Datum:** 2026-05-30

@@ -1,4 +1,4 @@
-# Test 1 — Room-Growth
+# Test 1 - Room-Growth
 
 ## Setup
 - **Datum:** 2026-05-29
@@ -12,7 +12,7 @@
 |---|---|
 | Laufzeit | 58 min 7 s (Abort durch `abortOnFailure`) |
 | Max. parallele Sessions | **57** |
-| **Kipp-Punkt** | **Raum 59 → `502 Bad Gateway`** |
+| **Kipp-Punkt** | **Raum 59 - `502 Bad Gateway`** |
 | p50 | 328 ms |
 | p95 | 6.41 s |
 | Fehlerrate | 5.20 % |
@@ -20,9 +20,9 @@
 ## Beobachtung
 
 - Pod hält 57 parallele Sessions stabil, ab Session 59 bricht die Verfügbarkeit weg.
-- p95 unter Last bleibt mit 6.41 s unter der 10-s-Spec-Schwelle — Latenz war NICHT das Problem, sondern Pod-Verfügbarkeit (Memory-Pressure / Connection-Reset).
+- p95 unter Last bleibt mit 6.41 s unter der 10-s-Spec-Schwelle. Latenz war NICHT das Problem, sondern Service-Verfügbarkeit (Memory-Pressure / Connection-Reset).
 - CPU-Last bleibt während des gesamten Tests nahezu konstant niedrig: pro Raum nur 1 Create + alle 9 min ein Keepalive-Submit. **Dieser Test misst ausschließlich die RAM-Obergrenze**, nicht die Rechenleistung.
-- Per-Session-RAM: ca. 350–400 MB dekomprimiert (80 MB komprimiert über die Leitung).
+- Per-Session-RAM: ca. 350-400 MB dekomprimiert (80 MB komprimiert über die Leitung).
 
 ## Reproduktion
 
