@@ -1,6 +1,6 @@
 # 🔨 04 · Sealed Bid Auction
 
-![version](https://img.shields.io/badge/version-0.1.16-blue)
+![version](https://img.shields.io/badge/version-0.1.18-blue)
 
 Run auctions where bids remain hidden until resolution.
 
