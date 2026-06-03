@@ -12,14 +12,20 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 # Nur Abhängigkeiten bauen und cachen (inkl. tfhe)
 FROM chef AS cacher
-ENV RUSTFLAGS="-C target-cpu=native"
+# Ziel-CPU: Default ist znver5 (AMD EPYC 9645, Zen 5) für den Produktions-Server.
+# Aktiviert AVX-512, VAES, VPCLMULQDQ, GFNI, IFMA, BF16 und VNNI.
+# Für lokale Builds oder andere Hardware mit `--build-arg TARGET_CPU=x86-64-v3`
+# überschreiben (AVX2-Baseline, läuft auf jeder CPU ab ~Haswell).
+ARG TARGET_CPU=znver5
+ENV RUSTFLAGS="-C target-cpu=${TARGET_CPU}"
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 
 # Eigenen Code bauen
 FROM chef AS builder
 ARG SERVICE_NAME
-ENV RUSTFLAGS="-C target-cpu=native"
+ARG TARGET_CPU=znver5
+ENV RUSTFLAGS="-C target-cpu=${TARGET_CPU}"
 COPY Cargo.toml Cargo.lock ./
 COPY services/ services/
 COPY shared/ shared/

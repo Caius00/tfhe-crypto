@@ -19,10 +19,10 @@ Der Service stellt ein verschlüsseltes Leaderboard für kleine Gruppen bereit, 
 1. **Raum anlegen:** E ruft `POST /create` mit seinem ServerKey und PublicKey auf und bekommt einen 6-stelligen Code zurück.
 2. **Code teilen:** E gibt den Code out-of-band an seine Spieler weiter, also per Chat oder mündlich.
 3. **Namen wählen (nur beim ersten Beitritt):** Der Spieler-Client zeigt einen einmaligen Name-Dialog (nur Buchstaben, 1 bis 20 Zeichen). Im Hintergrund werden eine UUID und ein zufälliges ID-Byte erzeugt. Beides wird in `localStorage` unter `lb_player_<code>` abgelegt. Bei einem späteren Beitritt in denselben Raum wird der Dialog übersprungen und die gespeicherte Identität wiederverwendet.
-4. **Mitmachen:** Jeder Spieler ruft `GET /{code}/public-key` ab, verschlüsselt Score und ID-Byte lokal und schickt das per `POST /{code}/submit` rein. Als `player_key` geht das Format `name:uuid` zum Backend. Die UUID dient nur der Dedup-Eindeutigkeit und wird nirgendwo angezeigt. Reicht derselbe Spieler später erneut ein, behält der Server verschlüsselt das Maximum (`keep_max`).
-5. **Sortieren:** Nach jedem Submit stößt der Server im Hintergrund eine Sortierung an (Batcher-Sortiernetzwerk). Es läuft immer nur ein Sort pro Session gleichzeitig.
-6. **Ergebnis abrufen:** E ruft `GET /{code}/entries` ab. Die Response enthält zwei Listen: die sortierten Ciphertexte (Score und ID) und ein Klartext-Roster mit `player_key` und `encrypted_id` pro Spieler. E entschlüsselt jeden ID-Ciphertext lokal mit seinem ClientKey, baut sich daraus die Tabelle `id-byte → name` und legt die Namen an die richtige Stelle der sortierten Liste.
-7. **Schließen:** Es gibt keinen expliziten „Schließen"-Endpoint. Sessions werden vom Janitor nach 10 Minuten Inaktivität entfernt. Der Janitor ist ein Hintergrund-Task, der einmal pro Minute durch die Session-Map läuft und alle Räume rauswirft, an denen seit über 10 Minuten kein Request mehr ankam. Beim Rauswerfen wird der dekomprimierte ServerKey (mehrere hundert MB) freigegeben, sonst würde der Speicher volllaufen. Bei einem Server-Neustart sind alle Sessions weg. Es gibt keine Persistenz.
+4. **Mitmachen:** Jeder Spieler ruft `GET /{code}/public-key` ab, verschlüsselt Score und ID-Byte lokal und sendet beides per `POST /{code}/submit` an den Server. Als `player_key` geht das Format `name:uuid` zum Backend. Die UUID dient nur der Eindeutigkeit für das Dedup und wird nirgendwo angezeigt. Reicht derselbe Spieler später erneut ein, behält der Server verschlüsselt das Maximum (`keep_max`).
+5. **Sortieren:** Nach jedem Submit stößt der Server im Hintergrund eine Sortierung an (Batcher-Sortiernetzwerk). Pro Session läuft immer nur eine Sortierung gleichzeitig.
+6. **Ergebnis abrufen:** E ruft `GET /{code}/entries` ab. Die Response enthält zwei Listen: die sortierten Ciphertexte (Score und ID) und ein Klartext-Roster mit `player_key` und `encrypted_id` pro Spieler. E entschlüsselt jeden ID-Ciphertext lokal mit seinem ClientKey, baut daraus die Tabelle `id-byte → name` und ordnet die Namen den sortierten Positionen zu.
+7. **Schließen:** Es gibt keinen expliziten „Schließen"-Endpoint. Sessions werden vom Janitor nach 10 Minuten Inaktivität entfernt. Der Janitor ist ein Hintergrund-Task, der einmal pro Minute durch die Session-Map iteriert und alle Räume entfernt, an denen seit über 10 Minuten kein Request mehr eingegangen ist. Beim Entfernen wird der dekomprimierte ServerKey (mehrere hundert MB) freigegeben, andernfalls würde der Speicher volllaufen. Bei einem Server-Neustart gehen alle Sessions verloren. Es gibt keine Persistenz.
 
 **Ablauf in Kurzform**
 
@@ -51,18 +51,6 @@ E                          Server                          Spieler
 │ E entschlüsselt jede ID, mappt roster → Namen pro Rang      │
 ```
 
-**Anforderungs-Check**
-
-| Anforderung | Status | Wo im Code |
-|---|---|---|
-| E erstellt ein Leaderboard | ✓ | `POST /create` (`handlers.rs`), Frontend „RAUM ERSTELLEN" |
-| Andere Clients senden verschlüsselte Scores | ✓ | `POST /{code}/submit`, `encrypted_score` als `FheUint16` |
-| Server fügt ein und sortiert | ✓ | Einfügen synchron, Sort asynchron im Hintergrund (`spawn_sort_if_idle`) |
-| Verschlüsselte Kennung mit Score mitgesendet | ✓ | `encrypted_id` als `FheUint8` im Submit |
-| Flappy Bird, Score automatisch übertragen | ✓ | `FlappyBirdComponent` im Player-View, `gameOver` → `onSubmitScore` |
-| Nur E kann das Leaderboard einsehen | ✓ (kryptographisch) | Nur E besitzt den ClientKey, Inhalte sind ohne ihn nur Ciphertexte |
-| E kann Rang einer Kennung abfragen | ✓ | `POST /{code}/rank`, `rank_matches` liefert pro Position einen `FheBool` (Mehrfachtreffer möglich) |
-
 ### OpenAPI-Schnittstelle
 
 Der Service stellt fünf fachliche Endpunkte unter dem Pfad-Prefix `/leaderboard` bereit. Die OpenAPI-Definition wird per `aide` aus dem Code generiert und ist live unter `GET /openapi.json` bzw. `GET /docs` (Swagger UI) verfügbar. Daneben gibt es noch `/healthz`, `/readyz`, `/version` und `/metrics` aus den shared Crates.
@@ -82,7 +70,7 @@ Response 200:
 ```json
 { "code": "847391" }
 ```
-Status-Codes: `200` ok, `400` wenn `server_key` oder `public_key` kein gültiges Base64 ist oder das bincode kaputt ist, `500` bei einer Panic im Dekomprimierungs-Thread.
+Status-Codes: `200` ok, `400` wenn `server_key` oder `public_key` kein gültiges Base64 oder die bincode-Deserialisierung fehlschlägt, `500` bei einer Panic im Dekomprimierungs-Thread.
 
 **`GET /{code}/public-key`** gibt den Public-Key des Raums unverändert zurück, so wie er beim Anlegen hochgeladen wurde.
 
@@ -90,7 +78,7 @@ Response 200:
 ```json
 { "public_key": "<base64>" }
 ```
-Status-Codes: `200`, `404` wenn der Raum nicht existiert oder schon weg-evicted ist.
+Status-Codes: `200`, `404` wenn der Raum nicht existiert oder bereits entfernt wurde.
 
 **`POST /{code}/submit`** nimmt einen verschlüsselten Score entgegen.
 
@@ -107,7 +95,7 @@ Request:
 - `encrypted_id` ist ein `FheUint8`, ein zufälliges ID-Byte (0 bis 255), das der Client pro Raum einmalig erzeugt. Es wandert mit dem Score durch den FHE-Sort und dient E später als Klartext-Label, um die sortierte Liste auf Namen zu mappen.
 
 Response: `200` mit leerem Body.
-Status-Codes: `200`, `400` bei kaputtem Base64 oder bincode, `404` wenn der Raum unbekannt ist, `409` wenn der Raum voll ist (mindestens 20 Spieler und `player_key` ist neu), `500` bei FHE-Panic.
+Status-Codes: `200`, `400` bei ungültigem Base64 oder fehlgeschlagener bincode-Deserialisierung, `404` wenn der Raum unbekannt ist, `409` wenn der Raum voll ist (mindestens 20 Spieler und `player_key` ist neu), `500` bei FHE-Panic.
 
 **`GET /{code}/entries`** liefert die verschlüsselte Reihenfolge plus das Roster.
 
@@ -144,27 +132,27 @@ Response 200:
 { "matches": ["<base64(FheBool)>", "<base64(FheBool)>", …] }
 ```
 Pro Position der sortierten Liste kommt ein verschlüsselter Bool zurück (`true` heißt: die ID passt). E entschlüsselt jeden Bool lokal, und jede `true`-Position ist ein 1-basierter Rang. Mehrfachtreffer werden so automatisch unterstützt.
-Status-Codes: `200`, `400` bei kaputtem Base64 oder bincode, `404` wenn der Raum unbekannt ist, `500` bei FHE-Panic.
+Status-Codes: `200`, `400` bei ungültigem Base64 oder fehlgeschlagener bincode-Deserialisierung, `404` wenn der Raum unbekannt ist, `500` bei FHE-Panic.
 
 ### Trust- und Threat-Model
 
-Was sieht der Server-Operator wirklich? Die Tabelle hat vier Spalten: *Datum*, *am Server klar*, *am Server verschlüsselt*, *nur am Client (E)*.
+Die Tabelle hat vier Spalten: *Datum*, *am Server klar*, *am Server verschlüsselt*, *nur am Client (E)*.
 
-| Datum | klar | verschlüsselt | nur Client |
-|---|---|---|---|
-| ServerKey | ✓ (notwendig für FHE-Ops) | | |
-| PublicKey | ✓ (wird an Spieler ausgeliefert) | | |
-| ClientKey | | | ✓ (nur bei E) |
-| Score eines Spielers | | ✓ (`FheUint16`) | nur entschlüsselt bei E |
-| Spieler-ID (Listen-Position) | | ✓ (`FheUint8`) | nur entschlüsselt bei E |
-| `player_key` (Dedup-Token, `name:uuid`) | ✓ (z.B. `"Alice:550e8400-…"`) | | |
-| UUID-Anteil von `player_key` | ✓ (client-erzeugt, im Klartext am Server) | | nie im UI sichtbar |
-| Raumcode | ✓ (6-stellig, im URL-Pfad) | | |
-| Anzahl Spieler im Raum | ✓ (Listen-Länge) | | |
-| Submit-Zeitpunkt | ✓ (Request-Timing) | | |
-| Welche Position E abfragt (`/rank`) | | ✓ (`FheUint8` Target-ID) | |
+| Datum | klar | verschlüsselt            | nur Client              |
+|---|---|--------------------------|-------------------------|
+| ServerKey | ✓ (notwendig für FHE-Ops) |                          |                         |
+| PublicKey | ✓ (wird an Spieler ausgeliefert) | ✓                        | ✓                       |
+| ClientKey | |                          | ✓ (nur bei E)           |
+| Score eines Spielers | | ✓ (`FheUint16`)          | nur entschlüsselt bei E |
+| Spieler-ID (Listen-Position) | | ✓ (`FheUint8`)           | nur entschlüsselt bei E |
+| `player_key` (Dedup-Token, `name:uuid`) | ✓ (z.B. `"Alice:550e8400-…"`) |                          |                         |
+| UUID-Anteil von `player_key` | ✓ (client-erzeugt, im Klartext am Server) |                          | nie im UI sichtbar      |
+| Raumcode | ✓ (6-stellig, im URL-Pfad) |                          |                         |
+| Anzahl Spieler im Raum | ✓ (Listen-Länge) |                          |                         |
+| Submit-Zeitpunkt | ✓ (Request-Timing) |                          |                         |
+| Welche Position E abfragt (`/rank`) | | ✓ (`FheUint8` Target-ID) |                         |
 
-**Was ein bösartiger Operator sehen kann** (reine Metadaten, kein FHE-Bruch):
+**Was ein böswilliger Operator sehen kann** (reine Metadaten, kein FHE-Bruch):
 
 - Wie viele Räume parallel existieren und wie viele Spieler in jedem sind.
 - Wer (per `player_key` = `name:uuid`) wann postet, wie oft und in welchem Raum. Der Klartext-Name ist also sichtbar. Das ist gewollt, damit der Creator ihn im Leaderboard anzeigen kann. Der Server lernt dabei aber nicht, welcher Score zu wem gehört.
@@ -192,9 +180,9 @@ Was sieht der Server-Operator wirklich? Die Tabelle hat vier Spalten: *Datum*, *
 
 **Was tatsächlich versprochen wird**
 
-> *„Der Server kennt deinen Score nicht. Er sieht nur einen Bytewurm, vergleicht zwei Bytewürmer miteinander (ohne zu wissen, welcher größer ist) und gibt die sortierte Liste an E zurück. Nur E kann die Liste mit seinem ClientKey entschlüsseln."*
+> *„Der Server kennt den Klartext-Score nicht. Er sieht nur Ciphertexte, vergleicht zwei Ciphertexte miteinander, ohne das Vorzeichen des Vergleichs zu kennen, und gibt die sortierte Liste an E zurück. Nur E kann die Liste mit seinem ClientKey entschlüsseln."*
 
-Das hält gegen einen ehrlich-aber-neugierigen Operator. Gegen einen aktiv manipulierenden Operator hält es nicht.
+Diese Garantie hält gegen einen ehrlich-aber-neugierigen Operator (*honest-but-curious*). Gegen einen aktiv manipulierenden Operator hält sie nicht.
 
 ### FHE-Designentscheidungen
 
@@ -202,7 +190,7 @@ Wir verwenden TFHE-rs 1.6.1 mit `ConfigBuilder::default()`, also die Standard-Pa
 
 **Verwendete Typen**
 
-- `FheUint16` für den Score (Wertebereich 0 bis 65535). Spielrelevante Scores wie Punkte oder Zeiten in Hundertstelsekunden passen praktisch immer rein. `FheUint8` (max 255) wäre zu eng, und `FheUint32` ist etwa doppelt so langsam pro Vergleich, ohne dass wir den Wertebereich brauchen.
+- `FheUint16` für den Score (Wertebereich 0 bis 65535). Spielrelevante Scores wie Punkte oder Zeiten in Hundertstelsekunden lassen sich darauf vollständig abbilden. `FheUint8` (max 255) wäre zu eng, und `FheUint32` ist etwa doppelt so langsam pro Vergleich, ohne dass der erweiterte Wertebereich hier benötigt wird.
 - `FheUint8` für die Spieler-ID. Bei `MAX_ENTRIES = 20` sind 0 bis 255 mehr als genug. Die ID dient nur als Tag, der zusammen mit dem Score durchsortiert wird, damit E nach dem Entschlüsseln weiß, wer auf welchem Platz steht.
 - `FheBool` als Rückgabe von `/rank`, einer pro Position. Das ist der minimale Ciphertext, weil der Client nur „passt / passt nicht" lesen muss.
 
@@ -220,7 +208,7 @@ Add, Mul und Bit-Shift brauchen wir nicht. Die Logik reduziert sich vollständig
 - `FheUint32` für mehr Headroom wurde verworfen, weil jede zusätzliche Bitbreite die FHE-Vergleichszeit etwa verdoppelt und 16 Bit für diesen Use Case ausreichen.
 - Klartext-Score mit ZKP (Spieler beweist „mein Score liegt im erlaubten Bereich") ist semantisch interessant, aber dann sieht der Server den Score. Das wollten wir vermeiden.
 - Ein voller homomorpher Sort mit datenabhängigen Branches geht in TFHE-rs prinzipiell nicht, weil Branches auf Ciphertexts unmöglich sind. Die Lösung ist ein datenunabhängiges Sortiernetzwerk (siehe §Komplexität).
-- Den `player_key` zu verschlüsseln wäre technisch möglich, aber unverhältnismäßig teuer. Der Server braucht den Schlüssel, um beim Submit nachzusehen, ob es schon einen Eintrag desselben Spielers gibt, und gegebenenfalls `keep_max` anzustoßen. Im Klartext geht das mit einem simplen String-Vergleich in O(1). Verschlüsselt müsste der Server pro Submit jeden existierenden Eintrag homomorph vergleichen (`eq`) und jede Score- und ID-Position bedingt überschreiben (`if_then_else`). Außerdem kann der Server auf einem verschlüsselten Bool nicht „branchen", er kann also nicht entscheiden „gab es überhaupt einen Treffer?". Er müsste jeden Submit gleichzeitig als neuen Eintrag anhängen und auf alle alten Einträge bedingt anpassen, was die Submit-Kosten von O(1) auf O(n) FHE-Operationen treibt und die Listenlänge sprengt. Den minimalen Privacy-Gewinn (Pseudonym statt Name) ist uns das nicht wert, zumal der Creator ohnehin weiß, wer in seinem Raum mitspielt.
+- Den `player_key` zu verschlüsseln wäre technisch möglich, aber unverhältnismäßig teuer. Der Server benötigt den Schlüssel, um beim Submit zu prüfen, ob bereits ein Eintrag desselben Spielers existiert, und gegebenenfalls `keep_max` auszuführen. Im Klartext geschieht das durch einen einfachen String-Vergleich in O(1). Verschlüsselt müsste der Server pro Submit jeden existierenden Eintrag homomorph vergleichen (`eq`) und jede Score- und ID-Position bedingt überschreiben (`if_then_else`). Hinzu kommt, dass der Server auf einem verschlüsselten Bool keine Verzweigung treffen kann, also nicht entscheiden kann, ob es überhaupt einen Treffer gab. Er müsste jeden Submit zugleich als neuen Eintrag anhängen und auf alle bestehenden Einträge bedingt anwenden. Damit steigen die Submit-Kosten von O(1) auf O(n) FHE-Operationen und die Listenlänge wäre nicht mehr beschränkbar. Der Privacy-Gewinn (Pseudonym statt Name) rechtfertigt diesen Aufwand nicht, da der Creator die Identität der Mitspieler ohnehin kennt.
 
 **Approximationen.** Keine. Alle Operationen liefern exakte Resultate, solange die ServerKey-Parameter korrekt installiert sind. Es gibt kein Rauschen, das wir akzeptieren müssten, weil TFHE-rs intern bootstrappt und der Output deterministisch ist.
 
@@ -228,17 +216,17 @@ Add, Mul und Bit-Shift brauchen wir nicht. Die Logik reduziert sich vollständig
 
 Wir betrachten n als Spielerzahl im Raum (höchstens 20) und zählen eine einzelne FHE-Operation als einen Schritt.
 
-**Submit (`keep_max`).** Schickt ein Spieler einen neuen Score und hat schon einen alten, behält der Server verschlüsselt den höheren. Das sind immer dieselben fünf FHE-Ops, egal wie voll der Raum ist, also O(1).
+**Submit (`keep_max`).** Sendet ein Spieler einen neuen Score, obwohl bereits ein alter vorliegt, behält der Server verschlüsselt den höheren. Das sind unabhängig von der Belegung des Raums stets dieselben fünf FHE-Operationen, also O(1).
 
-**Sortieren (`sort_by_score_desc`).** Nach jedem Submit muss die Liste neu sortiert werden. Auf verschlüsselten Zahlen kann der Server aber nicht „schauen, welche größer ist" und danach entscheiden. Er muss die Vergleiche blind machen, und zwar in einer festen Reihenfolge, die unabhängig vom Inhalt funktioniert. Das ist ein Sortiernetzwerk: eine vorher festgelegte Folge von „Vergleiche zwei Positionen und tausche sie, falls links kleiner ist". Wir verwenden Batcher's Odd-Even Mergesort, weil seine Vergleiche in Schichten organisiert sind, in denen alle Paare disjunkt sind. Eine ganze Schicht läuft damit parallel auf mehreren CPU-Kernen. Der Aufwand liegt bei O(n · log² n) Vergleichen insgesamt und O(log² n) Schichten der Tiefe nach. Für n = 20 sind das rund 120 Vergleiche in etwa 15 Schichten. Die Korrektheit ist im Test `batcher_layers_form_a_valid_sorting_network` per 0/1-Prinzip nachgewiesen.
+**Sortieren (`sort_by_score_desc`).** Nach jedem Submit muss die Liste neu sortiert werden. Auf verschlüsselten Zahlen kann der Server jedoch nicht die Größenrelation einsehen und auf dieser Grundlage entscheiden. Die Vergleiche müssen blind erfolgen, in einer festen Reihenfolge, die unabhängig vom Inhalt funktioniert. Dies leistet ein Sortiernetzwerk: eine vorab festgelegte Folge von Compare-and-Swap-Operationen der Form „Vergleiche zwei Positionen und tausche sie, falls links kleiner ist". Verwendet wird Batchers Odd-Even-Mergesort, da seine Vergleiche in Schichten organisiert sind, deren Paare disjunkt sind. Eine vollständige Schicht kann dadurch parallel auf mehreren CPU-Kernen ausgeführt werden. Der Aufwand beträgt O(n · log² n) Vergleiche insgesamt bei O(log² n) Schichten in der Tiefe. Für n = 20 ergibt das rund 120 Vergleiche in etwa 15 Schichten. Die Korrektheit ist im Test `batcher_layers_form_a_valid_sorting_network` per 0/1-Prinzip nachgewiesen.
 
 Der Platzbedarf ist linear in n (die Liste der Ciphertexte). `keep_max` braucht nur konstanten Zusatzspeicher.
 
-Da `keep_max` konstant ist und der teure Sort im Hintergrund läuft, ist der Submit-Hot-Path schnell. Das O(n · log² n) des Sorts ist der eigentliche Grund für die harte Obergrenze `MAX_ENTRIES = 20`.
+Da `keep_max` konstant ist und der aufwendige Sortierschritt im Hintergrund läuft, bleibt der Submit-Pfad schnell. Die O(n · log² n) der Sortierung sind der maßgebliche Grund für die feste Obergrenze `MAX_ENTRIES = 20`.
 
 ### Performance-Messung
 
-**Mess-Setup.** Die Tests laufen auf einer Hetzner-Dedicated-Maschine (AMD EPYC 9645, 8 Cores) gegen Image `v0.1.19`, TFHE-rs 1.6.1 mit `ConfigBuilder::default()`, `FheUint16` für den Score und `FheUint8` für die ID. Die Last erzeugt k6 mit vor-generierten Ciphertexten gegen `http://159.195.145.100/leaderboard`. Die Skripte liegen unter `loadtest/k6/`.
+**Mess-Setup.** Die Tests laufen auf einem NetCup-Server (AMD EPYC 9645, 8 Cores) gegen Image `v0.1.19`, TFHE-rs 1.6.1 mit `ConfigBuilder::default()`, `FheUint16` für den Score und `FheUint8` für die ID. Die Last erzeugt k6 mit vor-generierten Ciphertexten gegen `http://159.195.145.100/leaderboard`. Die Skripte liegen unter `loadtest/k6/`.
 
 Gemessen werden die FHE-Endpunkte: `POST /create` (ServerKey-Decompress) und `POST /{code}/submit` (`keep_max` plus Background-Sort). Bewusst ausgeklammert sind `GET /entries`, `GET /{code}/public-key` und `POST /rank`, weil sie kein FHE machen und nur Grundrauschen liefern.
 
@@ -279,7 +267,7 @@ Im Latenz-Verlauf zeigt sich:
 - p95 (gelb) zeigt ab Runde 7 erste deutliche Sprünge, die mit jeder weiteren Runde größer werden.
 - p99 (blau) hat Spitzen bis 30 s ab Runde 12, die sich am Ende häufen.
 
-Die p95/p99-Spitzen treten systematisch zu Beginn jeder Runde auf. Nach der 2-minütigen Pause setzen alle aktiven Spieler quasi gleichzeitig wieder ihren ersten Submit ab, wodurch sich kurz die FHE-Queue und der Hintergrund-Sort stauen. Innerhalb weniger Sekunden desynchronisieren sich die Spieler und die Latenz pendelt sich wieder halbwegs ein.
+Die p95- und p99-Spitzen treten systematisch zu Beginn jeder Runde auf. Nach der zweiminütigen Pause setzen alle aktiven Spieler nahezu gleichzeitig ihren ersten Submit ab, wodurch sich die FHE-Queue und der Hintergrund-Sort kurz aufstauen. Innerhalb weniger Sekunden desynchronisieren sich die Spieler und die Latenz stabilisiert sich auf einem niedrigeren Niveau.
 
 Volldaten: [`docs/perf/02_room_fill.md`](docs/perf/02_room_fill.md).
 
@@ -329,7 +317,7 @@ k6 run --out experimental-prometheus-rw 03_happy_flow.js -e BASE_URL=http://159.
 **Eingabe-Grenzen.**
 - Maximal 20 Spieler pro Raum (`MAX_ENTRIES`), bedingt durch die FHE-Sort-Komplexität O(n log² n).
 - Maximal etwa 57 parallele Räume pro Service-Instanz, begrenzt durch den RAM-Verbrauch der Sessions (siehe Test 1).
-- Sessions werden nach 10 Minuten Inaktivität entfernt. Es gibt keine Persistenz, ein Neustart räumt alles weg.
+- Sessions werden nach 10 Minuten Inaktivität entfernt. Es gibt keine Persistenz, ein Neustart entfernt sämtliche aktiven Sessions.
 
 **Bewusst nicht umgesetzt.**
 - Keine Authentifizierung. Die Spieler-Zulassung läuft über den Raumcode und ist sozial geregelt, analog zum Voting-Use-Case.

@@ -23,11 +23,11 @@
 
 ![Test 2 - p50/p95/p99 über die Zeit](test2_latency.png)
 
-- **p50 (grün)** steigt gleichmäßig mit der Spielerzahl mit.
-- **p95 (gelb)** zeigt **ab Runde 7 erste deutliche Sprünge**, die mit jeder weiteren Runde größer werden.
-- **p99 (blau)** Spitzen bis 30 s ab Runde ~12, häufen sich Richtung Ende.
-- Die Spitzen entstehen **systematisch zu Beginn jeder Runde**: nach der 2-min-Pause submitten alle aktiven Spieler quasi gleichzeitig wieder ihren ersten Wert, dadurch stauen sich kurz die FHE-Queue und der Background-Sort. Nach ein paar Sekunden desynchronisieren sich die Spieler und die Latenz normalisiert sich wieder.
-- **Kein systemischer Crash.** Der Service bewältigt 20 parallele Spieler bei 1-s-Tempo, p95 bleibt insgesamt unter 3 s.
+- **p50 (grün)** steigt gleichmäßig mit der Spielerzahl an.
+- **p95 (gelb)** zeigt ab Runde 7 erste deutliche Sprünge, die mit jeder weiteren Runde zunehmen.
+- **p99 (blau)** weist ab Runde 12 Spitzen bis 30 s auf, die sich gegen Ende des Tests häufen.
+- Die Spitzen entstehen systematisch zu Beginn jeder Runde: Nach der zweiminütigen Pause setzen alle aktiven Spieler nahezu gleichzeitig ihren ersten Submit ab, wodurch sich die FHE-Queue und der Hintergrund-Sort kurz aufstauen. Innerhalb weniger Sekunden desynchronisieren sich die Spieler und die Latenz stabilisiert sich auf einem niedrigeren Niveau.
+- Kein systemischer Crash: Der Service bewältigt 20 parallele Spieler bei einer Submit-Frequenz von 1 s, p95 bleibt insgesamt unter 3 s.
 
 ## Reproduktion
 

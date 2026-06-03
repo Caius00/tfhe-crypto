@@ -46,7 +46,7 @@ und eine `values.yaml` mit projektspezifischen Anpassungen. Vor dem Install muss
 
 ## Cluster
 
-Alles läuft auf einem **Hetzner-Server** (AMD EPYC 9645, 8 Kerne, 16 GiB RAM,
+Alles läuft auf einem **NetCup-Server** (AMD EPYC 9645, 8 Kerne, 16 GiB RAM,
 IP `159.195.145.100`). Darauf ein einzelner Kubernetes-Knoten in der schlanken Variante
 **k3s**. CI/CD läuft komplett über **GitHub-hosted Runner** (`ubuntu-latest`). Auf dem
 Cluster selbst gibt es keine self-hosted Runner.

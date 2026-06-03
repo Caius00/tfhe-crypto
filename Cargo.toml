@@ -38,3 +38,19 @@ opt-level = 3
 
 [profile.test.package.tfhe]
 opt-level = 3
+
+# Maximal aggressives Release-Profil für die produktiven Container-Images.
+# - lto="fat":           Full-Link-Time-Optimization über alle Crates hinweg.
+#                        Erlaubt dem Compiler, tfhe-rs-Funktionen in den eigenen
+#                        Code zu inlinen — gerade bei kleinen FHE-Ops wie `lt`
+#                        und `if_then_else` der größte Hebel.
+# - codegen-units=1:     Alles in einer Übersetzungseinheit, damit der Optimizer
+#                        Sichtbarkeit auf den gesamten Code hat. Langsamer zu
+#                        kompilieren, schneller zur Laufzeit.
+# - strip="symbols":     Debug-Symbole raus, Image rund 30 % kleiner.
+# panic bleibt absichtlich auf "unwind", damit `spawn_blocking` Panics als
+# JoinError zurückgeben kann statt den ganzen Container zu killen.
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = "symbols"

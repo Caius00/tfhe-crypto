@@ -181,7 +181,9 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           push: true
-          build-args: SERVICE_NAME=${{ matrix.service }}
+          build-args: |
+            SERVICE_NAME=${{ matrix.service }}
+            TARGET_CPU=znver5
           tags: ${{ steps.meta.outputs.tags }}
 
       # Wird nur erreicht, wenn Tests + Docker-Push erfolgreich waren.

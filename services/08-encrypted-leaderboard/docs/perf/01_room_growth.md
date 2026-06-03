@@ -3,7 +3,7 @@
 ## Setup
 - **Datum:** 2026-05-29
 - **Skript:** `01_room_growth.js`
-- **Konfig:** `MAX_ROOMS=60`, `STAGGER_SEC=60` (1 neuer Raum/Min), `KEEPALIVE_SEC=540` (alle 9 Min ein Submit pro VU damit der Janitor nicht räumt)
+- **Konfig:** `MAX_ROOMS=60`, `STAGGER_SEC=60` (1 neuer Raum pro Minute), `KEEPALIVE_SEC=540` (alle 9 Minuten ein Submit pro VU, damit der Janitor die Session nicht entfernt)
 - **Endpoint:** `http://159.195.145.100/leaderboard` (Image `v0.1.19`)
 
 ## Ergebnisse
@@ -19,10 +19,10 @@
 
 ## Beobachtung
 
-- Pod hält 57 parallele Sessions stabil, ab Session 59 bricht die Verfügbarkeit weg.
-- p95 unter Last bleibt mit 6.41 s unter der 10-s-Spec-Schwelle. Latenz war NICHT das Problem, sondern Service-Verfügbarkeit (Memory-Pressure / Connection-Reset).
-- CPU-Last bleibt während des gesamten Tests nahezu konstant niedrig: pro Raum nur 1 Create + alle 9 min ein Keepalive-Submit. **Dieser Test misst ausschließlich die RAM-Obergrenze**, nicht die Rechenleistung.
-- Per-Session-RAM: ca. 350-400 MB dekomprimiert (80 MB komprimiert über die Leitung).
+- Der Service hält 57 parallele Sessions stabil; ab Session 59 bricht die Verfügbarkeit ein.
+- p95 bleibt unter Last mit 6.41 s unterhalb der 10-Sekunden-Spezifikationsschwelle. Die Latenz war nicht der limitierende Faktor, sondern die Service-Verfügbarkeit (Memory-Pressure und Connection-Reset).
+- Die CPU-Last bleibt während des gesamten Tests nahezu konstant niedrig: pro Raum nur ein `create` und alle 9 Minuten ein Keepalive-Submit. Dieser Test misst damit ausschließlich die RAM-Obergrenze, nicht die Rechenleistung.
+- RAM pro Session: etwa 350-400 MB dekomprimiert, 80 MB komprimiert über die Leitung.
 
 ## Reproduktion
 
