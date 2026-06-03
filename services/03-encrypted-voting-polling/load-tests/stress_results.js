@@ -49,9 +49,9 @@ import { check, sleep, group } from 'k6';
 import { Trend, Counter, Rate } from 'k6/metrics';
 
 // ── Konfiguration ─────────────────────────────────────────────────────────────
-const BASE_URL   = __ENV.BASE_URL   || 'http://localhost:8080';
+const BASE_URL   = __ENV.BASE_URL   || 'http://159.195.145.100/voting';
 const SESSION_ID = __ENV.SESSION_ID || '';
-const CREATOR_ID = __ENV.CREATOR_ID || 'alice';
+const CREATOR_ID = __ENV.CREATOR_ID || 'kimmy';
 
 if (!SESSION_ID) {
     throw new Error('SESSION_ID fehlt! Bitte --env SESSION_ID=<uuid> angeben.');
@@ -61,7 +61,6 @@ if (!SESSION_ID) {
 const resultsLatency = new Trend('results_latency', true);
 const errorCount     = new Counter('errors');
 const successRate    = new Rate('success_rate');
-const timeoutCount   = new Counter('timeouts');
 
 // ── Lastkurve ─────────────────────────────────────────────────────────────────
 export const options = {
@@ -70,64 +69,51 @@ export const options = {
             executor: 'ramping-vus',
             startVUs: 1,
             stages: [
-                { duration: '30s', target: 1  },   // Baseline
-                { duration: '60s', target: 2  },   // Leichte Last
-                { duration: '60s', target: 3  },   // Mittlere Last
-                { duration: '60s', target: 5  },   // Hohe Last
-                { duration: '60s', target: 10 },   // Sehr hohe Last
-                { duration: '30s', target: 0  },   // Cool-down
+                { duration: '30s', target: 1  },   // 1 Creator fragt ab
+                { duration: '45s', target: 3  },   // 3 Creator fragen gleichzeitig ab
+                { duration: '45s', target: 6  },   // 6 parallele Abfragen (CPU-Druck erhöht sich)
+                { duration: '45s', target: 10 },   // Peak: 10 parallele FHE-Abfragen
+                { duration: '30s', target: 0  },
             ],
             gracefulRampDown: '30s',
+            exec: 'fheStressFlow',
         },
     },
-
     thresholds: {
-        // Absichtlich hoch gesetzt – wir wollen sehen wo es kippt
-        'results_latency': ['p(95)<120000'],  // 2 Minuten Timeout
-        'success_rate':    ['rate>0.95'],     // max 5% Fehler erlaubt
+        'results_latency': ['p(95)<120000'],  // 2 Minuten Limit
+        'success_rate':    ['rate>0.95'],
     },
 };
 
-// ── Haupt-Flow ────────────────────────────────────────────────────────────────
-export default function () {
-    group('results', () => {
+export function fheStressFlow() {
+    group('fhe_results_request', () => {
         const res = http.get(
             `${BASE_URL}/results/${SESSION_ID}/${CREATOR_ID}`,
-            { timeout: '120s' }
+            { timeout: '120s' } // FHE dauert, daher hohes Timeout
         );
 
         resultsLatency.add(res.timings.duration);
 
-        if (res.status === 0) {
-            // Timeout
-            timeoutCount.add(1);
-            errorCount.add(1);
-            successRate.add(false);
-            console.error(`Timeout nach ${res.timings.duration}ms`);
-            return;
-        }
-
         const ok = check(res, {
-            'results 200': r => r.status === 200,
-            'results hat body': r => r.body && r.body.length > 0,
+            'status ist 200': r => r.status === 200,
+            'ready ist true': r => {
+                try {
+                    // Wir prüfen im Body, ob das FHE-Ergebnis wirklich berechnet wurde
+                    return JSON.parse(r.body).ready === true;
+                } catch (e) {
+                    return false;
+                }
+            },
         });
 
         successRate.add(ok);
+
         if (!ok) {
             errorCount.add(1);
-            console.error(`Results Fehler: ${res.status} – ${res.body?.substring(0, 200)}`);
-        } else {
-            try {
-                const body = JSON.parse(res.body);
-                if (!body.ready) {
-                    console.warn('Results noch nicht bereit (keine Stimmen?)');
-                }
-            } catch (e) {
-                console.warn('Results Body Parse Fehler');
-            }
+            console.error(`Request nicht erfolgreich oder ready=false. Status: ${res.status}`);
         }
     });
 
-    // Pause zwischen Requests – FHE braucht Zeit
-    sleep(3);
+    // Pause zwischen den Anfragen der jeweiligen VU
+    sleep(5);
 }
