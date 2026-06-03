@@ -16,8 +16,15 @@ FROM chef AS cacher
 # Aktiviert AVX-512, VAES, VPCLMULQDQ, GFNI, IFMA, BF16 und VNNI.
 # Für lokale Builds oder andere Hardware mit `--build-arg TARGET_CPU=x86-64-v3`
 # überschreiben (AVX2-Baseline, läuft auf jeder CPU ab ~Haswell).
+#
+# Wichtig: CARGO_BUILD_TARGET + CARGO_TARGET_<triple>_RUSTFLAGS trennen
+# Host-Code (build.rs, proc-macros, läuft im GitHub-Runner = Intel Xeon)
+# von Target-Code (Service-Binary, läuft auf der EPYC). Würde RUSTFLAGS
+# global gesetzt, würden auch Build-Skripte mit znver5-Instruktionen
+# kompiliert und beim Ausführen im CI-Runner mit SIGILL crashen.
 ARG TARGET_CPU=znver5
-ENV RUSTFLAGS="-C target-cpu=${TARGET_CPU}"
+ENV CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu
+ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C target-cpu=${TARGET_CPU}"
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 
@@ -25,7 +32,8 @@ RUN cargo chef cook --release --recipe-path recipe.json
 FROM chef AS builder
 ARG SERVICE_NAME
 ARG TARGET_CPU=znver5
-ENV RUSTFLAGS="-C target-cpu=${TARGET_CPU}"
+ENV CARGO_BUILD_TARGET=x86_64-unknown-linux-gnu
+ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C target-cpu=${TARGET_CPU}"
 COPY Cargo.toml Cargo.lock ./
 COPY services/ services/
 COPY shared/ shared/
@@ -35,5 +43,6 @@ RUN cargo build --release -p $SERVICE_NAME
 
 FROM debian:bookworm-slim
 ARG SERVICE_NAME
-COPY --from=builder /app/target/release/$SERVICE_NAME /usr/local/bin/service
+# Pfad enthält das Target-Triple, weil CARGO_BUILD_TARGET gesetzt ist.
+COPY --from=builder /app/target/x86_64-unknown-linux-gnu/release/$SERVICE_NAME /usr/local/bin/service
 CMD ["/usr/local/bin/service"]
