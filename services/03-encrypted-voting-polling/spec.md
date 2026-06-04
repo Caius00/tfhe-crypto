@@ -44,6 +44,7 @@ Mit der Finalisierung wird die Session vollständig geschlossen. Ab diesem Zeitp
 
 Der Service stellt eine fachliche Voting-/Polling-API bereit, mit der Sessions erstellt, Teilnehmer verwaltet und verschlüsselte Stimmen abgegeben werden können. Die OpenAPI-Definition wird automatisch generiert und ist unter `/openapi.json` sowie `/docs` (Swagger UI) verfügbar.
 
+Im gesamten Service wird der PublicKey als CompressedPublicKey verwendet. Dieser ermöglicht eine Batch-Verschlüsselung.
 ### POST /session
 
 Legt eine neue Voting-Session an.
@@ -425,7 +426,55 @@ Die Session wird per HashMap gefunden und die Fragenliste in die Antwort kopiert
 Für die Antwort wird über alle Teilnehmer iteriert und für jeden ein ParticipantAdminView erzeugt. Jeder Teilnehmer wird genau einmal verarbeitet, daher ergibt sich eine lineare Laufzeit und Speicherbelegung in der Anzahl der Teilnehmer k. 
 
 ### Performance-Messung
+*Mess-Setup & Methodik*
 
+Die Performance- und Stresstests wurden auf einem virtuellen KVM-Server von Netcup mit dedizierten CPU-Ressourcen durchgeführt.  Die Last wurde extern mittels k6 von einer lokalen Windows-Maschine über das Internet injiziert.
+
+Es wurden zwei Testszenarien mit unterschiedlichen funktionalen Schwerpunkten untersucht:
+
+1. Teilnehmer-Anfragen: Analyse der Endpunkte (POST /join und GET /status), um das Systemverhalten bei einem synchronen Anstieg von Join-Anfragen und hochfrequentem Polling durch die Teilnehmer zu evaluieren.
+2. Ergebnisauswertung: Dedizierte Stressprüfung des Endpunkts (GET /results/{session_id}/{creator_id}) unter einer Dauerlast von konstant 10 parallelen VUs. Um für diesen k6-Test die mathematische Auslastung der CPU zu erzwingen, wurde das System vorab in einen Zustand versetzt, in dem die Bedingung voted_count >= approved_count dauerhaft erfüllt ist. Dadurch wurde sichergestellt, dass jeder eingehende Request unweigerlich die rechenintensive kryptografische Funktion aggregate_votes_ciphertext_only durchläuft. Dieses Szenario wurde in zwei separaten Durchläufen evaluiert, einmal mit einer Basis von 2 Teilnehmern und im Anschluss mit 10 Teilnehmern.
+
+*Test 1-Lasttest (Join und Polling) (03.06.2026)*
+
+In diesem Szenario wurde der Beginn des Lebenszyklus einer Sitzung simuliert. Nach der Erstellung einer Session versuchen Clients kontinuierlich, dieser beizutreten (POST /join). Direkt nach der erfolgreichen Join-Anfrage folgt ein hochfrequentes Abfragen des Sitzungsstatus (GET /status). Die Last wurde über k6 mit einer ansteigenden Kurve auf bis zu 10 parallele VUs skaliert.
+
+|Metrik            | Wert                             |
+|------------------|----------------------------------|
+|p50               | 12,40 ms                         |
+|p90               | 42,10 ms                         |
+|p95               | 28,15 ms                         |
+|Maximum           | 42,80 ms                         |
+|Fehlerrate        | 0%  <br/>(340/340 Checks erfolgreich) |
+*Fazit von Lasttest 1:*
+
+Die Messergebnisse zeigen eine fehlerfreie Performance im optimalen Bereich. Die unverschlüsselten Standard-Endpunkte weisen keinerlei Skalierungsprobleme oder Engpässe auf. Unabhängig von der Anzahl der parallelen virtuellen Nutzer bleibt die Antwortzeit stabil im niedrigen zweistelligen Millisekunden Bereich. Es gibt keine nennenswerten Ausschläge oder Treppeneffekte.
+
+*Test 2-Stresstest der FHE-Ergebnisauswertung (03.06.2026)*
+
+Hierbei wurde die mathematisch rechenintensive homomorphe Aggregation evaluiert. Um den direkten Einfluss der Kryptographischen Komplexität zu untersuchen, wurde derselbe Stresstest bei dauerhaft 10 parallelen VUs in zwei getrennten Konfigurationen durchgeführt, einmal mit 2 hinterlegten Stimmen und einmal mit 10 hinterlegten Stimmen. Die Auswahl von genau 2 bzw. 10 Teilnehmern erfolgte, um einerseits die mathematische Grundlatenz zu bestimmen und andererseits die Skalierung der FHE-Operation unter moderater Gruppenlast zu überprüfen.
+
+|Metrik            | 2 Stimmen      | 10 Stimmen     |
+|------------------|----------------|----------------|
+|p50               | 0,47 s         |2,83 s|
+|p90               | 0,51 s         |8,31 s|
+|p95               | 0,53 s         |11,21 s|
+|Maximum           | 0,76 s         |14,32 s|
+|Fehlerrate        | 0%             |         0%|
+|Durchsatz         | 1,49 request/s | 0,90 request/s |
+*Fazit vom Stresstest 2:*
+
+Während das System bei 2 Stimmen sehr schnell reagiert, führt die rechenintensive kryptografische Funktion aggregate_votes_ciphertext_only bei 10 Stimmen zu einer massiven Latenz von über 11 Sekunden im p95-Bereich. Diese Verzögerung resultiert aus der globalen Zustandssperre (state.lock()). Da dieser Mutex während der gesamten FHE-Berechnung gehalten wird, blockiert er die parallele Verarbeitung des Axum-Servers und führt zu einer sequenziellen Abarbeitung aller eingehenden Anfragen. Trotz dieser intensiven CPU-Auslastung arbeitet das Backend vollständig stabil und verarbeitet alle Anfragen ohne Fehlerraten.
+
+![Architektur](./uc_voting_performance.png)
+
+In der Grafik findet sich die Testvariante mit 2 hinterlegten Stimmen im Bereich von ca. 12:17–12:22. Hier wird sichtbar, dass das System sehr schnell reagiert und p95 und p99 nahezu identisch verlaufen.
+
+Die Variante mit 10 hinterlegten Teilnehmern findet sich im Bereich von ca. 12:26–12:30. Hier zeigt sich ein drastischer Umschwung im Systemverhalten: Die Latenzkurven für p95 und p99 brechen steil nach oben aus und bilden ein massives Plateau, das sich knapp unterhalb der 10-Sekunden-Marke einpendelt. Die grüne Median-Linie (p50) verläuft deutlich darunter im Bereich von knapp 3 Sekunden, was die Verteilung der Wartezeiten im eingetretenen Mutex-Stau exakt widerspiegelt. Der absolute Peak von 14,32 Sekunden wird kurz vor dem Ende des Testfensters als dünne, maximale Spitze der blauen p99-Kurve sichtbar. Nach dem harten Stopp der Last um Punkt 12:30 Uhr fällt die Latenz sofort wieder auf die Baseline von 0 Sekunden ab.
+
+
+
+Zusammenfassend zeigen die Messergebnisse, dass die grundlegende REST-Infrastruktur des Backends (Test 1) optimal skaliert und im unverschlüsselten Zustand keinerlei Performance-Engpässe aufweist. Die eigentliche Skalierungsbremse des Systems liegt isoliert auf der kryptographischen Verarbeitungsebene (Test 2).
 
 ### Limitationen
 - Teilnehmende können bei numerischen Fragen ausschließlich Werte zwischen 0 und 255 als Antwort angeben. Höhere Zahlen lassen wir bewusst nicht zu, demenstprechend müssen Fragen eventuell anders definiert werden. Bsp: Wie hoch ist dein Jahregehalt in tausend € 
