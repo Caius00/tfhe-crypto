@@ -468,13 +468,7 @@ mod integration_tests {
 
         let (status, err_body) = get_json(&app, "/participants/ungueltige-id/alice").await;
 
-        assert!(
-            status == StatusCode::INTERNAL_SERVER_ERROR
-                || err_body
-                    .as_str()
-                    .map(|s| s.contains("nicht gefunden"))
-                    .unwrap_or(false)
-        );
+        assert_eq!(status, StatusCode::NOT_FOUND);
 
         println!("✅ Ungültige Session-ID wird abgelehnt");
 
@@ -482,13 +476,7 @@ mod integration_tests {
 
         let (status, err_body) = get_json(&app, &format!("/participants/{}/eve", session_id)).await;
 
-        assert!(
-            status == StatusCode::INTERNAL_SERVER_ERROR
-                || err_body
-                    .as_str()
-                    .map(|s| s.contains("autorisiert"))
-                    .unwrap_or(false)
-        );
+        assert_eq!(status, StatusCode::FORBIDDEN);
 
         println!("✅ Falscher Creator bei pending wird abgelehnt");
 
@@ -496,9 +484,26 @@ mod integration_tests {
 
         let (status, _) = get_json(&app, &format!("/results/{}/eve", session_id)).await;
 
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(status, StatusCode::FORBIDDEN);
 
         println!("✅ Falscher Creator bei results wird abgelehnt");
+
+        // Teilnehmer existiert nicht
+
+        let (status, _) = post_json(
+            &app,
+            "/vote",
+            json!({
+                "session_id": session_id,
+                "participant_id": "does-not-exist",
+                "encrypted_votes": [[fake_vote()]]
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        println!("✅ Unbekannter Teilnehmer wird abgelehnt");
 
         // Nicht genehmigter Teilnehmer
 
@@ -532,7 +537,7 @@ mod integration_tests {
         )
         .await;
 
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(status, StatusCode::FORBIDDEN);
 
         println!("✅ Nicht genehmigter Teilnehmer kann nicht abstimmen");
 
@@ -570,7 +575,7 @@ mod integration_tests {
         )
         .await;
 
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(status, StatusCode::BAD_REQUEST);
 
         println!("✅ Falsche Stimmenanzahl wird abgelehnt");
     }
@@ -631,6 +636,31 @@ mod integration_tests {
         println!("✅ Ergebnisse sind noch nicht bereit");
     }
 
+    #[tokio::test]
+    async fn test_get_results_errors() {
+        let (app, _) = build_app();
+
+        let sk_b64 = get_server_key_b64();
+
+        let session_id = create_test_session(&app, &sk_b64).await;
+
+        // Session existiert nicht
+
+        let (status, _) = get_json(&app, "/results/ungueltig/alice").await;
+
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        println!("✅ Ungültige Session bei results wird abgelehnt");
+
+        // Falscher Creator
+
+        let (status, _) = get_json(&app, &format!("/results/{}/eve", session_id)).await;
+
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        println!("✅ Falscher Creator bei results wird abgelehnt");
+    }
+
     // =========================================================================
 
     // TEST 5: finalize_session
@@ -648,13 +678,13 @@ mod integration_tests {
 
         let (status, _) = get_json(&app, "/finalize/ungueltig/alice").await;
 
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(status, StatusCode::NOT_FOUND);
 
         println!("✅ Ungültige Session gibt Fehler");
 
         let (status, _) = get_json(&app, &format!("/finalize/{}/eve", session_id)).await;
 
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(status, StatusCode::FORBIDDEN);
 
         println!("✅ Falscher Creator wird abgelehnt");
 
@@ -665,6 +695,12 @@ mod integration_tests {
         assert_eq!(body["status"], "finalized");
 
         println!("✅ Session erfolgreich finalisiert");
+
+        //  erneutes Finalisieren → CONFLICT
+        let (status, _) = get_json(&app, &format!("/finalize/{}/alice", session_id)).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+
+        println!("✅ Doppelte Finalisierung wird abgelehnt");
     }
 
     // =========================================================================
@@ -736,6 +772,11 @@ mod integration_tests {
 
         assert_eq!(body["status"], "approved");
 
+        // anderer Teilnehmer existiert nicht
+        let (status, body) = get_json(&app, &format!("/status/{}/mallory", session_id)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "not_found");
+
         println!("✅ Status-Flow korrekt");
     }
 
@@ -754,7 +795,7 @@ mod integration_tests {
 
         let (status, _) = get_json(&app, "/session/ungueltig").await;
 
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(status, StatusCode::NOT_FOUND);
 
         let session_id = create_test_session(&app, &sk_b64).await;
 
@@ -765,6 +806,8 @@ mod integration_tests {
         assert_eq!(body["session_id"], session_id);
 
         assert_eq!(body["questions"].as_array().unwrap().len(), 1);
+
+        assert!(body.get("public_key").is_some());
 
         println!("✅ Session erfolgreich abgerufen");
     }
@@ -795,7 +838,7 @@ mod integration_tests {
         )
         .await;
 
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(status, StatusCode::BAD_REQUEST);
 
         println!("✅ Ungültiger Base64 wird abgelehnt");
 
@@ -814,7 +857,7 @@ mod integration_tests {
         )
         .await;
 
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(status, StatusCode::BAD_REQUEST);
 
         println!("✅ Ungültiger ServerKey wird abgelehnt");
     }
@@ -847,7 +890,7 @@ mod integration_tests {
         )
         .await;
 
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(status, StatusCode::NOT_FOUND);
 
         println!("✅ Ungültige Session-ID beim Join wird abgelehnt");
 
@@ -870,7 +913,7 @@ mod integration_tests {
         )
         .await;
 
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(status, StatusCode::CONFLICT);
 
         println!("✅ Join nach Finalisierung wird abgelehnt");
     }
@@ -882,7 +925,6 @@ mod integration_tests {
     // =========================================================================
 
     #[tokio::test]
-
     async fn test_approve_participant_cases() {
         let (app, _) = build_app();
 
@@ -890,93 +932,116 @@ mod integration_tests {
 
         let session_id = create_test_session(&app, &sk_b64).await;
 
+        // ✔️ Join
         post_json(
             &app,
             "/join",
             json!({
-
                 "session_id": session_id,
-
                 "participant_id": "bob",
-
                 "enc_name_chunks": null
-
             }),
         )
         .await;
 
+        // ❌ 1. falsche Session
         let (status, _) = post_json(
             &app,
             "/approve",
             json!({
-
                 "session_id": "ungueltig",
-
                 "creator_id": "alice",
-
                 "participant_id": "bob",
-
                 "approved": true
-
             }),
         )
         .await;
 
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(status, StatusCode::NOT_FOUND);
 
         println!("✅ Ungültige Session-ID bei approve wird abgelehnt");
 
+        // ❌ 2. falscher Creator
         let (status, _) = post_json(
             &app,
             "/approve",
             json!({
-
                 "session_id": session_id,
-
                 "creator_id": "eve",
-
                 "participant_id": "bob",
-
                 "approved": true
-
             }),
         )
         .await;
 
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(status, StatusCode::FORBIDDEN);
 
         println!("✅ Falscher Creator wird abgelehnt");
 
+        // ❌ 3. Teilnehmer existiert nicht
+        let (status, _) = post_json(
+            &app,
+            "/approve",
+            json!({
+                "session_id": session_id,
+                "creator_id": "alice",
+                "participant_id": "does-not-exist",
+                "approved": true
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::NOT_FOUND);
+
+        println!("✅ Unbekannter Teilnehmer wird abgelehnt");
+
+        // ✔️ Ablehnung von bob
         let (status, body) = post_json(
             &app,
             "/approve",
             json!({
-
                 "session_id": session_id,
-
                 "creator_id": "alice",
-
                 "participant_id": "bob",
-
                 "approved": false
-
             }),
         )
         .await;
 
         assert_eq!(status, StatusCode::OK);
-
         assert_eq!(body["status"], "ok");
 
         println!("✅ Teilnehmer erfolgreich abgelehnt");
 
+        // ✔️ Teilnehmerliste leer
         let (status, body) = get_json(&app, &format!("/participants/{}/alice", session_id)).await;
 
         assert_eq!(status, StatusCode::OK);
-
         assert_eq!(body.as_array().unwrap().len(), 0);
 
         println!("✅ Pending-Liste leer nach Ablehnung");
+
+        // ✔️ Session finalisieren korrekt testen
+        let (status, _) = get_json(&app, &format!("/finalize/{}/alice", session_id)).await;
+
+        assert_eq!(status, StatusCode::OK);
+
+        // ❌ 4. approve nach finalization → CONFLICT
+        let (status, _) = post_json(
+            &app,
+            "/approve",
+            json!({
+                "session_id": session_id,
+                "creator_id": "alice",
+                "participant_id": "bob",
+                "approved": true
+            }),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::CONFLICT);
+
+        println!("✅ Approve nach Finalisierung wird abgelehnt");
     }
 
     // =========================================================================
@@ -1043,7 +1108,7 @@ mod integration_tests {
         )
         .await;
 
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(status, StatusCode::CONFLICT);
 
         println!("✅ Vote nach Finalisierung wird abgelehnt");
     }
