@@ -8,7 +8,7 @@
  *   einer Session beitreten – z.B. wenn ein Link geteilt wird und viele
  *   Nutzer gleichzeitig klicken.
  *
- *   Im Gegensatz zu 01_normal_flow.js gibt es hier KEINE schrittweise
+ *   Im Gegensatz zu normal_flow.js gibt es hier KEINE schrittweise
  *   Erhöhung – die Last springt sofort von 0 auf Maximum.
  *
  *   Testet ob der Mutex-Lock auf AppState unter hoher Last zu Starvation
@@ -65,6 +65,8 @@ const errorCount    = new Counter('errors');
 const successRate   = new Rate('success_rate');
 
 // ── Lastkurve: Spike ──────────────────────────────────────────────────────────
+// ... (Deine Imports, Konfigurationen und Metriken bleiben exakt gleich)
+
 export const options = {
     scenarios: {
         spike: {
@@ -72,28 +74,26 @@ export const options = {
             startVUs: 0,
             stages: [
                 { duration: '10s', target: 5   },  // Baseline
-                { duration: '5s',  target: 100 },  // ← Spike: sofort 100 VUs
-                { duration: '30s', target: 100 },  // Spike halten
+                { duration: '2s',  target: 500 },  // ← Spike: 100 VUs kommen angerannt
+                { duration: '30s', target: 500 },  // Halten: Hier wollen wir sehen, wie sie pollen!
                 { duration: '10s', target: 5   },  // Recovery
-                { duration: '30s', target: 5   },  // Stabilität nach Recovery
-                { duration: '10s', target: 0   },  // Cool-down
+                { duration: '20s', target: 5   },
             ],
             gracefulRampDown: '10s',
             exec: 'spikeFlow',
         },
     },
-
     thresholds: {
-        'join_latency':   ['p(95)<2000'],  // Während Spike max 2s
-        'status_latency': ['p(95)<500'],   // Status max 500ms
-        'success_rate':   ['rate>0.95'],   // max 5% Fehler während Spike
+        'join_latency':   ['p(95)<2000'],
+        'status_latency': ['p(95)<500'],
+        'success_rate':   ['rate>0.95'],
     },
 };
 
-// ── Haupt-Flow ────────────────────────────────────────────────────────────────
 export function spikeFlow() {
-    const participantId = `p-${Math.random().toString(36).slice(2, 10)}`;
+    const participantId = `p-spike-${Math.random().toString(36).slice(2, 10)}`;
 
+    // 1. Der Join passiert exakt EINMAL pro VU, wenn sie instanziiert wird
     group('join_spike', () => {
         const res = http.post(
             `${BASE_URL}/join`,
@@ -119,16 +119,28 @@ export function spikeFlow() {
         }
     });
 
-    sleep(0.2);
-
-    group('status_spike', () => {
-        const res = http.get(`${BASE_URL}/status/${SESSION_ID}/${participantId}`);
-
-        statusLatency.add(res.timings.duration);
-        const ok = check(res, { 'status 200': r => r.status === 200 });
-        successRate.add(ok);
-        if (!ok) errorCount.add(1);
-    });
-
+    // Kurz warten nach dem Join
     sleep(0.5);
+
+    // 2. Unendliche Polling-Schleife:
+    // Sobald die VU beigetreten ist, verlässt sie diese Funktion NICHT mehr,
+    // sondern pollt alle 2 Sekunden den Status, bis k6 die VU terminiert.
+    while (true) {
+        group('status_spike', () => {
+            const res = http.get(`${BASE_URL}/status/${SESSION_ID}/${participantId}`);
+
+            statusLatency.add(res.timings.duration);
+            const ok = check(res, { 'status 200': r => r.status === 200 });
+            successRate.add(ok);
+            if (!ok) {
+                errorCount.add(1);
+                // Wirft die Exception und bricht die aktuelle Iteration der VU sofort ab
+                throw new Error(`Status-Polling fehlgeschlagen! HTTP-Code: ${res.status} für Participant: ${participantId}`);
+            }
+
+        });
+
+        // Simuliert das echte Polling-Intervall deines Clients (z.B. 2 Sekunden)
+        sleep(0.2);
+    }
 }
