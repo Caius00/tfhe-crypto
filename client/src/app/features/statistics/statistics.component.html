@@ -45,6 +45,9 @@
         [value]="listInput()"
         (valueChange)="listInput.set($event)"
       />
+      @if (errorMessage()) {
+        <p class="error-inline">{{ errorMessage() }}</p>
+      }
       <div class="actions">
         <app-button label="Statistiken berechnen" (clicked)="compute()" />
         <app-button label="Zurücksetzen" type="button" (clicked)="reset()" />
@@ -73,9 +76,16 @@
       <p class="hint">
         Der Server hat alle Statistiken verschlüsselt berechnet und zurückgegeben.
         Die Entschlüsselung erfolgte lokal mit dem Client-Key.
+        @if (computeDurationMs() !== null) {
+          Berechnungszeit: <strong>{{ (computeDurationMs()! / 1000).toFixed(1) }} s</strong>
+        }
       </p>
       <table class="result-table">
         <tbody>
+          <tr>
+            <td class="label">Eingabe</td>
+            <td class="value">{{ inputNumbers().join(', ') }}</td>
+          </tr>
           <tr>
             <td class="label">Summe</td>
             <td class="value">{{ result()!.sum }}</td>

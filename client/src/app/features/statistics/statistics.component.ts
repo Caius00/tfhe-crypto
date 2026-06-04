@@ -27,8 +27,11 @@ export class StatisticsComponent {
   listInput = signal('');
   result = signal<StatisticsResult | null>(null);
   errorMessage = signal('');
+  computeDurationMs = signal<number | null>(null);
+  inputNumbers = signal<number[]>([]);
 
   private keyPair: KeyPair | null = null;
+  private computeStart = 0;
 
   constructor(
     private tfhe: TfheService,
@@ -66,17 +69,20 @@ export class StatisticsComponent {
         });
     } catch (e: any) {
       this.errorMessage.set(e.message ?? 'Ungültige Eingabe.');
-      this.step.set('error');
+      this.step.set('enter-list');
       return;
     }
 
     if (numbers.length === 0) {
       this.errorMessage.set('Bitte mindestens eine Zahl eingeben.');
-      this.step.set('error');
+      this.step.set('enter-list');
       return;
     }
     if (!this.keyPair) return;
 
+    this.inputNumbers.set(numbers);
+    this.errorMessage.set('');
+    this.computeStart = Date.now();
     this.step.set('computing');
     await new Promise((resolve) => setTimeout(resolve, 50));
 
@@ -96,11 +102,12 @@ export class StatisticsComponent {
           const average = this.tfhe.decryptInt64(this.tfhe.fromBase64(res.average), this.keyPair!.clientKey);
           const median  = this.tfhe.decryptInt32(this.tfhe.fromBase64(res.median),  this.keyPair!.clientKey);
 
+          this.computeDurationMs.set(Date.now() - this.computeStart);
           this.result.set({ sum, count: res.count, min, max, average, median });
           this.step.set('result');
         },
         error: (err) => {
-          this.errorMessage.set(`Server-Fehler: ${err.message ?? 'Unbekannter Fehler'}`);
+          this.errorMessage.set(`Server-Fehler: ${err.error ?? err.message ?? 'Unbekannter Fehler'}`);
           this.step.set('error');
         },
       });
