@@ -2,6 +2,7 @@ use std::sync::Arc;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
+use rayon::{ThreadPool, ThreadPoolBuilder};
 use serde::{Deserialize, Serialize};
 use tfhe::{set_server_key, CompressedServerKey, FheUint8, ServerKey};
 use tokio::sync::Mutex;
@@ -10,7 +11,8 @@ use crate::encrypted_image::EncryptedImage;
 
 pub struct SessionData {
     pub(crate) image: EncryptedImage,
-    pub(crate) server_key: ServerKey,
+    pub(crate) server_key: ServerKey, // TODO() remove server_key
+    pub(crate) rayon_pool: ThreadPool,
 }
 
 #[derive(Clone)]
@@ -27,9 +29,16 @@ pub struct ApiResponse {
 #[derive(Serialize, Deserialize)]
 pub struct CreateSessionRequest {
     pub(crate) compressed_server_key: Vec<u8>,
-    pub(crate) image_data: Vec<u8>,
-    pub(crate) width: usize,
-    pub(crate) height: usize,
+    pub(crate) image_data: Vec<u8>, //TODO() compress image data
+    pub(crate) width: u32,
+    pub(crate) height: u32,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct DeleteSessionResponse {
+    pub(crate) image_data: Vec<u8>, //TODO() compress image data
+    pub(crate) width: u32,
+    pub(crate) height: u32,
 }
 
 #[axum::debug_handler]
@@ -72,9 +81,18 @@ pub async fn create_session(
 
     let server_key = compressed_server_key.decompress();
 
+    let pool_key = server_key.clone();
+    let rayon_pool = ThreadPoolBuilder::new()
+        .start_handler(move |_| {
+            set_server_key(pool_key.clone());
+        })
+        .build()
+        .unwrap();
+
     *session_lock = Some(SessionData {
         image,
         server_key,
+        rayon_pool,
     });
 
     (
@@ -88,29 +106,29 @@ pub async fn create_session(
 
 pub async fn delete_session(
     State(state): State<AppState>,
-) -> (StatusCode, Json<ApiResponse>) {
-    let mut session_lock = state.current_session.lock().await;
+) -> Result<Json<DeleteSessionResponse>, (StatusCode, Json<ApiResponse>)> {
+    let session = {
+        let mut lock = state.current_session.lock().await;
 
-    if session_lock.is_none() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(ApiResponse {
-                success: false,
-                message: "No active session to delete.".into(),
-            }),
-        );
-    }
+        match lock.take() {
+            Some(session) => session,
+            None => {
+                return Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(ApiResponse {
+                        success: false,
+                        message: "No active session to delete.".into(),
+                    })
+                ));
+            }
+        }
+    };
 
-    // Setting this to None "unlocks" the server for the next user
-    *session_lock = None;
-
-    (
-        StatusCode::OK,
-        Json(ApiResponse {
-            success: true,
-            message: "Session deleted. Server is now available.".into(),
-        }),
-    )
+    Ok(Json(DeleteSessionResponse {
+        image_data: bincode::serialize(&session.image.pixels).unwrap(),
+        width: session.image.width,
+        height: session.image.height,
+    }))
 }
 
 pub struct ImageOperation;
@@ -140,15 +158,15 @@ impl ImageOperation {
         };
 
         let session = spawn_blocking(move || {
-            set_server_key(session.server_key.clone());
-
-            operation(&mut session.image);
+            session.rayon_pool.install(|| {
+                operation(&mut session.image);
+            });
 
             session
         })
             .await
             .unwrap();
-        // TODO() is this needed?
+
         {
             let mut lock = state.current_session.lock().await;
             *lock = Some(session);
@@ -191,6 +209,36 @@ impl ImageOperation {
     ) -> (StatusCode, Json<ApiResponse>) {
         Self::run_image_operation(state, |image| {
             image.rotate_90()
+        }).await
+    }
+    pub async fn rotate_180(
+        State(state): State<AppState>,
+    ) -> (StatusCode, Json<ApiResponse>) {
+        Self::run_image_operation(state, |image| {
+            image.rotate_180()
+        }).await
+    }
+    pub async fn rotate_270(
+        State(state): State<AppState>,
+    ) -> (StatusCode, Json<ApiResponse>) {
+        Self::run_image_operation(state, |image| {
+            image.rotate_270()
+        }).await
+    }
+
+    // FLIP
+    pub async fn flip_vertical(
+        State(state): State<AppState>,
+    ) -> (StatusCode, Json<ApiResponse>) {
+        Self::run_image_operation(state, |image| {
+            image.flip_vertical()
+        }).await
+    }
+    pub async fn flip_horizontal(
+        State(state): State<AppState>,
+    ) -> (StatusCode, Json<ApiResponse>) {
+        Self::run_image_operation(state, |image| {
+            image.flip_horizontal()
         }).await
     }
 }

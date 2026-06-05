@@ -8,8 +8,8 @@ use tfhe::prelude::{FheOrd, FheTrivialEncrypt, IfThenElse};
 #[derive(Serialize, Deserialize)]
 pub struct EncryptedImage {
     pub(crate) pixels: Vec<FheUint8>,
-    pub(crate) width: usize,
-    pub(crate) height: usize,
+    pub(crate) width: u32,
+    pub(crate) height: u32,
 }
 
 impl EncryptedImage {
@@ -106,7 +106,7 @@ impl EncryptedImage {
             for column in row+1..size {
                 let source_index = row * size + column;
                 let destination_index = column * size + row;
-                self.pixels.swap(source_index, destination_index);
+                self.pixels.swap(source_index as usize, destination_index as usize);
             }
         }
     }
@@ -117,7 +117,7 @@ impl EncryptedImage {
         let height = self.height;
         // idea, create new array and pick every element
         // we do this to avoid cloning
-        let mut new_encrypted_image_data: Vec<FheUint8> = Vec::with_capacity(width * height);
+        let mut new_encrypted_image_data: Vec<FheUint8> = Vec::with_capacity((width * height) as usize);
 
         // loop through new vec so that values are stored next to each other in memory
         for new_row in 0..width {
@@ -127,7 +127,7 @@ impl EncryptedImage {
                 let old_column = new_row;
 
                 // height and width reverse due to rotation
-                let old_index = old_row * width + old_column;
+                let old_index = (old_row * width + old_column) as usize;
 
                 new_encrypted_image_data.push(self.pixels[old_index].clone())
             }
@@ -141,7 +141,7 @@ impl EncryptedImage {
         let height = self.height;
         // idea, create new array and pick every element
         // we do this to avoid cloning
-        let mut new_encrypted_image_data: Vec<FheUint8> = Vec::with_capacity(width * height);
+        let mut new_encrypted_image_data: Vec<FheUint8> = Vec::with_capacity((width * height) as usize);
 
         // loop through new vec so that values are stored next to each other in memory
         for new_row in 0..width {
@@ -151,7 +151,7 @@ impl EncryptedImage {
                 let old_column = new_row;
 
                 // height and width reverse due to rotation
-                let old_index = old_row * width + old_column;
+                let old_index = (old_row * width + old_column) as usize;
 
                 new_encrypted_image_data.push(self.pixels[old_index].clone())
             }
@@ -163,7 +163,7 @@ impl EncryptedImage {
     pub fn flip_horizontal(&mut self) {
         let now = Instant::now();
 
-        for row in self.pixels.chunks_mut(self.width) {
+        for row in self.pixels.chunks_mut(self.width as usize) {
             row.reverse();
         }
 
@@ -177,9 +177,9 @@ impl EncryptedImage {
         // swaps top and bottom row and removes them, until all rows processed
         let mut data = &mut self.pixels[..];
         // while two rows remaining
-        while data.len() >= self.width * 2 {
-            let (top_row, rest) = data.split_at_mut(self.width);
-            let (middle, bottom_row) = rest.split_at_mut(rest.len() - self.width);
+        while data.len() >= (self.width * 2) as usize {
+            let (top_row, rest) = data.split_at_mut(self.width as usize);
+            let (middle, bottom_row) = rest.split_at_mut(rest.len() - self.width as usize);
 
             top_row.swap_with_slice(bottom_row);
             data = middle;
