@@ -1,6 +1,8 @@
 # Spezifikation
 **für 02-encrypted-age-verification**
-
+> [!NOTE]
+> Pro umgesetztem Use Case sind die folgenden acht Sektionen verpflichtend. Die Sektionsstruktur ist für alle UCs identisch; die Detailtiefe darf je nach UC-Komplexität variieren (UC2 wird hier zwangsläufig weniger Inhalt haben als UC9).
+---
 ---
 
 ### Funktionsbeschreibung
@@ -68,7 +70,7 @@ Führt eine verschlüsselte Altersverifikation durch.
 
 ### Trust- und Threat-Model
 
-| Datum                           | Am Server klar | Am Server verschlüsselt | Nur am Client |
+|                                 | Am Server klar | Am Server verschlüsselt | Nur am Client |
 |---------------------------------|:--------------:|:-----------------------:|:-------------:|
 | Alter (numerischer Wert)        |                | X                       |               |
 | Ergebnis (volljährig: ja/nein)  |                | X                       |               |
@@ -118,7 +120,6 @@ Nicht garantiert werden:
 - Schutz vor einem Server, der `age_check` durch eine manipulierte Funktion ersetzt
 - Schutz vor Traffic-Analyse (Payload-Größe, Timing)
 - Authentizität des Clients (kein ZKP, dass der Client den ServerKey korrekt erzeugt hat)
-- Schutz vor Replay-Angriffen (kein Nonce, kein Ciphertext-Tracking)
 
 **Konkret bedeutet das:** Der Server kennt nicht das Alter des Nutzers und kann nicht feststellen, ob das Ergebnis positiv oder negativ ausgefallen ist. Sichtbar bleiben ausschließlich Zeitpunkt, Herkunft und Häufigkeit der Anfragen.
 
@@ -188,7 +189,7 @@ Die Performance- und Stresstests wurden auf einem virtuellen KVM-Server von Netc
 
 Es wurde ein einziger relevanter Endpunkt getestet: `POST /`. Alle anderen Endpunkte (`/health`, `/docs`) stellen nur Grundrauschen dar und wurden nicht gemessen.
 
-Anders als bei UC03, wo der ServerKey einmalig beim Session-Start hinterlegt wird, überträgt UC02 den `CompressedServerKey` (~80 MB) bei **jedem einzelnen Request**. Die gemessene Gesamtlatenz setzt sich daher aus drei Anteilen zusammen:
+Die gemessene Gesamtlatenz setzt sich daher aus drei Anteilen zusammen:
 
 1. Netzwerkübertragung des ~80 MB ServerKey (dominanter Anteil bei Remote-Messung)
 2. `CompressedServerKey::decompress()` – rechenintensive Dekomprimierung
@@ -239,7 +240,7 @@ Die Throughput-Grenze liegt bei einem parallelen Request. Jeder weitere gleichze
 
 - Der Use Case ist vollständig zustandslos. Es gibt keine Session, keine Audit-Log und keine Möglichkeit, Ergebnisse serverseitig zu speichern oder abzurufen.
 
-- Der `CompressedServerKey` (~80 MB) wird bei jedem einzelnen Request vom Client mitgeschickt, deserialisiert und dekomprimiert. Anders als bei UC03, wo der ServerKey einmalig in der Session hinterlegt wird, gibt es hier kein serverseitiges State-Management. Dieses Design ist eine direkte Konsequenz der Zustandslosigkeit: Da jeder Client sein eigenes Schlüsselpaar generiert, kann kein globaler ServerKey serverseitig gespeichert werden, ohne das Sicherheitsmodell zu brechen. Ein gespeicherter ServerKey eines anderen Clients würde es diesem ermöglichen, fremde Ergebnisse zu entschlüsseln. Die Folge ist, dass Netzwerkübertragung und Dekomprimierung die Latenz dominieren und ein produktiver Einsatz über das Internet praktisch nicht skaliert.
+- Der `CompressedServerKey` (~80 MB) wird bei jedem einzelnen Request vom Client mitgeschickt, deserialisiert und dekomprimiert.Dieses Design ist eine direkte Konsequenz der Zustandslosigkeit: Da jeder Client sein eigenes Schlüsselpaar generiert, kann kein globaler ServerKey serverseitig gespeichert werden, ohne das Sicherheitsmodell zu brechen. Ein gespeicherter ServerKey eines anderen Clients würde es diesem ermöglichen, fremde Ergebnisse zu entschlüsseln. Die Folge ist, dass Netzwerkübertragung und Dekomprimierung die Latenz dominieren und ein produktiver Einsatz über das Internet praktisch nicht skaliert.
 
 - Der Server prüft nicht, ob ein `encrypted_age`-Ciphertext bereits zuvor verwendet wurde. Ein Angreifer, der einen Ciphertext abfängt, kann ihn beliebig oft einreichen.
 
