@@ -2,5 +2,5 @@
   "nr": "01",
   "service": "encrypted-key-value-store",
   "dir": "01-encrypted-key-value-store",
-  "version": "0.1.18"
+  "version": "0.1.19"
 }

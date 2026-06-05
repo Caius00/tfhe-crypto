@@ -581,7 +581,7 @@ checksum = "91622ff5e7162018101f2fea40d6ebf4a78bbe5a49736a2020649edf9693679e"
 
 [[package]]
 name = "encrypted-age-verification"
-version = "0.1.20"
+version = "0.1.21"
 dependencies = [
  "aide",
  "axum 0.8.9",
@@ -601,7 +601,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-genomics"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "axum 0.8.9",
  "health",
@@ -613,7 +613,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-image-processing"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "axum 0.8.9",
  "health",
@@ -625,7 +625,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-key-value-store"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "axum 0.8.9",
  "health",
@@ -637,7 +637,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-leaderboard"
-version = "0.1.23"
+version = "0.1.24"
 dependencies = [
  "aide",
  "anyhow",
@@ -664,7 +664,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-program-execution"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "axum 0.8.9",
  "health",
@@ -676,7 +676,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-statistics-service"
-version = "0.1.19"
+version = "0.1.20"
 dependencies = [
  "axum 0.8.9",
  "base64",
@@ -693,7 +693,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-voting-polling"
-version = "0.1.27"
+version = "0.1.28"
 dependencies = [
  "aide",
  "axum 0.8.9",
@@ -1922,14 +1922,22 @@ checksum = "490dcfcbfef26be6800d11870ff2df8774fa6e86d047e3e8c8a76b25655e41ca"
 
 [[package]]
 name = "sealed-bid-auction"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
+ "aide",
  "axum 0.8.9",
+ "base64",
+ "bincode",
  "health",
+ "openapi-docs",
+ "schemars",
  "serde",
  "serde_json",
+ "serial_test",
  "tfhe",
  "tokio",
+ "tower 0.5.3",
+ "tower-http",
 ]
 
 [[package]]
