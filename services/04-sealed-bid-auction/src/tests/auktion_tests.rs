@@ -127,8 +127,7 @@ async fn test_auction_successful_flow() {
     let ergebnis: bool = ist_b_groesser.decrypt(client_key);
 
     assert!(
-            ergebnis, 
-            "Mathematischer FHE-Check fehlgeschlagen: Gebot B (750) muss als größer als Gebot A (500) evaluiert werden!"
+            ergebnis,"Mathematischer FHE-Check fehlgeschlagen: Gebot B (750) muss als größer als Gebot A (500) evaluiert werden!"
         );
 
     println!("✅ test: Vollständiger FHE-Auktionsdurchlauf inklusive Entschlüsselung erfolgreich!");
