@@ -1,4 +1,7 @@
 use super::*;
+use std::fs;
+
+
 use axum::{
     body::Body,
     http::{Request, StatusCode},
@@ -113,6 +116,9 @@ async fn test_verify_age_full_roundtrip() {
 
     let sk_payload = general_purpose::STANDARD.encode(bincode::serialize(server_key).unwrap());
     let age_payload = general_purpose::STANDARD.encode(bincode::serialize(&encrypted_age).unwrap());
+
+    fs::write("payload_age.txt", &age_payload).unwrap();
+    fs::write("payload_sk.txt", &sk_payload).unwrap();
 
     let payload = AgeRequest {
         encrypted_age: age_payload,
