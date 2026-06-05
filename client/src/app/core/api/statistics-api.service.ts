@@ -6,6 +6,8 @@ import { SERVICE_URLS } from './service-urls';
 interface StatisticsRequest {
   encrypted_list: string[];
   server_key: string;
+  /** Bitbreite der Eingabewerte: 8, 16 oder 32. Wird vom Client auto-erkannt. */
+  bit_width: 8 | 16 | 32;
 }
 
 export interface StatisticsResult {
@@ -17,22 +19,32 @@ export interface StatisticsResult {
   median: string;
 }
 
+/**
+ * HTTP-Client für den Statistics-Service (Service 05).
+ * Sendet verschlüsselte Ganzzahlen-Listen an das Backend und empfängt
+ * homomorph berechnete, verschlüsselte Statistiken.
+ */
 @Injectable({ providedIn: 'root' })
 export class StatisticsApiService {
-  private readonly url = SERVICE_URLS.statistics.path;
+  private readonly serviceUrl = SERVICE_URLS.statistics.path;
 
-  constructor(private http: HttpClient) {}
+  constructor(private readonly httpClient: HttpClient) {}
 
   /**
    * Sendet eine verschlüsselte Ganzzahlen-Liste + Server-Key ans Backend.
-   * Der Server berechnet alle Statistiken homomorph und gibt verschlüsselte
-   * Ergebnisse zurück.
+   * `bitWidth` gibt an, mit welchem FHE-Typ die Werte verschlüsselt wurden —
+   * der Server wählt darauf basierend den passenden generischen Code-Pfad.
    */
-  compute(encryptedList: string[], serverKeyB64: string): Observable<StatisticsResult> {
-    const body: StatisticsRequest = {
-      encrypted_list: encryptedList,
-      server_key: serverKeyB64,
+  compute(
+    encryptedNumberList: string[],
+    serverKeyBase64: string,
+    bitWidth: 8 | 16 | 32,
+  ): Observable<StatisticsResult> {
+    const requestBody: StatisticsRequest = {
+      encrypted_list: encryptedNumberList,
+      server_key: serverKeyBase64,
+      bit_width: bitWidth,
     };
-    return this.http.post<StatisticsResult>(this.url, body);
+    return this.httpClient.post<StatisticsResult>(this.serviceUrl, requestBody);
   }
 }
