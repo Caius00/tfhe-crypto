@@ -1,8 +1,8 @@
-use std::ops::Add;
 use rayon::prelude::*;
+use std::ops::Add;
+use tfhe::prelude::{CastInto, FheOrd, IfThenElse};
 use tfhe::FheBool;
 use tfhe::{FheInt16, FheInt32, FheInt64};
-use tfhe::prelude::{CastInto, FheOrd, IfThenElse};
 
 /// Ermöglicht homomorphe Division durch die Listenlänge mit dem typ-passenden Skalar.
 ///
@@ -14,13 +14,19 @@ pub(crate) trait DivideByElementCount: Sized {
 }
 
 impl DivideByElementCount for FheInt16 {
-    fn divide_by_element_count(self, element_count: usize) -> Self { self / (element_count as i16) }
+    fn divide_by_element_count(self, element_count: usize) -> Self {
+        self / (element_count as i16)
+    }
 }
 impl DivideByElementCount for FheInt32 {
-    fn divide_by_element_count(self, element_count: usize) -> Self { self / (element_count as i32) }
+    fn divide_by_element_count(self, element_count: usize) -> Self {
+        self / (element_count as i32)
+    }
 }
 impl DivideByElementCount for FheInt64 {
-    fn divide_by_element_count(self, element_count: usize) -> Self { self / (element_count as i64) }
+    fn divide_by_element_count(self, element_count: usize) -> Self {
+        self / (element_count as i64)
+    }
 }
 
 /// Berechnet die Summe aller Elemente homomorph.
@@ -105,7 +111,7 @@ where
     // .gt() nimmt second by value — clone damit second für if_then_else erhalten bleibt
     let is_first_larger = first.gt(second.clone());
     let smaller_value = is_first_larger.if_then_else(&second, &first);
-    let larger_value  = is_first_larger.if_then_else(&first, &second);
+    let larger_value = is_first_larger.if_then_else(&first, &second);
     (smaller_value, larger_value)
 }
 
@@ -123,7 +129,11 @@ fn batcher_network(element_count: usize) -> Vec<Vec<(usize, usize)>> {
     if raw_comparators.is_empty() {
         return vec![];
     }
-    let max_depth = raw_comparators.iter().map(|comparator| comparator.2).max().unwrap();
+    let max_depth = raw_comparators
+        .iter()
+        .map(|comparator| comparator.2)
+        .max()
+        .unwrap();
     let mut rounds: Vec<Vec<(usize, usize)>> = vec![Vec::new(); max_depth + 1];
     for (first_index, second_index, depth) in raw_comparators {
         rounds[depth].push((first_index, second_index));
@@ -142,9 +152,15 @@ fn batcher_sort(
         return depth;
     }
     let mid = low + (high - low) / 2;
-    let depth_after_left  = batcher_sort(low, mid, depth, comparators_out);
+    let depth_after_left = batcher_sort(low, mid, depth, comparators_out);
     let depth_after_right = batcher_sort(mid, high, depth, comparators_out);
-    batcher_merge(low, high, 1, depth_after_left.max(depth_after_right), comparators_out)
+    batcher_merge(
+        low,
+        high,
+        1,
+        depth_after_left.max(depth_after_right),
+        comparators_out,
+    )
 }
 
 fn batcher_merge(
@@ -163,7 +179,7 @@ fn batcher_merge(
         return depth + 1;
     }
     let depth_after_even = batcher_merge(low, high, 2 * step, depth, comparators_out);
-    let depth_after_odd  = batcher_merge(low + step, high, 2 * step, depth, comparators_out);
+    let depth_after_odd = batcher_merge(low + step, high, 2 * step, depth, comparators_out);
     let merge_depth = depth_after_even.max(depth_after_odd);
     let mut current_index = low + step;
     while current_index + step < high {
@@ -202,7 +218,7 @@ where
             .collect();
 
         for (left_index, right_index, smaller, larger) in sorted_pairs {
-            partially_sorted[left_index]  = smaller;
+            partially_sorted[left_index] = smaller;
             partially_sorted[right_index] = larger;
         }
     }

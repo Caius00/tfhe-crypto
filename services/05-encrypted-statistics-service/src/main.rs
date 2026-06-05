@@ -4,13 +4,13 @@ mod statistics;
 #[cfg(test)]
 mod statistics_tests;
 
-use std::ops::Add;
+use crate::statistics::DivideByElementCount;
 use axum::{http::StatusCode, routing::post, Json, Router};
 use base64::{engine::general_purpose, Engine as _};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use tfhe::{CompressedServerKey, FheBool, FheInt8, FheInt16, FheInt32, FheInt64};
+use std::ops::Add;
 use tfhe::prelude::{CastInto, FheOrd, IfThenElse};
-use crate::statistics::DivideByElementCount;
+use tfhe::{CompressedServerKey, FheBool, FheInt16, FheInt32, FheInt64, FheInt8};
 
 /// Anfrage des Clients an den Statistics-Service.
 #[derive(Deserialize, Serialize)]
@@ -51,15 +51,22 @@ fn deserialize_encrypted_list<T: DeserializeOwned>(
     base64_encoded_list
         .iter()
         .map(|base64_item| {
-            let raw_bytes = general_purpose::STANDARD
-                .decode(base64_item)
-                .map_err(|decode_error| {
-                    (StatusCode::BAD_REQUEST, format!("Ungültiger Item-Base64: {}", decode_error))
-                })?;
+            let raw_bytes =
+                general_purpose::STANDARD
+                    .decode(base64_item)
+                    .map_err(|decode_error| {
+                        (
+                            StatusCode::BAD_REQUEST,
+                            format!("Ungültiger Item-Base64: {}", decode_error),
+                        )
+                    })?;
             bincode::deserialize(&raw_bytes).map_err(|deserialize_error| {
                 (
                     StatusCode::BAD_REQUEST,
-                    format!("Fehler beim Deserialisieren des Ciphertexts: {}", deserialize_error),
+                    format!(
+                        "Fehler beim Deserialisieren des Ciphertexts: {}",
+                        deserialize_error
+                    ),
                 )
             })
         })
@@ -79,28 +86,35 @@ fn compute_statistics_typed<InputType, WiderOutputType>(
 ) -> Result<Json<StatisticsResponse>, (StatusCode, String)>
 where
     InputType: Clone + FheOrd + CastInto<WiderOutputType> + Sync + Send + Serialize,
-    WiderOutputType: Add<WiderOutputType, Output = WiderOutputType> + DivideByElementCount + Send + Serialize,
+    WiderOutputType:
+        Add<WiderOutputType, Output = WiderOutputType> + DivideByElementCount + Send + Serialize,
     FheBool: IfThenElse<InputType>,
 {
     let (encrypted_sum, encrypted_min, encrypted_max, encrypted_average, encrypted_median) =
         tokio::task::block_in_place(|| {
             fhe_engine.install(|| {
-                let encrypted_sum:     WiderOutputType = statistics::sum(&encrypted_input_list);
-                let encrypted_min:     InputType       = statistics::min(&encrypted_input_list);
-                let encrypted_max:     InputType       = statistics::max(&encrypted_input_list);
+                let encrypted_sum: WiderOutputType = statistics::sum(&encrypted_input_list);
+                let encrypted_min: InputType = statistics::min(&encrypted_input_list);
+                let encrypted_max: InputType = statistics::max(&encrypted_input_list);
                 let encrypted_average: WiderOutputType = statistics::average(&encrypted_input_list);
-                let encrypted_median:  InputType       = statistics::median(&encrypted_input_list);
-                (encrypted_sum, encrypted_min, encrypted_max, encrypted_average, encrypted_median)
+                let encrypted_median: InputType = statistics::median(&encrypted_input_list);
+                (
+                    encrypted_sum,
+                    encrypted_min,
+                    encrypted_max,
+                    encrypted_average,
+                    encrypted_median,
+                )
             })
         });
 
     Ok(Json(StatisticsResponse {
-        sum:     to_base64(&encrypted_sum)?,
-        count:   element_count,
-        min:     to_base64(&encrypted_min)?,
-        max:     to_base64(&encrypted_max)?,
+        sum: to_base64(&encrypted_sum)?,
+        count: element_count,
+        min: to_base64(&encrypted_min)?,
+        max: to_base64(&encrypted_max)?,
         average: to_base64(&encrypted_average)?,
-        median:  to_base64(&encrypted_median)?,
+        median: to_base64(&encrypted_median)?,
     }))
 }
 
@@ -125,26 +139,34 @@ async fn compute_statistics(
     let server_key_bytes = general_purpose::STANDARD
         .decode(&request.server_key)
         .map_err(|decode_error| {
-            (StatusCode::BAD_REQUEST, format!("Ungültiger ServerKey Base64: {}", decode_error))
-        })?;
-
-    let compressed_server_key: CompressedServerKey =
-        bincode::deserialize(&server_key_bytes).map_err(|deserialize_error| {
             (
                 StatusCode::BAD_REQUEST,
-                format!("Fehler beim Deserialisieren des ServerKey: {}", deserialize_error),
+                format!("Ungültiger ServerKey Base64: {}", decode_error),
             )
         })?;
 
-    let fhe_engine =
-        tokio::task::block_in_place(|| {
-            fhe::FheEngine::from_server_key(compressed_server_key.decompress())
-        })
-        .map_err(|engine_error| (StatusCode::BAD_REQUEST, engine_error))?;
+    let compressed_server_key: CompressedServerKey = bincode::deserialize(&server_key_bytes)
+        .map_err(|deserialize_error| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "Fehler beim Deserialisieren des ServerKey: {}",
+                    deserialize_error
+                ),
+            )
+        })?;
+
+    let fhe_engine = tokio::task::block_in_place(|| {
+        fhe::FheEngine::from_server_key(compressed_server_key.decompress())
+    })
+    .map_err(|engine_error| (StatusCode::BAD_REQUEST, engine_error))?;
 
     // 2. Leere Liste abfangen (vor der teuren Deserialisierung der Ciphertexte)
     if request.encrypted_list.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "Die Liste darf nicht leer sein".to_string()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Die Liste darf nicht leer sein".to_string(),
+        ));
     }
 
     let element_count = request.encrypted_list.len() as u64;
@@ -154,16 +176,31 @@ async fn compute_statistics(
     //    laufen intern auf WiderOutputType um Overflow zu verhindern.
     match request.bit_width {
         8 => {
-            let encrypted_input_list = deserialize_encrypted_list::<FheInt8>(&request.encrypted_list)?;
-            compute_statistics_typed::<FheInt8, FheInt16>(encrypted_input_list, fhe_engine, element_count)
+            let encrypted_input_list =
+                deserialize_encrypted_list::<FheInt8>(&request.encrypted_list)?;
+            compute_statistics_typed::<FheInt8, FheInt16>(
+                encrypted_input_list,
+                fhe_engine,
+                element_count,
+            )
         }
         16 => {
-            let encrypted_input_list = deserialize_encrypted_list::<FheInt16>(&request.encrypted_list)?;
-            compute_statistics_typed::<FheInt16, FheInt32>(encrypted_input_list, fhe_engine, element_count)
+            let encrypted_input_list =
+                deserialize_encrypted_list::<FheInt16>(&request.encrypted_list)?;
+            compute_statistics_typed::<FheInt16, FheInt32>(
+                encrypted_input_list,
+                fhe_engine,
+                element_count,
+            )
         }
         32 => {
-            let encrypted_input_list = deserialize_encrypted_list::<FheInt32>(&request.encrypted_list)?;
-            compute_statistics_typed::<FheInt32, FheInt64>(encrypted_input_list, fhe_engine, element_count)
+            let encrypted_input_list =
+                deserialize_encrypted_list::<FheInt32>(&request.encrypted_list)?;
+            compute_statistics_typed::<FheInt32, FheInt64>(
+                encrypted_input_list,
+                fhe_engine,
+                element_count,
+            )
         }
         unsupported_bit_width => Err((
             StatusCode::BAD_REQUEST,
@@ -186,7 +223,9 @@ pub(crate) fn create_app() -> Router {
 #[tokio::main]
 async fn main() {
     let listening_address = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));
-    let tcp_listener = tokio::net::TcpListener::bind(listening_address).await.unwrap();
+    let tcp_listener = tokio::net::TcpListener::bind(listening_address)
+        .await
+        .unwrap();
     println!("Statistics Service läuft auf http://{}", listening_address);
     axum::serve(tcp_listener, create_app()).await.unwrap();
 }

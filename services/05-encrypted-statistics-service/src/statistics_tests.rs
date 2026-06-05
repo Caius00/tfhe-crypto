@@ -7,7 +7,7 @@ use base64::{engine::general_purpose, Engine as _};
 use serial_test::serial;
 use std::sync::OnceLock;
 use tfhe::prelude::*;
-use tfhe::{ClientKey, CompressedServerKey, ConfigBuilder, FheInt8, FheInt16, FheInt32, FheInt64};
+use tfhe::{ClientKey, CompressedServerKey, ConfigBuilder, FheInt16, FheInt32, FheInt64, FheInt8};
 use tower::ServiceExt;
 
 // Keys werden einmalig für alle FHE-Tests generiert.
@@ -145,21 +145,21 @@ fn test_statistics_functions_int16() {
         .map(|&value| FheInt16::encrypt(value, client_key))
         .collect();
 
-    let encrypted_sum: FheInt32     = statistics::sum(&encrypted_input);
+    let encrypted_sum: FheInt32 = statistics::sum(&encrypted_input);
     let encrypted_average: FheInt32 = statistics::average(&encrypted_input);
 
-    let decrypted_sum: i32     = encrypted_sum.decrypt(client_key);
-    let decrypted_min: i16     = statistics::min(&encrypted_input).decrypt(client_key);
-    let decrypted_max: i16     = statistics::max(&encrypted_input).decrypt(client_key);
+    let decrypted_sum: i32 = encrypted_sum.decrypt(client_key);
+    let decrypted_min: i16 = statistics::min(&encrypted_input).decrypt(client_key);
+    let decrypted_max: i16 = statistics::max(&encrypted_input).decrypt(client_key);
     let decrypted_average: i32 = encrypted_average.decrypt(client_key);
-    let decrypted_median: i16  = statistics::median(&encrypted_input).decrypt(client_key);
+    let decrypted_median: i16 = statistics::median(&encrypted_input).decrypt(client_key);
 
     assert_eq!(statistics::count(&encrypted_input), 5, "count");
-    assert_eq!(decrypted_sum,     150, "sum");
-    assert_eq!(decrypted_min,      10, "min");
-    assert_eq!(decrypted_max,      50, "max");
-    assert_eq!(decrypted_average,  30, "average");
-    assert_eq!(decrypted_median,   30, "median (n=5, Index 2)");
+    assert_eq!(decrypted_sum, 150, "sum");
+    assert_eq!(decrypted_min, 10, "min");
+    assert_eq!(decrypted_max, 50, "max");
+    assert_eq!(decrypted_average, 30, "average");
+    assert_eq!(decrypted_median, 30, "median (n=5, Index 2)");
 }
 
 /// n=1 — Sonderpfad in median() (if element_count == 1) und Trivialfall für alle anderen Funktionen.
@@ -173,21 +173,21 @@ fn test_statistics_single_element() {
 
     let encrypted_single_element = vec![FheInt16::encrypt(42i16, client_key)];
 
-    let encrypted_sum: FheInt32     = statistics::sum(&encrypted_single_element);
+    let encrypted_sum: FheInt32 = statistics::sum(&encrypted_single_element);
     let encrypted_average: FheInt32 = statistics::average(&encrypted_single_element);
 
-    let decrypted_sum: i32     = encrypted_sum.decrypt(client_key);
-    let decrypted_min: i16     = statistics::min(&encrypted_single_element).decrypt(client_key);
-    let decrypted_max: i16     = statistics::max(&encrypted_single_element).decrypt(client_key);
+    let decrypted_sum: i32 = encrypted_sum.decrypt(client_key);
+    let decrypted_min: i16 = statistics::min(&encrypted_single_element).decrypt(client_key);
+    let decrypted_max: i16 = statistics::max(&encrypted_single_element).decrypt(client_key);
     let decrypted_average: i32 = encrypted_average.decrypt(client_key);
-    let decrypted_median: i16  = statistics::median(&encrypted_single_element).decrypt(client_key);
+    let decrypted_median: i16 = statistics::median(&encrypted_single_element).decrypt(client_key);
 
     assert_eq!(statistics::count(&encrypted_single_element), 1, "count");
-    assert_eq!(decrypted_sum,     42, "sum");
-    assert_eq!(decrypted_min,     42, "min");
-    assert_eq!(decrypted_max,     42, "max");
+    assert_eq!(decrypted_sum, 42, "sum");
+    assert_eq!(decrypted_min, 42, "min");
+    assert_eq!(decrypted_max, 42, "max");
     assert_eq!(decrypted_average, 42, "average");
-    assert_eq!(decrypted_median,  42, "median");
+    assert_eq!(decrypted_median, 42, "median");
 }
 
 /// Gerades n → Lower Median.
@@ -208,10 +208,10 @@ fn test_statistics_even_n_lower_median() {
 
     let encrypted_average: FheInt32 = statistics::average(&encrypted_input);
 
-    let decrypted_median: i16  = statistics::median(&encrypted_input).decrypt(client_key);
+    let decrypted_median: i16 = statistics::median(&encrypted_input).decrypt(client_key);
     let decrypted_average: i32 = encrypted_average.decrypt(client_key);
 
-    assert_eq!(decrypted_median,  20, "lower median (nicht 25)");
+    assert_eq!(decrypted_median, 20, "lower median (nicht 25)");
     assert_eq!(decrypted_average, 25, "average");
 }
 
@@ -231,20 +231,20 @@ fn test_statistics_negative_values() {
         .map(|&value| FheInt16::encrypt(value, client_key))
         .collect();
 
-    let encrypted_sum: FheInt32     = statistics::sum(&encrypted_input);
+    let encrypted_sum: FheInt32 = statistics::sum(&encrypted_input);
     let encrypted_average: FheInt32 = statistics::average(&encrypted_input);
 
-    let decrypted_sum: i32     = encrypted_sum.decrypt(client_key);
-    let decrypted_min: i16     = statistics::min(&encrypted_input).decrypt(client_key);
-    let decrypted_max: i16     = statistics::max(&encrypted_input).decrypt(client_key);
+    let decrypted_sum: i32 = encrypted_sum.decrypt(client_key);
+    let decrypted_min: i16 = statistics::min(&encrypted_input).decrypt(client_key);
+    let decrypted_max: i16 = statistics::max(&encrypted_input).decrypt(client_key);
     let decrypted_average: i32 = encrypted_average.decrypt(client_key);
-    let decrypted_median: i16  = statistics::median(&encrypted_input).decrypt(client_key);
+    let decrypted_median: i16 = statistics::median(&encrypted_input).decrypt(client_key);
 
-    assert_eq!(decrypted_sum,      0, "sum");
-    assert_eq!(decrypted_min,    -10, "min");
-    assert_eq!(decrypted_max,     10, "max");
-    assert_eq!(decrypted_average,  0, "average");
-    assert_eq!(decrypted_median,  -5, "lower median");
+    assert_eq!(decrypted_sum, 0, "sum");
+    assert_eq!(decrypted_min, -10, "min");
+    assert_eq!(decrypted_max, 10, "max");
+    assert_eq!(decrypted_average, 0, "average");
+    assert_eq!(decrypted_median, -5, "lower median");
 }
 
 /// Average Truncation toward zero (nicht Floor).
@@ -263,8 +263,11 @@ fn test_average_truncation_toward_zero() {
         .collect();
 
     let encrypted_average: FheInt32 = statistics::average(&encrypted_input);
-    let decrypted_average: i32      = encrypted_average.decrypt(client_key);
-    assert_eq!(decrypted_average, -2, "truncation toward zero: -5/2 = -2, nicht -3");
+    let decrypted_average: i32 = encrypted_average.decrypt(client_key);
+    assert_eq!(
+        decrypted_average, -2,
+        "truncation toward zero: -5/2 = -2, nicht -3"
+    );
 }
 
 // --- Roundtrip-Tests (HTTP) ---
@@ -304,36 +307,55 @@ async fn test_compute_statistics_roundtrip_int16() {
 
     assert_eq!(http_response.status(), StatusCode::OK);
 
-    let response_body_bytes =
-        axum::body::to_bytes(http_response.into_body(), 50 * 1024 * 1024)
-            .await
-            .unwrap();
+    let response_body_bytes = axum::body::to_bytes(http_response.into_body(), 50 * 1024 * 1024)
+        .await
+        .unwrap();
     let statistics_response: StatisticsResponse =
         serde_json::from_slice(&response_body_bytes).unwrap();
 
-    let encrypted_sum: FheInt32 =
-        bincode::deserialize(&general_purpose::STANDARD.decode(&statistics_response.sum).unwrap()).unwrap();
-    let encrypted_min: FheInt16 =
-        bincode::deserialize(&general_purpose::STANDARD.decode(&statistics_response.min).unwrap()).unwrap();
-    let encrypted_max: FheInt16 =
-        bincode::deserialize(&general_purpose::STANDARD.decode(&statistics_response.max).unwrap()).unwrap();
-    let encrypted_average: FheInt32 =
-        bincode::deserialize(&general_purpose::STANDARD.decode(&statistics_response.average).unwrap()).unwrap();
-    let encrypted_median: FheInt16 =
-        bincode::deserialize(&general_purpose::STANDARD.decode(&statistics_response.median).unwrap()).unwrap();
+    let encrypted_sum: FheInt32 = bincode::deserialize(
+        &general_purpose::STANDARD
+            .decode(&statistics_response.sum)
+            .unwrap(),
+    )
+    .unwrap();
+    let encrypted_min: FheInt16 = bincode::deserialize(
+        &general_purpose::STANDARD
+            .decode(&statistics_response.min)
+            .unwrap(),
+    )
+    .unwrap();
+    let encrypted_max: FheInt16 = bincode::deserialize(
+        &general_purpose::STANDARD
+            .decode(&statistics_response.max)
+            .unwrap(),
+    )
+    .unwrap();
+    let encrypted_average: FheInt32 = bincode::deserialize(
+        &general_purpose::STANDARD
+            .decode(&statistics_response.average)
+            .unwrap(),
+    )
+    .unwrap();
+    let encrypted_median: FheInt16 = bincode::deserialize(
+        &general_purpose::STANDARD
+            .decode(&statistics_response.median)
+            .unwrap(),
+    )
+    .unwrap();
 
-    let decrypted_sum: i32     = encrypted_sum.decrypt(client_key);
-    let decrypted_min: i16     = encrypted_min.decrypt(client_key);
-    let decrypted_max: i16     = encrypted_max.decrypt(client_key);
+    let decrypted_sum: i32 = encrypted_sum.decrypt(client_key);
+    let decrypted_min: i16 = encrypted_min.decrypt(client_key);
+    let decrypted_max: i16 = encrypted_max.decrypt(client_key);
     let decrypted_average: i32 = encrypted_average.decrypt(client_key);
-    let decrypted_median: i16  = encrypted_median.decrypt(client_key);
+    let decrypted_median: i16 = encrypted_median.decrypt(client_key);
 
-    assert_eq!(statistics_response.count, 3,  "count");
-    assert_eq!(decrypted_sum,            60,  "sum");
-    assert_eq!(decrypted_min,            10,  "min");
-    assert_eq!(decrypted_max,            30,  "max");
-    assert_eq!(decrypted_average,        20,  "average");
-    assert_eq!(decrypted_median,         20,  "median");
+    assert_eq!(statistics_response.count, 3, "count");
+    assert_eq!(decrypted_sum, 60, "sum");
+    assert_eq!(decrypted_min, 10, "min");
+    assert_eq!(decrypted_max, 30, "max");
+    assert_eq!(decrypted_average, 20, "average");
+    assert_eq!(decrypted_median, 20, "median");
 }
 
 /// Roundtrip mit bit_width=8 — prüft dass die Auto-Bitbreiten-Erkennung auch für
@@ -367,24 +389,31 @@ async fn test_compute_statistics_roundtrip_int8() {
 
     assert_eq!(http_response.status(), StatusCode::OK);
 
-    let response_body_bytes =
-        axum::body::to_bytes(http_response.into_body(), 50 * 1024 * 1024)
-            .await
-            .unwrap();
+    let response_body_bytes = axum::body::to_bytes(http_response.into_body(), 50 * 1024 * 1024)
+        .await
+        .unwrap();
     let statistics_response: StatisticsResponse =
         serde_json::from_slice(&response_body_bytes).unwrap();
 
-    let encrypted_sum: FheInt16 =
-        bincode::deserialize(&general_purpose::STANDARD.decode(&statistics_response.sum).unwrap()).unwrap();
-    let encrypted_median: FheInt8 =
-        bincode::deserialize(&general_purpose::STANDARD.decode(&statistics_response.median).unwrap()).unwrap();
+    let encrypted_sum: FheInt16 = bincode::deserialize(
+        &general_purpose::STANDARD
+            .decode(&statistics_response.sum)
+            .unwrap(),
+    )
+    .unwrap();
+    let encrypted_median: FheInt8 = bincode::deserialize(
+        &general_purpose::STANDARD
+            .decode(&statistics_response.median)
+            .unwrap(),
+    )
+    .unwrap();
 
-    let decrypted_sum: i16    = encrypted_sum.decrypt(client_key);
-    let decrypted_median: i8  = encrypted_median.decrypt(client_key);
+    let decrypted_sum: i16 = encrypted_sum.decrypt(client_key);
+    let decrypted_median: i8 = encrypted_median.decrypt(client_key);
 
-    assert_eq!(statistics_response.count, 3,  "count");
-    assert_eq!(decrypted_sum,            60,  "sum");
-    assert_eq!(decrypted_median,         20,  "median");
+    assert_eq!(statistics_response.count, 3, "count");
+    assert_eq!(decrypted_sum, 60, "sum");
+    assert_eq!(decrypted_median, 20, "median");
 }
 
 /// Roundtrip mit bit_width=32 — prüft die FheInt32 → FheInt64 Overflow-Schutz-Kette.
@@ -417,24 +446,31 @@ async fn test_compute_statistics_roundtrip_int32() {
 
     assert_eq!(http_response.status(), StatusCode::OK);
 
-    let response_body_bytes =
-        axum::body::to_bytes(http_response.into_body(), 50 * 1024 * 1024)
-            .await
-            .unwrap();
+    let response_body_bytes = axum::body::to_bytes(http_response.into_body(), 50 * 1024 * 1024)
+        .await
+        .unwrap();
     let statistics_response: StatisticsResponse =
         serde_json::from_slice(&response_body_bytes).unwrap();
 
-    let encrypted_sum: FheInt64 =
-        bincode::deserialize(&general_purpose::STANDARD.decode(&statistics_response.sum).unwrap()).unwrap();
-    let encrypted_min: FheInt32 =
-        bincode::deserialize(&general_purpose::STANDARD.decode(&statistics_response.min).unwrap()).unwrap();
+    let encrypted_sum: FheInt64 = bincode::deserialize(
+        &general_purpose::STANDARD
+            .decode(&statistics_response.sum)
+            .unwrap(),
+    )
+    .unwrap();
+    let encrypted_min: FheInt32 = bincode::deserialize(
+        &general_purpose::STANDARD
+            .decode(&statistics_response.min)
+            .unwrap(),
+    )
+    .unwrap();
 
     let decrypted_sum: i64 = encrypted_sum.decrypt(client_key);
     let decrypted_min: i32 = encrypted_min.decrypt(client_key);
 
-    assert_eq!(statistics_response.count, 3,  "count");
-    assert_eq!(decrypted_sum,            60,  "sum");
-    assert_eq!(decrypted_min,            10,  "min");
+    assert_eq!(statistics_response.count, 3, "count");
+    assert_eq!(decrypted_sum, 60, "sum");
+    assert_eq!(decrypted_min, 10, "min");
 }
 
 // --- Hilfsfunktion ---
