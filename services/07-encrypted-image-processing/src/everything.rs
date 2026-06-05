@@ -69,10 +69,6 @@ pub(crate) fn image_processing() -> Result<(), Box<dyn std::error::Error>> {
     // Gaussian blur
     // Posterization (only fixed number of values)
     // Solarization (Invert only above a certain intensity)
-    let plus_one = |pixel_value: &FheUint8| pixel_value + 1;
-    let minus_one = |pixel_value: &FheUint8| pixel_value - 1;
-    let times_two = |pixel_value: &FheUint8| pixel_value * 2;
-    let div_two = |pixel_value: &FheUint8| pixel_value / 2;
 
     apply_pixelwise_transformation(&mut image, black_threshold);
 
