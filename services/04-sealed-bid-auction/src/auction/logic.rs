@@ -11,7 +11,7 @@ pub fn evaluate_encrypted_auction(liste: &[Bid], server_key_bytes: &[u8]) -> Vec
     let server_key: ServerKey = compressed_key.decompress();
     tfhe::set_server_key(server_key);
 
-    let finales_ergebnis = (&liste[1].encrypted_amount).gt(&liste[0].encrypted_amount);
+    let finales_ergebnis = (liste[1].encrypted_amount).gt(&liste[0].encrypted_amount);
 
     bincode::serialize(&finales_ergebnis).unwrap()
 }
