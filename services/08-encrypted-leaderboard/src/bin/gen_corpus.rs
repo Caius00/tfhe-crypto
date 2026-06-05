@@ -96,8 +96,7 @@ fn main() -> Result<()> {
     let server_key_b64_bytes = test_keys.server_key_b64.len();
     info!(
         elapsed_secs = t.elapsed().as_secs(),
-        server_key_b64_bytes,
-        "Schlüssel bereit"
+        server_key_b64_bytes, "Schlüssel bereit"
     );
 
     // Schritt 2: Schlüssel-Dateien schreiben.

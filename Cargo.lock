@@ -1924,12 +1924,20 @@ checksum = "490dcfcbfef26be6800d11870ff2df8774fa6e86d047e3e8c8a76b25655e41ca"
 name = "sealed-bid-auction"
 version = "0.1.18"
 dependencies = [
+ "aide",
  "axum 0.8.9",
+ "base64",
+ "bincode",
  "health",
+ "openapi-docs",
+ "schemars",
  "serde",
  "serde_json",
+ "serial_test",
  "tfhe",
  "tokio",
+ "tower 0.5.3",
+ "tower-http",
 ]
 
 [[package]]
