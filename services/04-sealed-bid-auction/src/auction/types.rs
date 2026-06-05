@@ -7,10 +7,11 @@ use tfhe::FheUint32;
 pub type ApiError = (StatusCode, String);
 pub type ApiResult<T> = Result<Json<T>, ApiError>;
 
-#[derive(Clone)]
+#[allow(dead_code)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Bid {
     pub bidder_name: String,
-    pub encrypted_amount: FheUint32,
+    pub encrypted_amount: tfhe::FheUint32,
     pub server_key_bytes: Vec<u8>,
 }
 

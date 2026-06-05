@@ -4,8 +4,6 @@ mod auction;
 mod auktion_tests;
 
 use aide::axum::routing::{get_with, post_with};
-use aide::axum::ApiRouter;
-use axum::routing::{get, post};
 
 pub fn api_router() -> aide::axum::ApiRouter {
     aide::axum::ApiRouter::new()
