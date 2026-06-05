@@ -1,6 +1,6 @@
 # 🏆 08 · Encrypted Leaderboard
 
-![version](https://img.shields.io/badge/version-0.1.23-blue)
+![version](https://img.shields.io/badge/version-0.1.24-blue)
 
 Rangliste mit verschlüsselten Scores: der Server speichert, sortiert und durchsucht
 Einträge ohne sie jemals lesen zu können — nur der Raum-Ersteller kann entschlüsseln.
