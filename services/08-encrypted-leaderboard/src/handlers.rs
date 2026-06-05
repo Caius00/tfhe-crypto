@@ -170,7 +170,7 @@ pub async fn create_session(
         tokio::task::spawn_blocking(move || FheEngine::from_compressed_bytes(&server_key_bytes))
             .await
             .map_err(server_err)? // JoinError (panic im Blocking-Task)
-            .map_err(bad_req)?;   // Deserialisierungsfehler (kaputter ServerKey)
+            .map_err(bad_req)?; // Deserialisierungsfehler (kaputter ServerKey)
 
     let session = Arc::new(Session::new(Arc::new(engine), req.public_key));
     let code = state.insert_with_unique_code(session).await;
@@ -405,69 +405,72 @@ pub async fn query_rank(
 fn spawn_sort_if_idle(session: Arc<Session>) {
     use tracing::Instrument;
     let span = tracing::info_span!("background_sort");
-    tokio::spawn(async move {
-        // Sort-Slot beanspruchen — oder nur `dirty` setzen wenn bereits sortiert wird.
-        {
-            let mut s = session.sort_state.lock().await;
-            if s.running {
-                s.dirty = true;
-                return;
-            }
-            s.running = true;
-        }
-
-        // Schleife läuft so lange, bis während eines Sort-Passes kein neuer
-        // Submit mehr kam (dirty = false).
-        loop {
-            // Snapshot der aktuellen Einträge ziehen — Lock wird sofort wieder
-            // freigegeben, der Sort läuft anschließend auf der Kopie.
-            let snapshot: Vec<(Vec<u8>, Vec<u8>)> = session
-                .entries
-                .read()
-                .await
-                .iter()
-                .map(|e| (e.enc.score.clone(), e.enc.id.clone()))
-                .collect();
-
-            // Trivial-Fall: 0 oder 1 Eintrag braucht keinen FHE-Sort,
-            // wir kopieren einfach durch.
-            if snapshot.len() <= 1 {
-                let result: Vec<EncEntry> = snapshot
-                    .into_iter()
-                    .map(|(s, i)| EncEntry { score: s, id: i })
-                    .collect();
-                *session.sorted.write().await = result;
-            } else {
-                // Echter Sort — Batcher's Odd-Even Mergesort über FHE-Vergleichen.
-                // Läuft mehrere Sekunden, daher `spawn_blocking`.
-                let engine = Arc::clone(&session.engine);
-                let join = tokio::task::spawn_blocking(move || {
-                    let mut pairs = snapshot;
-                    engine.sort_by_score_desc(&mut pairs).map(|()| pairs)
-                })
-                .await;
-
-                match join {
-                    Ok(Ok(pairs)) => {
-                        let result: Vec<EncEntry> = pairs
-                            .into_iter()
-                            .map(|(s, i)| EncEntry { score: s, id: i })
-                            .collect();
-                        *session.sorted.write().await = result;
-                    }
-                    Ok(Err(e)) => eprintln!("[sort] {e}"),
-                    Err(e) => eprintln!("[sort] join error: {e}"),
+    tokio::spawn(
+        async move {
+            // Sort-Slot beanspruchen — oder nur `dirty` setzen wenn bereits sortiert wird.
+            {
+                let mut s = session.sort_state.lock().await;
+                if s.running {
+                    s.dirty = true;
+                    return;
                 }
+                s.running = true;
             }
 
-            // Slot freigeben oder direkt nochmal sortieren? Hängt davon ab, ob
-            // während des Sorts ein neuer Submit gekommen ist.
-            let mut s = session.sort_state.lock().await;
-            if !s.dirty {
-                s.running = false;
-                return;
+            // Schleife läuft so lange, bis während eines Sort-Passes kein neuer
+            // Submit mehr kam (dirty = false).
+            loop {
+                // Snapshot der aktuellen Einträge ziehen — Lock wird sofort wieder
+                // freigegeben, der Sort läuft anschließend auf der Kopie.
+                let snapshot: Vec<(Vec<u8>, Vec<u8>)> = session
+                    .entries
+                    .read()
+                    .await
+                    .iter()
+                    .map(|e| (e.enc.score.clone(), e.enc.id.clone()))
+                    .collect();
+
+                // Trivial-Fall: 0 oder 1 Eintrag braucht keinen FHE-Sort,
+                // wir kopieren einfach durch.
+                if snapshot.len() <= 1 {
+                    let result: Vec<EncEntry> = snapshot
+                        .into_iter()
+                        .map(|(s, i)| EncEntry { score: s, id: i })
+                        .collect();
+                    *session.sorted.write().await = result;
+                } else {
+                    // Echter Sort — Batcher's Odd-Even Mergesort über FHE-Vergleichen.
+                    // Läuft mehrere Sekunden, daher `spawn_blocking`.
+                    let engine = Arc::clone(&session.engine);
+                    let join = tokio::task::spawn_blocking(move || {
+                        let mut pairs = snapshot;
+                        engine.sort_by_score_desc(&mut pairs).map(|()| pairs)
+                    })
+                    .await;
+
+                    match join {
+                        Ok(Ok(pairs)) => {
+                            let result: Vec<EncEntry> = pairs
+                                .into_iter()
+                                .map(|(s, i)| EncEntry { score: s, id: i })
+                                .collect();
+                            *session.sorted.write().await = result;
+                        }
+                        Ok(Err(e)) => eprintln!("[sort] {e}"),
+                        Err(e) => eprintln!("[sort] join error: {e}"),
+                    }
+                }
+
+                // Slot freigeben oder direkt nochmal sortieren? Hängt davon ab, ob
+                // während des Sorts ein neuer Submit gekommen ist.
+                let mut s = session.sort_state.lock().await;
+                if !s.dirty {
+                    s.running = false;
+                    return;
+                }
+                s.dirty = false;
             }
-            s.dirty = false;
         }
-    }.instrument(span));
+        .instrument(span),
+    );
 }
