@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tfhe::prelude::*;
 use tfhe::{
-    generate_keys, set_server_key, ClientKey, ConfigBuilder, FheUint16, PublicKey, ServerKey,
+    generate_keys, set_server_key, ClientKey, ConfigBuilder, PublicKey, ServerKey, FheUint8
 };
 
 #[derive(Clone)]
@@ -32,20 +32,20 @@ impl AppState {
     }
 }
 
-pub fn encode_dna(seq: &str) -> Result<Vec<u16>, String> {
+pub fn encode_dna(seq: &str) -> Result<Vec<u8>, String> {
     seq.to_uppercase()
         .chars()
         .map(|c| match c {
-            'A' => Ok(0u16),
-            'T' => Ok(1u16),
-            'C' => Ok(2u16),
-            'G' => Ok(3u16),
+            'A' => Ok(0u8),
+            'T' => Ok(1u8),
+            'C' => Ok(2u8),
+            'G' => Ok(3u8),
             other => Err(format!("illegal base '{}' in sequence (ಠ_ಠ)", other)),
         })
         .collect()
 }
 
-pub fn parse_pattern(pattern_str: &str) -> Result<Vec<u16>, String> {
+pub fn parse_pattern(pattern_str: &str) -> Result<Vec<u8>, String> {
     pattern_str
         .chars()
         .map(|c| {
@@ -53,7 +53,7 @@ pub fn parse_pattern(pattern_str: &str) -> Result<Vec<u16>, String> {
                 .ok_or_else(|| format!("Kein Ziffernzeichen: '{}'", c))
                 .and_then(|d| {
                     if d <= 3 {
-                        Ok(d as u16)
+                        Ok(d as u8)
                     } else {
                         Err(format!("Letter {} not allowed (A,T,G,C)~0-3 (ノ°益°)ノ", d))
                     }
@@ -62,32 +62,32 @@ pub fn parse_pattern(pattern_str: &str) -> Result<Vec<u16>, String> {
         .collect()
 }
 
-fn fhe_min(a: &FheUint16, b: &FheUint16) -> FheUint16 {
+fn fhe_min(a: &FheUint8, b: &FheUint8) -> FheUint8 {
     let cond = a.lt(b);
     cond.if_then_else(a, b)
 }
 
-fn fhe_min3(a: &FheUint16, b: &FheUint16, c: &FheUint16) -> FheUint16 {
+fn fhe_min3(a: &FheUint8, b: &FheUint8, c: &FheUint8) -> FheUint8 {
     let ab = fhe_min(a, b);
     fhe_min(&ab, c)
 }
 
 // O(n * m)
 fn homomorphic_hamming_distance(
-    window: &[FheUint16],
-    enc_pattern: &[FheUint16],
+    window: &[FheUint8],
+    enc_pattern: &[FheUint8],
     public_key: &PublicKey,
-) -> FheUint16 {
-    let diffs: Vec<FheUint16> = window
+) -> FheUint8 {
+    let diffs: Vec<FheUint8> = window
         .par_iter()
         .zip(enc_pattern.par_iter())
         .map(|(w, p)| {
             let ne = w.ne(p);
-            FheUint16::cast_from(ne)
+            FheUint8::cast_from(ne)
         })
         .collect();
     if diffs.is_empty() {
-        FheUint16::encrypt(0u16, public_key)
+        FheUint8::encrypt(0u8, public_key)
     } else {
         let mut acc = diffs[0].clone();
         for diff in &diffs[1..] {
@@ -99,10 +99,10 @@ fn homomorphic_hamming_distance(
 
 // O(m) per window
 pub fn homomorphic_sliding_window(
-    enc_seq: &[FheUint16],
-    enc_pattern: &[FheUint16],
+    enc_seq: &[FheUint8],
+    enc_pattern: &[FheUint8],
     public_key: &PublicKey,
-) -> Vec<FheUint16> {
+) -> Vec<FheUint8> {
     let n = enc_seq.len();
     let m = enc_pattern.len();
     if m > n {
@@ -118,10 +118,10 @@ pub fn homomorphic_sliding_window(
 }
 
 pub fn compare_against_database(
-    input_sequence: &[FheUint16],
-    database_sequences: &[Vec<FheUint16>],
+    input_sequence: &[FheUint8],
+    database_sequences: &[Vec<FheUint8>],
     public_key: &PublicKey,
-) -> Vec<Vec<FheUint16>> {
+) -> Vec<Vec<FheUint8>> {
     database_sequences
         .par_iter()
         .map(|db_sequence| {
@@ -143,36 +143,36 @@ pub fn compare_against_database(
 
 // O(n * m^2)
 fn homomorphic_levenshtein_distance(
-    seq_a: &[FheUint16],
-    seq_b: &[FheUint16],
+    seq_a: &[FheUint8],
+    seq_b: &[FheUint8],
     public_key: &PublicKey,
-) -> FheUint16 {
+) -> FheUint8 {
     let m = seq_a.len();
     let n = seq_b.len();
 
-    let mut dp: Vec<Vec<FheUint16>> =
-        vec![vec![FheUint16::encrypt(0u16, public_key); n + 1]; m + 1];
+    let mut dp: Vec<Vec<FheUint8>> =
+        vec![vec![FheUint8::encrypt(0u8, public_key); n + 1]; m + 1];
 
     for i in 0..=m {
-        dp[i][0] = FheUint16::encrypt(i as u16, public_key);
+        dp[i][0] = FheUint8::encrypt(i as u8, public_key);
     }
 
     for j in 0..=n {
-        dp[0][j] = FheUint16::encrypt(j as u16, public_key);
+        dp[0][j] = FheUint8::encrypt(j as u8, public_key);
     }
 
     for i in 1..=m {
         for j in 1..=n {
             let eq = seq_a[i - 1].eq(&seq_b[j - 1]);
 
-            let zero = FheUint16::encrypt(0u16, public_key);
-            let one = FheUint16::encrypt(1u16, public_key);
+            let zero = FheUint8::encrypt(0u8, public_key);
+            let one = FheUint8::encrypt(1u8, public_key);
 
             let cost = eq.if_then_else(&zero, &one);
 
-            let deletion = &dp[i - 1][j] + FheUint16::encrypt(1u16, public_key);
+            let deletion = &dp[i - 1][j] + FheUint8::encrypt(1u8, public_key);
 
-            let insertion = &dp[i][j - 1] + FheUint16::encrypt(1u16, public_key);
+            let insertion = &dp[i][j - 1] + FheUint8::encrypt(1u8, public_key);
 
             let substitution = &dp[i - 1][j - 1] + cost;
 
@@ -184,10 +184,10 @@ fn homomorphic_levenshtein_distance(
 }
 
 pub fn compare_against_database_levenshtein(
-    input_sequence: &[FheUint16],
-    database_sequences: &[Vec<FheUint16>],
+    input_sequence: &[FheUint8],
+    database_sequences: &[Vec<FheUint8>],
     public_key: &PublicKey,
-) -> Vec<FheUint16> {
+) -> Vec<FheUint8> {
     database_sequences
         .par_iter()
         .map(|db_sequence| {
@@ -196,11 +196,11 @@ pub fn compare_against_database_levenshtein(
         .collect()
 }
 
-pub fn serialize_fhe_vec(data: &[FheUint16]) -> Vec<u8> {
+pub fn serialize_fhe_vec(data: &[FheUint8]) -> Vec<u8> {
     bincode::serialize(&data.to_vec()).expect("serializing failed (ง'̀-'́)ง")
 }
 
-pub fn deserialize_fhe_vec(bytes: &[u8]) -> Vec<FheUint16> {
+pub fn deserialize_fhe_vec(bytes: &[u8]) -> Vec<FheUint8> {
     bincode::deserialize(bytes).expect("deserialiazing failed ᕙ(̀-'́)ᕗ")
 }
 
@@ -235,7 +235,7 @@ pub struct DecryptRequest {
 
 #[derive(Serialize, JsonSchema)]
 pub struct DecryptResponse {
-    pub plain_data: Vec<u16>,
+    pub plain_data: Vec<u8>,
 }
 
 #[derive(Deserialize, Serialize, JsonSchema)]
@@ -270,9 +270,9 @@ pub async fn encrypt_handler(
     let len = clean.len();
 
     let now = Instant::now();
-    let encrypted: Vec<FheUint16> = clean
+    let encrypted: Vec<FheUint8> = clean
         .par_iter()
-        .map(|&b| FheUint16::try_encrypt(b, &state.public_key).unwrap())
+        .map(|&b| FheUint8::try_encrypt(b, &state.public_key).unwrap())
         .collect();
     println!("encryption finished in {:?}", now.elapsed());
 
@@ -304,9 +304,9 @@ pub async fn process_handler(
     let pattern =
         parse_pattern(&req.risk_pattern).map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e))?;
 
-    let enc_pattern: Vec<FheUint16> = pattern
+    let enc_pattern: Vec<FheUint8> = pattern
         .iter()
-        .map(|&b| FheUint16::try_encrypt(b, &state.public_key).unwrap())
+        .map(|&b| FheUint8::try_encrypt(b, &state.public_key).unwrap())
         .collect();
 
     let enc_distances = homomorphic_sliding_window(&enc_seq, &enc_pattern, &state.public_key);
@@ -338,7 +338,7 @@ pub async fn decrypt_handler(
     })?;
     let enc_vec = deserialize_fhe_vec(&enc_bytes);
 
-    let plain: Vec<u16> = enc_vec
+    let plain: Vec<u8> = enc_vec
         .par_iter()
         .map(|d| d.decrypt(&state.client_key))
         .collect();
@@ -366,13 +366,13 @@ pub async fn compare_database_handler(
 
     let enc_input_sequence = deserialize_fhe_vec(&enc_bytes);
 
-    let encrypted_db_sequences: Vec<Vec<FheUint16>> = vec![
+    let encrypted_db_sequences: Vec<Vec<FheUint8>> = vec![
         // testseq 1
         {
             let seq = encode_dna("ATC").unwrap();
 
             seq.iter()
-                .map(|&b| FheUint16::try_encrypt(b, &state.public_key).unwrap())
+                .map(|&b| FheUint8::try_encrypt(b, &state.public_key).unwrap())
                 .collect()
         },
         //testseq 2
@@ -380,7 +380,7 @@ pub async fn compare_database_handler(
             let seq = encode_dna("GGTT").unwrap();
 
             seq.iter()
-                .map(|&b| FheUint16::try_encrypt(b, &state.public_key).unwrap())
+                .map(|&b| FheUint8::try_encrypt(b, &state.public_key).unwrap())
                 .collect()
         },
         // testseq 3
@@ -388,7 +388,7 @@ pub async fn compare_database_handler(
             let seq = encode_dna("TA").unwrap();
 
             seq.iter()
-                .map(|&b| FheUint16::try_encrypt(b, &state.public_key).unwrap())
+                .map(|&b| FheUint8::try_encrypt(b, &state.public_key).unwrap())
                 .collect()
         },
     ];
@@ -438,9 +438,9 @@ pub async fn process_levenshtein_handler(
     let pattern =
         parse_pattern(&req.risk_pattern).map_err(|e| (axum::http::StatusCode::BAD_REQUEST, e))?;
 
-    let enc_pattern: Vec<FheUint16> = pattern
+    let enc_pattern: Vec<FheUint8> = pattern
         .iter()
-        .map(|&b| FheUint16::try_encrypt(b, &state.public_key).unwrap())
+        .map(|&b| FheUint8::try_encrypt(b, &state.public_key).unwrap())
         .collect();
 
     let distance = homomorphic_levenshtein_distance(&enc_seq, &enc_pattern, &state.public_key);
@@ -470,26 +470,26 @@ pub async fn compare_database_levenshtein_handler(
 
     let enc_input = deserialize_fhe_vec(&enc_bytes);
 
-    let encrypted_db_sequences: Vec<Vec<FheUint16>> = vec![
+    let encrypted_db_sequences: Vec<Vec<FheUint8>> = vec![
         {
             let seq = encode_dna("ATC").unwrap();
 
             seq.iter()
-                .map(|&b| FheUint16::try_encrypt(b, &state.public_key).unwrap())
+                .map(|&b| FheUint8::try_encrypt(b, &state.public_key).unwrap())
                 .collect()
         },
         {
             let seq = encode_dna("GGTT").unwrap();
 
             seq.iter()
-                .map(|&b| FheUint16::try_encrypt(b, &state.public_key).unwrap())
+                .map(|&b| FheUint8::try_encrypt(b, &state.public_key).unwrap())
                 .collect()
         },
         {
             let seq = encode_dna("TA").unwrap();
 
             seq.iter()
-                .map(|&b| FheUint16::try_encrypt(b, &state.public_key).unwrap())
+                .map(|&b| FheUint8::try_encrypt(b, &state.public_key).unwrap())
                 .collect()
         },
     ];
