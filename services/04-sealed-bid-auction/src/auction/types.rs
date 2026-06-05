@@ -2,7 +2,6 @@ use axum::http::StatusCode;
 use axum::Json;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use tfhe::FheUint32;
 
 pub type ApiError = (StatusCode, String);
 pub type ApiResult<T> = Result<Json<T>, ApiError>;

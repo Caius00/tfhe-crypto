@@ -3,8 +3,6 @@ mod auction;
 #[path = "tests/auktion_tests.rs"]
 mod auktion_tests;
 
-use aide::axum::routing::{get_with, post_with};
-
 pub fn api_router() -> aide::axum::ApiRouter {
     aide::axum::ApiRouter::new()
         .api_route(

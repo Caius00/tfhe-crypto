@@ -1,10 +1,9 @@
 #[cfg(test)]
-use crate::auction::{self, types::*, BIDS};
+use crate::auction::{self, BIDS};
 
 use axum::{
     body::Body,
     http::{Request, StatusCode},
-    routing::{get, post},
     Router,
 };
 use base64::{engine::general_purpose, Engine as _};
