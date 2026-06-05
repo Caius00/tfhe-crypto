@@ -1,9 +1,8 @@
-use serde::{Deserialize, Serialize};
-use schemars::JsonSchema;
-use tfhe::FheUint32;
 use axum::http::StatusCode;
 use axum::Json;
-
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use tfhe::FheUint32;
 
 pub type ApiError = (StatusCode, String);
 pub type ApiResult<T> = Result<Json<T>, ApiError>;
@@ -18,8 +17,8 @@ pub struct Bid {
 #[derive(Deserialize, JsonSchema)]
 pub struct BidRequest {
     pub bidder_name: String,
-    pub encrypted_amount: String, 
-    pub server_key: String,       
+    pub encrypted_amount: String,
+    pub server_key: String,
 }
 
 #[derive(Serialize, JsonSchema)]
