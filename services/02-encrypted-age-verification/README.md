@@ -1,6 +1,6 @@
 # 🪪 02 · Encrypted Age Verification
 
-![version](https://img.shields.io/badge/version-0.1.18-blue)
+![version](https://img.shields.io/badge/version-0.1.20-blue)
 
 Homomorpher Volljährigkeits-Check: vergleicht ein verschlüsseltes Alter gegen
 den festen Schwellwert `18` und gibt einen verschlüsselten Boolean zurück –

@@ -1,0 +1,59 @@
+.name-input {
+  display: flex;
+  justify-content: center;
+}
+
+.ni-panel {
+  background: rgba(10, 20, 30, 0.75);
+  backdrop-filter: blur(8px);
+  border: 2px solid rgba(82, 183, 136, 0.4);
+  border-radius: 12px;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  width: 100%;
+  max-width: 420px;
+}
+
+.ni-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.ni-icon {
+  width: 36px;
+  height: auto;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.5));
+}
+
+.ni-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.6rem;
+  color: #d8f3dc;
+  margin: 0;
+  text-shadow: 0 0 10px rgba(82, 183, 136, 0.4);
+}
+
+.ni-room {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.42rem;
+  color: #52b788;
+  letter-spacing: 0.12em;
+}
+
+.ni-hint {
+  font-size: 0.65rem;
+  color: #94a3b8;
+  line-height: 1.75;
+  margin: 0;
+}
+
+.ni-error {
+  font-size: 0.6rem;
+  color: #f87171;
+  margin-top: -0.4rem;
+}

@@ -35,10 +35,17 @@
     />
   }
 
+  @if (view() === 'name-input') {
+    <app-leaderboard-name-input
+      [roomCode]="roomCode()"
+      (nameSubmitted)="onNameSubmitted($event)"
+    />
+  }
+
   @if (view() === 'player') {
     <app-leaderboard-player
       [roomCode]="roomCode()"
-      [playerId]="playerId()"
+      [playerName]="playerName()"
       (submitScore)="onSubmitScore($event)"
     />
   }

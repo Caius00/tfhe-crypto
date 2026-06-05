@@ -134,7 +134,7 @@ Wer in welcher Rolle ist, hängt vom jeweiligen UC ab und steht in dessen Sektio
 manche UCs kommen mit nur einer Partei (Initiator allein) aus, andere lassen viele
 Teilnehmer zu.
 
-In FHE gibt es drei Arten von Schlüsseln, die der Initiator erzeugt:
+In TFHE gibt es drei Arten von Schlüsseln, die der Initiator erzeugt:
 
 - **ClientKey** - der private Schlüssel zum Entschlüsseln. Bleibt **immer beim Browser**
   und wird **nie** an einen Server geschickt.

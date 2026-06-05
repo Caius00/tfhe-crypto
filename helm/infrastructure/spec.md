@@ -46,7 +46,7 @@ und eine `values.yaml` mit projektspezifischen Anpassungen. Vor dem Install muss
 
 ## Cluster
 
-Alles läuft auf einem **Hetzner-Server** (AMD EPYC 9645, 8 Kerne, 16 GiB RAM,
+Alles läuft auf einem **NetCup-Server** (AMD EPYC 9645, 8 Kerne, 16 GiB RAM,
 IP `159.195.145.100`). Darauf ein einzelner Kubernetes-Knoten in der schlanken Variante
 **k3s**. CI/CD läuft komplett über **GitHub-hosted Runner** (`ubuntu-latest`). Auf dem
 Cluster selbst gibt es keine self-hosted Runner.
@@ -107,13 +107,13 @@ wenn der Pod gerade gar nicht läuft.
 
 **So funktioniert es im Projekt:**
 
-- Im Ruhezustand laufen **0 Pods** pro Service. Bei 9 Services spart das ~3–5 GiB RAM,
+- Im Ruhezustand laufen **0 Pods** pro Service. Bei 9 Services spart das ~3-5 GiB RAM,
   die sonst durch Idle-Container belegt wären.
 - Kommt ein Request rein, hält der KEDA-Interceptor ihn fest und fährt das Deployment
   hoch (von 0 auf 1 Replica).
 - Sobald der Pod bereit ist (`/readyz=200`), leitet der Interceptor den Request weiter.
   Der Client merkt nur eine etwas längere Antwortzeit - keine 503-Fehlermeldung.
-- **Cold-Start** liegt für ein Rust-Binary bei ca. 3–5 Sekunden.
+- **Cold-Start** liegt für ein Rust-Binary bei ca. 3-5 Sekunden.
 - Kommt **5 Minuten lang kein Request mehr**, fährt KEDA den Pod wieder runter. Alle
   Sessions im RAM des Services gehen damit verloren.
 
@@ -182,7 +182,7 @@ noch nicht existierendes Image zu deployen.
 - `cargo-chef` ist ein Trick, der Rust-Dependencies separat von der eigenen Quellcode-
   Schicht baut. Bei Code-Änderungen ohne neue Dependency wird der teure Compile-Schritt
   aus dem Docker-Cache wiederverwendet. Builds gehen von ~10 min auf ~1 min runter.
-- Das fertige Image basiert auf `debian:bookworm-slim` und ist ~100–200 MB groß.
+- Das fertige Image basiert auf `debian:bookworm-slim` und ist ~100-200 MB groß.
 
 **Tests:**
 

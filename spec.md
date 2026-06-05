@@ -85,12 +85,14 @@ Verworfen: **alles im Release-Modus testen**. Macht alle eigenen Crates auch bei
 Entwickeln langsam und unterbindet Debug-Komfort. Mit dem Profile-Override haben
 wir das Beste aus beiden Welten.
 
-### Warum target-cpu=native im Docker-Build?
+### Warum target-cpu=znver5 im Docker-Build?
 
-`tfhe-rs` nutzt CPU-spezifische SIMD-Instruktionen (AVX2, AVX-512), wenn der
-Compiler weiß, dass sie verfügbar sind. Da das Image für genau einen bekannten
-Server (Hetzner AMD EPYC) gebaut wird, ist `target-cpu=native` sicher und liefert
-deutlich bessere FHE-Performance als der konservative x86_64-Default.
+`tfhe-rs` nutzt CPU-spezifische SIMD-Instruktionen (AVX2, AVX-512, VAES, IFMA),
+wenn der Compiler weiß, dass sie verfügbar sind. Da das Image für genau einen
+bekannten Server (NetCup, AMD EPYC 9645, Zen 5) gebaut wird, ist
+`target-cpu=znver5` deterministisch und liefert deutlich bessere FHE-Performance
+als der konservative x86_64-Default. Über `--build-arg TARGET_CPU=...` lässt sich
+das Ziel überschreiben, etwa für lokale Builds.
 
 Verworfen: **portables x86_64-Image**. Wäre auf beliebigen Hosts lauffähig, aber
 spürbar langsamer beim Bootstrapping und bei Multiplikationen.

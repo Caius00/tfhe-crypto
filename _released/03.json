@@ -2,5 +2,5 @@
   "nr": "03",
   "service": "encrypted-voting-polling",
   "dir": "03-encrypted-voting-polling",
-  "version": "0.1.21"
+  "version": "0.1.27"
 }
