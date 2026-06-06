@@ -29,6 +29,12 @@ async fn main() {
 
     let api_router = ApiRouter::new()
         .api_route(
+            "/fifo",
+            get_with(functions::fifo_status_handler, |op| {
+                op.description("Show the encrypted genomics processing FIFO")
+            }),
+        )
+        .api_route(
             "/sessions",
             get_with(functions::sessions_handler, |op| {
                 op.description("List active encrypted genomics sessions")

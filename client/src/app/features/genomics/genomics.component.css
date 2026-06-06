@@ -79,6 +79,90 @@
   padding: 14px;
 }
 
+.fifo-panel {
+  background: #ffffff;
+  border: 1px solid #d8e2e6;
+  border-radius: 8px;
+  box-shadow: 0 10px 22px rgba(32, 49, 58, 0.08);
+  padding: 16px;
+}
+
+.fifo-panel.fifo-locked {
+  border-color: #f2b8b8;
+}
+
+.fifo-lock {
+  background: #fff1f1;
+  border: 1px solid #f2c4c4;
+  border-radius: 8px;
+  color: #842323;
+  font-weight: 750;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+}
+
+.fifo-list {
+  display: grid;
+  gap: 10px;
+}
+
+.fifo-row {
+  align-items: center;
+  border: 1px solid #e0e6ea;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 10px 12px;
+}
+
+.fifo-row.running {
+  background: #edf7f8;
+  border-color: #b9dfe5;
+}
+
+.fifo-row.own-session {
+  box-shadow: inset 3px 0 0 #256f7c;
+}
+
+.fifo-position {
+  align-items: center;
+  background: #e8eef1;
+  border-radius: 999px;
+  color: #20313a;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 800;
+  justify-content: center;
+  min-width: 42px;
+  padding: 6px 9px;
+}
+
+.fifo-job-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.fifo-job-main strong {
+  color: #111827;
+  font-size: 14px;
+}
+
+.fifo-job-main span {
+  color: #66737f;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.fifo-state {
+  color: #20313a;
+  font-size: 13px;
+  font-weight: 750;
+  text-align: right;
+}
+
 button {
   border: 0;
   border-radius: 8px;
@@ -482,6 +566,20 @@ textarea:focus {
 
   .card-heading span,
   .result-heading span {
+    text-align: left;
+  }
+
+  .fifo-row {
+    align-items: flex-start;
+    grid-template-columns: 1fr;
+  }
+
+  .fifo-position {
+    justify-content: flex-start;
+    width: fit-content;
+  }
+
+  .fifo-state {
     text-align: left;
   }
 }

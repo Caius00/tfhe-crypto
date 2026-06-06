@@ -1,5 +1,5 @@
 import { HttpClient } from '@angular/common/http';
-import { Component, OnInit, computed, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { KeyPair } from '../../core/crypto/key-pair.model';
@@ -32,6 +32,21 @@ interface SessionsResponse {
 
 interface CreateSessionResponse {
   session: GenomicsSession;
+}
+
+interface FifoStatusResponse {
+  capacity: number;
+  used: number;
+  locked: boolean;
+  jobs: FifoJob[];
+}
+
+interface FifoJob {
+  id: number;
+  position: number;
+  session_id: string;
+  job_type: string;
+  state: 'queued' | 'running' | string;
 }
 
 interface ProcessResponse {
@@ -76,6 +91,12 @@ const API_BASE = (() => {
   return localHosts.has(window.location.hostname) ? 'http://127.0.0.1:8080' : '/genomics';
 })();
 const BUSY_STATES: GenomicsStatus[] = ['generating', 'encrypting', 'processing'];
+const EMPTY_FIFO_STATUS: FifoStatusResponse = {
+  capacity: 4,
+  used: 0,
+  locked: false,
+  jobs: [],
+};
 
 @Component({
   selector: 'app-genomics',
@@ -83,7 +104,7 @@ const BUSY_STATES: GenomicsStatus[] = ['generating', 'encrypting', 'processing']
   templateUrl: './genomics.component.html',
   styleUrl: './genomics.component.css',
 })
-export class GenomicsComponent implements OnInit {
+export class GenomicsComponent implements OnInit, OnDestroy {
   status = signal<GenomicsStatus>('idle');
   resultKind = signal<ResultKind>('none');
   sequenceInput = signal('ATCGATCGAAAA');
@@ -105,6 +126,7 @@ export class GenomicsComponent implements OnInit {
   sessions = signal<GenomicsSession[]>([]);
   activeSession = signal<GenomicsSession | null>(null);
   sessionRole = signal<SessionRole | null>(null);
+  fifoStatus = signal<FifoStatusResponse>(EMPTY_FIFO_STATUS);
 
   private keyReady = signal(false);
   private encryptedSequenceReady = signal(false);
@@ -119,6 +141,7 @@ export class GenomicsComponent implements OnInit {
   hasHammingMatch = computed(() => this.hammingResults().some((item) => item.distance === 0));
   hasRiskPatterns = computed(() => this.riskPatterns().length > 0);
   hasDatabaseResult = computed(() => this.resultScope() === 'database');
+  fifoLocked = computed(() => this.fifoStatus().locked);
   databaseMatchCount = computed(
     () => this.databaseResults().filter((entry) => this.entryHasMatch(entry)).length,
   );
@@ -137,6 +160,7 @@ export class GenomicsComponent implements OnInit {
   private publicKeyB64 = '';
   private encryptedSequenceItems: string[] = [];
   private encryptedSource = '';
+  private fifoPollId: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private http: HttpClient,
@@ -146,6 +170,15 @@ export class GenomicsComponent implements OnInit {
   ngOnInit(): void {
     void this.loadSessions();
     void this.loadRiskPatterns();
+    void this.loadFifoStatus();
+    this.fifoPollId = setInterval(() => void this.loadFifoStatus(), 1500);
+  }
+
+  ngOnDestroy(): void {
+    if (this.fifoPollId) {
+      clearInterval(this.fifoPollId);
+      this.fifoPollId = null;
+    }
   }
 
   async loadSessions(showMessage = false): Promise<void> {
@@ -164,6 +197,27 @@ export class GenomicsComponent implements OnInit {
       }
     } catch (error) {
       this.errorMessage.set(`Sessions konnten nicht geladen werden: ${this.errorText(error)}`);
+    }
+  }
+
+  async loadFifoStatus(showMessage = false): Promise<void> {
+    const started = this.nowMs();
+
+    try {
+      const response = await firstValueFrom(
+        this.http.get<FifoStatusResponse>(`${API_BASE}/fifo`),
+      );
+      this.fifoStatus.set(response);
+
+      if (showMessage) {
+        this.infoMessage.set(
+          `FIFO aktualisiert: ${response.used}/${response.capacity} Auftraege in ${this.elapsedMs(started)} ms.`,
+        );
+      }
+    } catch (error) {
+      if (showMessage) {
+        this.errorMessage.set(`FIFO konnte nicht geladen werden: ${this.errorText(error)}`);
+      }
     }
   }
 
@@ -605,6 +659,14 @@ export class GenomicsComponent implements OnInit {
 
   entryHasMatch(entry: DatabaseResult): boolean {
     return entry.distances.some((distance) => distance === 0);
+  }
+
+  fifoStateLabel(job: FifoJob): string {
+    return job.state === 'running' ? 'laeuft' : 'wartet';
+  }
+
+  isOwnSessionJob(job: FifoJob): boolean {
+    return this.activeSession()?.id === job.session_id;
   }
 
   private async computeBody(): Promise<Record<string, string | string[] | undefined> | null> {

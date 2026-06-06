@@ -2,13 +2,18 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use rayon::prelude::*;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::sync::{Mutex, OnceLock};
+use std::collections::VecDeque;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc, Mutex, OnceLock,
+};
 use std::time::Instant;
 use tfhe::prelude::*;
 use tfhe::{
     set_server_key, CompactCiphertextList, CompactPublicKey, CompressedServerKey, FheUint8,
     ServerKey,
 };
+use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore};
 use tokio_postgres::NoTls;
 
 type ApiError = (axum::http::StatusCode, String);
@@ -19,8 +24,10 @@ const DEFAULT_DATABASE_CONFIG: &str =
     "host=159.195.145.100 port=5432 user=genomics password=genomics dbname=genomics";
 const PARALLEL_HAMMING_WINDOWS: usize = 2;
 const PARALLEL_LEVENSHTEIN_CELLS: usize = 2;
+const PROCESSING_QUEUE_CAPACITY: usize = 4;
 
 static FHE_SERVER_KEY_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+static PROCESSING_QUEUE: OnceLock<ProcessingQueue> = OnceLock::new();
 
 #[derive(Clone, Debug, Serialize, JsonSchema)]
 pub struct RiskPattern {
@@ -39,6 +46,119 @@ pub struct GenomicsSession {
 struct SessionKeys {
     public_key: String,
     server_key: String,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ProcessingJobState {
+    Queued,
+    Running,
+}
+
+impl ProcessingJobState {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Running => "running",
+        }
+    }
+}
+
+#[derive(Clone)]
+struct ProcessingQueueEntry {
+    id: u64,
+    session_id: String,
+    job_type: String,
+    state: ProcessingJobState,
+}
+
+struct ProcessingQueue {
+    entries: Mutex<VecDeque<ProcessingQueueEntry>>,
+    notifier: Notify,
+    capacity: Arc<Semaphore>,
+    next_id: AtomicU64,
+}
+
+impl ProcessingQueue {
+    fn new() -> Self {
+        Self {
+            entries: Mutex::new(VecDeque::new()),
+            notifier: Notify::new(),
+            capacity: Arc::new(Semaphore::new(PROCESSING_QUEUE_CAPACITY)),
+            next_id: AtomicU64::new(1),
+        }
+    }
+
+    fn snapshot(&self) -> Result<FifoStatusResponse, ApiError> {
+        let entries = self
+            .entries
+            .lock()
+            .map_err(|_| internal_error("Processing FIFO lock is poisoned"))?;
+        let jobs = entries
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| FifoJobStatus {
+                id: entry.id,
+                position: index + 1,
+                session_id: entry.session_id.clone(),
+                job_type: entry.job_type.clone(),
+                state: entry.state.as_str().to_string(),
+            })
+            .collect::<Vec<_>>();
+        let used = jobs.len();
+
+        Ok(FifoStatusResponse {
+            capacity: PROCESSING_QUEUE_CAPACITY,
+            used,
+            locked: used >= PROCESSING_QUEUE_CAPACITY,
+            jobs,
+        })
+    }
+}
+
+struct QueuedProcessingJob {
+    queue: &'static ProcessingQueue,
+    id: u64,
+    _permit: OwnedSemaphorePermit,
+}
+
+impl QueuedProcessingJob {
+    async fn wait_turn(&self) -> Result<(), ApiError> {
+        let _timer = FunctionTimer::start("wait_fifo_turn");
+        loop {
+            let notified = self.queue.notifier.notified();
+            {
+                let mut entries = self
+                    .queue
+                    .entries
+                    .lock()
+                    .map_err(|_| internal_error("Processing FIFO lock is poisoned"))?;
+
+                if let Some(front) = entries.front_mut() {
+                    if front.id == self.id {
+                        front.state = ProcessingJobState::Running;
+                        return Ok(());
+                    }
+                }
+
+                if !entries.iter().any(|entry| entry.id == self.id) {
+                    return Err(internal_error("Processing FIFO job disappeared"));
+                }
+            }
+
+            notified.await;
+        }
+    }
+}
+
+impl Drop for QueuedProcessingJob {
+    fn drop(&mut self) {
+        if let Ok(mut entries) = self.queue.entries.lock() {
+            if let Some(index) = entries.iter().position(|entry| entry.id == self.id) {
+                entries.remove(index);
+            }
+        }
+        self.queue.notifier.notify_waiters();
+    }
 }
 
 #[derive(Clone)]
@@ -83,8 +203,58 @@ fn internal_error(message: impl Into<String>) -> ApiError {
     )
 }
 
+fn too_many_requests(message: impl Into<String>) -> ApiError {
+    (axum::http::StatusCode::TOO_MANY_REQUESTS, message.into())
+}
+
 fn join_error(error: tokio::task::JoinError) -> ApiError {
     internal_error(format!("Blocking task failed: {error}"))
+}
+
+fn processing_queue() -> &'static ProcessingQueue {
+    PROCESSING_QUEUE.get_or_init(ProcessingQueue::new)
+}
+
+async fn enqueue_processing_job(
+    session_id: Option<&str>,
+    job_type: &'static str,
+) -> Result<QueuedProcessingJob, ApiError> {
+    let _timer = FunctionTimer::start("enqueue_processing_job");
+    let queue = processing_queue();
+    let permit = queue
+        .capacity
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| {
+            too_many_requests(format!(
+                "FIFO ist voll. Maximal {PROCESSING_QUEUE_CAPACITY} Auftraege koennen gleichzeitig in der Liste stehen."
+            ))
+        })?;
+    let id = queue.next_id.fetch_add(1, Ordering::Relaxed);
+    let session_id = session_id
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("direct")
+        .to_string();
+
+    {
+        let mut entries = queue
+            .entries
+            .lock()
+            .map_err(|_| internal_error("Processing FIFO lock is poisoned"))?;
+        entries.push_back(ProcessingQueueEntry {
+            id,
+            session_id,
+            job_type: job_type.to_string(),
+            state: ProcessingJobState::Queued,
+        });
+    }
+
+    queue.notifier.notify_waiters();
+    Ok(QueuedProcessingJob {
+        queue,
+        id,
+        _permit: permit,
+    })
 }
 
 fn database_config() -> String {
@@ -849,6 +1019,23 @@ pub struct SessionsResponse {
     pub sessions: Vec<GenomicsSession>,
 }
 
+#[derive(Serialize, JsonSchema)]
+pub struct FifoStatusResponse {
+    pub capacity: usize,
+    pub used: usize,
+    pub locked: bool,
+    pub jobs: Vec<FifoJobStatus>,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct FifoJobStatus {
+    pub id: u64,
+    pub position: usize,
+    pub session_id: String,
+    pub job_type: String,
+    pub state: String,
+}
+
 #[derive(Deserialize, Serialize, JsonSchema)]
 pub struct CreateSessionRequest {
     pub public_key: String,
@@ -1029,6 +1216,11 @@ fn compare_database_levenshtein(
 }
 
 // API Handler
+pub async fn fifo_status_handler() -> Result<axum::Json<FifoStatusResponse>, ApiError> {
+    let _timer = FunctionTimer::start("fifo_status_handler");
+    Ok(axum::Json(processing_queue().snapshot()?))
+}
+
 pub async fn sessions_handler() -> Result<axum::Json<SessionsResponse>, ApiError> {
     let _timer = FunctionTimer::start("sessions_handler");
     let sessions = list_sessions().await?;
@@ -1053,11 +1245,16 @@ pub async fn encrypt_handler(
     axum::Json(req): axum::Json<EncryptRequest>,
 ) -> Result<axum::Json<EncryptResponse>, ApiError> {
     let _timer = FunctionTimer::start("encrypt_handler");
+    let job = enqueue_processing_job(req.session_id.as_deref(), "Server Encrypt").await?;
+    job.wait_turn().await?;
     let public_key =
         resolve_public_key(req.session_id.as_deref(), req.public_key.as_deref()).await?;
-    let response = tokio::task::spawn_blocking(move || encrypt_sequence(req, public_key))
-        .await
-        .map_err(join_error)??;
+    let response = tokio::task::spawn_blocking(move || {
+        let _job = job;
+        encrypt_sequence(req, public_key)
+    })
+    .await
+    .map_err(join_error)??;
     Ok(axum::Json(response))
 }
 
@@ -1065,15 +1262,20 @@ pub async fn process_handler(
     axum::Json(req): axum::Json<ProcessRequest>,
 ) -> Result<axum::Json<ProcessResponse>, ApiError> {
     let _timer = FunctionTimer::start("process_handler");
+    let job = enqueue_processing_job(req.session_id.as_deref(), "Hamming").await?;
+    job.wait_turn().await?;
     let keys = resolve_session_keys(
         req.session_id.as_deref(),
         req.public_key.as_deref(),
         req.server_key.as_deref(),
     )
     .await?;
-    let response = tokio::task::spawn_blocking(move || process_hamming(req, keys))
-        .await
-        .map_err(join_error)??;
+    let response = tokio::task::spawn_blocking(move || {
+        let _job = job;
+        process_hamming(req, keys)
+    })
+    .await
+    .map_err(join_error)??;
     Ok(axum::Json(response))
 }
 
@@ -1081,6 +1283,8 @@ pub async fn compare_database_handler(
     axum::Json(req): axum::Json<CompareDatabaseRequest>,
 ) -> Result<axum::Json<CompareDatabaseResponse>, ApiError> {
     let _timer = FunctionTimer::start("compare_database_handler");
+    let job = enqueue_processing_job(req.session_id.as_deref(), "Hamming DB").await?;
+    job.wait_turn().await?;
     let keys = resolve_session_keys(
         req.session_id.as_deref(),
         req.public_key.as_deref(),
@@ -1088,9 +1292,12 @@ pub async fn compare_database_handler(
     )
     .await?;
     let patterns = load_risk_patterns(req.pattern_id).await?;
-    let response = tokio::task::spawn_blocking(move || compare_database(req, patterns, keys))
-        .await
-        .map_err(join_error)??;
+    let response = tokio::task::spawn_blocking(move || {
+        let _job = job;
+        compare_database(req, patterns, keys)
+    })
+    .await
+    .map_err(join_error)??;
     Ok(axum::Json(response))
 }
 
@@ -1098,15 +1305,20 @@ pub async fn process_levenshtein_handler(
     axum::Json(req): axum::Json<ProcessRequest>,
 ) -> Result<axum::Json<ProcessLevenshteinResponse>, ApiError> {
     let _timer = FunctionTimer::start("process_levenshtein_handler");
+    let job = enqueue_processing_job(req.session_id.as_deref(), "Levenshtein").await?;
+    job.wait_turn().await?;
     let keys = resolve_session_keys(
         req.session_id.as_deref(),
         req.public_key.as_deref(),
         req.server_key.as_deref(),
     )
     .await?;
-    let response = tokio::task::spawn_blocking(move || process_levenshtein(req, keys))
-        .await
-        .map_err(join_error)??;
+    let response = tokio::task::spawn_blocking(move || {
+        let _job = job;
+        process_levenshtein(req, keys)
+    })
+    .await
+    .map_err(join_error)??;
     Ok(axum::Json(response))
 }
 
@@ -1114,6 +1326,8 @@ pub async fn compare_database_levenshtein_handler(
     axum::Json(req): axum::Json<CompareDatabaseRequest>,
 ) -> Result<axum::Json<CompareDatabaseLevenshteinResponse>, ApiError> {
     let _timer = FunctionTimer::start("compare_database_levenshtein_handler");
+    let job = enqueue_processing_job(req.session_id.as_deref(), "Levenshtein DB").await?;
+    job.wait_turn().await?;
     let keys = resolve_session_keys(
         req.session_id.as_deref(),
         req.public_key.as_deref(),
@@ -1121,9 +1335,11 @@ pub async fn compare_database_levenshtein_handler(
     )
     .await?;
     let patterns = load_risk_patterns(req.pattern_id).await?;
-    let response =
-        tokio::task::spawn_blocking(move || compare_database_levenshtein(req, patterns, keys))
-            .await
-            .map_err(join_error)??;
+    let response = tokio::task::spawn_blocking(move || {
+        let _job = job;
+        compare_database_levenshtein(req, patterns, keys)
+    })
+    .await
+    .map_err(join_error)??;
     Ok(axum::Json(response))
 }
