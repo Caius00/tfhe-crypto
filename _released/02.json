@@ -2,5 +2,5 @@
   "nr": "02",
   "service": "encrypted-age-verification",
   "dir": "02-encrypted-age-verification",
-  "version": "0.1.21"
+  "version": "0.1.22"
 }
