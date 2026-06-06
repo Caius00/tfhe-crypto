@@ -6,7 +6,7 @@ replicaCount: 0
 
 image:
   repository: ghcr.io/caius00/encrypted-statistics-service
-  tag: "0.1.20"
+  tag: "0.1.21"
   pullPolicy: IfNotPresent
 
 service:
