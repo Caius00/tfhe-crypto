@@ -39,6 +39,11 @@ interface DatabaseResult {
   bestDistance: number | null;
 }
 
+interface KeyOutput {
+  label: string;
+  value: string;
+}
+
 const API_BASE = (() => {
   if (typeof window === 'undefined') return '/genomics';
   const localHosts = new Set(['localhost', '127.0.0.1', '::1']);
@@ -64,8 +69,7 @@ export class GenomicsComponent {
   showResultPanel = signal(false);
   infoMessage = signal('');
   errorMessage = signal('');
-  keyOutputTitle = signal('');
-  keyOutputValue = signal('');
+  keyOutputItems = signal<KeyOutput[]>([]);
   sequenceOutputTitle = signal('');
   sequenceOutputValue = signal('');
 
@@ -93,6 +97,7 @@ export class GenomicsComponent {
     this.status.set('generating');
     this.clearMessages();
     await this.renderPause();
+    const started = this.nowMs();
 
     try {
       await this.tfhe.ensureInitialized();
@@ -111,7 +116,9 @@ export class GenomicsComponent {
       this.clearSequenceOutput();
 
       this.status.set('ready');
-      this.infoMessage.set('Keyset bereit. Der Client-Key bleibt lokal.');
+      this.infoMessage.set(
+        `Keyset bereit. Der Client-Key bleibt lokal. Dauer: ${this.elapsedMs(started)} ms.`,
+      );
     } catch (error) {
       this.setError(`Fehler bei der Schluesselgenerierung: ${this.errorText(error)}`);
     }
@@ -131,6 +138,7 @@ export class GenomicsComponent {
       this.clearResults();
       this.clearMessages();
       await this.renderPause();
+      const started = this.nowMs();
 
       this.encryptedSequenceItems = encoded.map((value) =>
         this.tfhe.toBase64(this.tfhe.encryptUint8(value, material.keyPair.clientKey)),
@@ -142,7 +150,9 @@ export class GenomicsComponent {
       this.status.set('ready');
 
       if (showMessage) {
-        this.infoMessage.set(`${encoded.length} Basen lokal verschluesselt.`);
+        this.infoMessage.set(
+          `${encoded.length} Basen lokal verschluesselt in ${this.elapsedMs(started)} ms.`,
+        );
       }
     } catch (error) {
       this.setError(this.errorText(error));
@@ -163,6 +173,7 @@ export class GenomicsComponent {
       this.clearResults();
       this.clearMessages();
       await this.renderPause();
+      const started = this.nowMs();
       const publicKeyB64 = this.ensurePublicKeyB64(material.keyPair);
 
       const response = await firstValueFrom(
@@ -179,7 +190,9 @@ export class GenomicsComponent {
       this.clearSequenceOutput();
       this.sequenceInput.set(cleanSequence);
       this.status.set('ready');
-      this.infoMessage.set(`${response.original_length} serverseitig mit Public-Key verschluesselt.`);
+      this.infoMessage.set(
+        `${response.original_length} serverseitig mit Public-Key verschluesselt in ${this.elapsedMs(started)} ms.`,
+      );
     } catch (error) {
       this.setError(this.errorText(error));
     }
@@ -191,6 +204,7 @@ export class GenomicsComponent {
       this.clearResults();
       this.clearMessages();
       await this.renderPause();
+      const started = this.nowMs();
       const body = await this.computeBody();
       if (!body) return;
       this.status.set('processing');
@@ -203,7 +217,9 @@ export class GenomicsComponent {
       this.resultKind.set('hamming');
       this.showResultPanel.set(false);
       this.status.set('result');
-      this.infoMessage.set(`${response.windows} Hamming-Fenster berechnet. Result oeffnet die Anzeige.`);
+      this.infoMessage.set(
+        `${response.windows} Hamming-Fenster berechnet und lokal entschluesselt in ${this.elapsedMs(started)} ms. Result oeffnet die Anzeige.`,
+      );
     } catch (error) {
       this.setError(this.errorText(error));
     }
@@ -215,6 +231,7 @@ export class GenomicsComponent {
       this.clearResults();
       this.clearMessages();
       await this.renderPause();
+      const started = this.nowMs();
       const body = await this.computeBody();
       if (!body) return;
       this.status.set('processing');
@@ -227,7 +244,9 @@ export class GenomicsComponent {
       this.resultKind.set('levenshtein');
       this.showResultPanel.set(false);
       this.status.set('result');
-      this.infoMessage.set('Levenshtein-Distanz berechnet. Result oeffnet die Anzeige.');
+      this.infoMessage.set(
+        `Levenshtein-Distanz berechnet und lokal entschluesselt in ${this.elapsedMs(started)} ms. Result oeffnet die Anzeige.`,
+      );
     } catch (error) {
       this.setError(this.errorText(error));
     }
@@ -239,6 +258,7 @@ export class GenomicsComponent {
       this.clearResults();
       this.clearMessages();
       await this.renderPause();
+      const started = this.nowMs();
       const body = await this.databaseBody();
       if (!body) return;
       this.status.set('processing');
@@ -260,7 +280,9 @@ export class GenomicsComponent {
       this.resultKind.set('db-hamming');
       this.showResultPanel.set(false);
       this.status.set('result');
-      this.infoMessage.set(`${response.compared_sequences} Datenbanksequenzen verglichen.`);
+      this.infoMessage.set(
+        `${response.compared_sequences} Datenbanksequenzen verglichen und lokal entschluesselt in ${this.elapsedMs(started)} ms.`,
+      );
     } catch (error) {
       this.setError(this.errorText(error));
     }
@@ -272,6 +294,7 @@ export class GenomicsComponent {
       this.clearResults();
       this.clearMessages();
       await this.renderPause();
+      const started = this.nowMs();
       const body = await this.databaseBody();
       if (!body) return;
       this.status.set('processing');
@@ -293,13 +316,16 @@ export class GenomicsComponent {
       this.resultKind.set('db-levenshtein');
       this.showResultPanel.set(false);
       this.status.set('result');
-      this.infoMessage.set(`${response.compared_sequences} Levenshtein-Vergleiche berechnet.`);
+      this.infoMessage.set(
+        `${response.compared_sequences} Levenshtein-Vergleiche berechnet und lokal entschluesselt in ${this.elapsedMs(started)} ms.`,
+      );
     } catch (error) {
       this.setError(this.errorText(error));
     }
   }
 
   reset(): void {
+    const started = this.nowMs();
     this.keyPair = null;
     this.serverKeyB64 = '';
     this.publicKeyB64 = '';
@@ -314,6 +340,7 @@ export class GenomicsComponent {
     this.clearMessages();
     this.clearKeyOutput();
     this.clearSequenceOutput();
+    this.infoMessage.set(`Zurueckgesetzt in ${this.elapsedMs(started)} ms.`);
   }
 
   updateSequenceInput(value: string): void {
@@ -324,41 +351,52 @@ export class GenomicsComponent {
     }
   }
 
-  showPublicKey(): void {
+  toggleKeys(): void {
+    const started = this.nowMs();
     const material = this.keyMaterial();
     if (!material) return;
 
-    this.keyOutputTitle.set('Public Key');
-    this.keyOutputValue.set(this.ensurePublicKeyB64(material.keyPair));
-  }
+    this.clearMessages();
+    if (this.keyOutputItems().length > 0) {
+      this.clearKeyOutput();
+      this.infoMessage.set(`Keys geschlossen in ${this.elapsedMs(started)} ms.`);
+      return;
+    }
 
-  showServerKey(): void {
-    const material = this.keyMaterial();
-    if (!material) return;
-
-    this.keyOutputTitle.set('Server Key');
-    this.keyOutputValue.set(material.serverKeyB64);
-  }
-
-  showPrivateKey(): void {
-    const material = this.keyMaterial();
-    if (!material) return;
-
-    this.keyOutputTitle.set('Private Key');
-    this.keyOutputValue.set(this.tfhe.toBase64(material.keyPair.clientKey.serialize()));
+    this.keyOutputItems.set([
+      {
+        label: 'Private Key',
+        value: this.tfhe.toBase64(material.keyPair.clientKey.serialize()),
+      },
+      {
+        label: 'Public Key',
+        value: this.ensurePublicKeyB64(material.keyPair),
+      },
+      {
+        label: 'Server Key',
+        value: material.serverKeyB64,
+      },
+    ]);
+    this.infoMessage.set(`Keys angezeigt in ${this.elapsedMs(started)} ms.`);
   }
 
   showEncryptedSequence(): void {
+    const started = this.nowMs();
     if (!this.encryptedSequenceReady() || this.encryptedSequenceItems.length === 0) return;
 
+    this.clearMessages();
     this.sequenceOutputTitle.set('Encrypted DNA-Sequenz');
     this.sequenceOutputValue.set(this.encryptedSequenceItems.join('\n'));
+    this.infoMessage.set(`Verschluesselte Sequenz angezeigt in ${this.elapsedMs(started)} ms.`);
   }
 
   showResult(): void {
+    const started = this.nowMs();
     if (!this.hasResult()) return;
 
+    this.clearMessages();
     this.showResultPanel.set(true);
+    this.infoMessage.set(`Result angezeigt in ${this.elapsedMs(started)} ms.`);
   }
 
   private async computeBody(): Promise<Record<string, string | string[] | undefined> | null> {
@@ -472,8 +510,7 @@ export class GenomicsComponent {
   }
 
   private clearKeyOutput(): void {
-    this.keyOutputTitle.set('');
-    this.keyOutputValue.set('');
+    this.keyOutputItems.set([]);
   }
 
   private clearSequenceOutput(): void {
@@ -499,5 +536,13 @@ export class GenomicsComponent {
 
   private async renderPause(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  private nowMs(): number {
+    return typeof performance === 'undefined' ? Date.now() : performance.now();
+  }
+
+  private elapsedMs(started: number): number {
+    return Math.max(0, Math.round(this.nowMs() - started));
   }
 }

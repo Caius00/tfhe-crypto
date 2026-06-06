@@ -129,6 +129,27 @@ button:disabled {
   padding: 16px;
 }
 
+.key-list {
+  display: grid;
+  gap: 14px;
+}
+
+.key-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.key-item label {
+  color: #20313a;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.key-item .output-textarea {
+  min-height: 112px;
+}
+
 .action-grid {
   display: grid;
   gap: 14px;

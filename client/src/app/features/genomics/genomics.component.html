@@ -9,14 +9,8 @@
         Keyset erzeugen
       </button>
       @if (hasKeys()) {
-        <button type="button" class="ghost-button" (click)="showPublicKey()" [disabled]="isBusy()">
-          Public Key
-        </button>
-        <button type="button" class="ghost-button" (click)="showServerKey()" [disabled]="isBusy()">
-          Server Key
-        </button>
-        <button type="button" class="ghost-button" (click)="showPrivateKey()" [disabled]="isBusy()">
-          Private Key
+        <button type="button" class="ghost-button" (click)="toggleKeys()" [disabled]="isBusy()">
+          Keys
         </button>
       }
       <button type="button" class="ghost-button" (click)="reset()" [disabled]="isBusy() && status() !== 'generating'">
@@ -49,13 +43,20 @@
     <p class="message error">{{ errorMessage() }}</p>
   }
 
-  @if (keyOutputValue()) {
+  @if (keyOutputItems().length) {
     <section class="key-output">
       <div class="result-heading">
-        <h2>{{ keyOutputTitle() }}</h2>
+        <h2>Keys</h2>
         <span>Base64</span>
       </div>
-      <textarea class="output-textarea" rows="6" readonly [ngModel]="keyOutputValue()"></textarea>
+      <div class="key-list">
+        @for (item of keyOutputItems(); track item.label) {
+          <div class="key-item">
+            <label>{{ item.label }}</label>
+            <textarea class="output-textarea" rows="5" readonly [ngModel]="item.value"></textarea>
+          </div>
+        }
+      </div>
     </section>
   }
 
