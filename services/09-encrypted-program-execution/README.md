@@ -5,7 +5,7 @@
 ## instuction set
 
 every instruction is 16 bits: 8 bit opcode and 8 bit operand
-after every instruction: SP := SP + 1;
+after every instruction: SP := SP + 2;
 
 | Opcode    | Mnemonic         | Operand    | Carry | Description                       |
 |-----------|------------------|------------|-------|-----------------------------------|
