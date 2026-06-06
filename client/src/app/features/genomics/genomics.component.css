@@ -289,6 +289,11 @@ textarea:focus {
   color: #1d7f48;
 }
 
+.match-indicator.compact {
+  font-size: 15px;
+  padding: 9px 12px;
+}
+
 .result-row {
   align-items: center;
   display: flex;
@@ -329,22 +334,70 @@ textarea:focus {
   color: #1f6f45;
 }
 
+.db-match-summary {
+  align-items: center;
+  border-radius: 8px;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  padding: 12px 14px;
+}
+
+.db-match-summary.match {
+  background: #fff1f1;
+  border: 1px solid #f2b8b8;
+  color: #b42318;
+}
+
+.db-match-summary.no-match {
+  background: #eff8f1;
+  border: 1px solid #b9e2c5;
+  color: #1d7f48;
+}
+
+.db-match-summary strong {
+  font-size: 18px;
+}
+
+.db-match-summary span {
+  font-size: 13px;
+  font-weight: 750;
+}
+
 .db-grid {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1fr;
 }
 
 .db-result {
   border: 1px solid #e0e6ea;
   border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   padding: 12px;
+}
+
+.db-result.match-entry {
+  border-color: #f2b8b8;
+}
+
+.db-result.no-match-entry {
+  border-color: #b9e2c5;
+}
+
+.db-result-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
 }
 
 .db-result h3 {
   color: #111827;
   font-size: 16px;
-  margin: 0 0 4px;
+  margin: 0;
 }
 
 .db-result span {
@@ -352,11 +405,8 @@ textarea:focus {
   font-size: 13px;
 }
 
-.db-result p {
-  color: #20313a;
-  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
-  margin: 10px 0 0;
-  overflow-wrap: anywhere;
+.result-list.compact {
+  max-height: 220px;
 }
 
 @media (max-width: 920px) {

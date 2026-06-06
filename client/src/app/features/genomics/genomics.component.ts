@@ -91,8 +91,21 @@ export class GenomicsComponent implements OnInit {
   hasKeys = computed(() => this.keyReady());
   hasEncryptedSequence = computed(() => this.encryptedSequenceReady());
   hasResult = computed(() => this.resultKind() !== 'none');
+  hasSingleResult = computed(() => this.resultKind() === 'hamming' || this.resultKind() === 'levenshtein');
   hasHammingMatch = computed(() => this.hammingResults().some((item) => item.distance === 0));
   hasRiskPatterns = computed(() => this.riskPatterns().length > 0);
+  hasDatabaseResult = computed(() => this.resultKind() === 'db-hamming' || this.resultKind() === 'db-levenshtein');
+  databaseMatchCount = computed(
+    () => this.databaseResults().filter((entry) => this.entryHasMatch(entry)).length,
+  );
+  sortedDatabaseResults = computed(() =>
+    [...this.databaseResults()].sort((left, right) => {
+      const leftMatch = this.entryHasMatch(left);
+      const rightMatch = this.entryHasMatch(right);
+      if (leftMatch === rightMatch) return 0;
+      return leftMatch ? -1 : 1;
+    }),
+  );
   isBusy = computed(() => BUSY_STATES.includes(this.status()));
 
   private keyPair: KeyPair | null = null;
@@ -440,6 +453,10 @@ export class GenomicsComponent implements OnInit {
     this.clearMessages();
     this.showResultPanel.set(true);
     this.infoMessage.set(`Result angezeigt in ${this.elapsedMs(started)} ms.`);
+  }
+
+  entryHasMatch(entry: DatabaseResult): boolean {
+    return entry.distances.some((distance) => distance === 0);
   }
 
   private async computeBody(): Promise<Record<string, string | string[] | undefined> | null> {

@@ -104,7 +104,7 @@
         <button type="button" class="primary-button" (click)="computeLevenshtein()" [disabled]="!hasKeys() || isBusy()">
           Levenshtein
         </button>
-        <button type="button" class="ghost-button" (click)="showResult()" [disabled]="!hasResult() || isBusy()">
+        <button type="button" class="ghost-button" (click)="showResult()" [disabled]="!hasSingleResult() || isBusy()">
           Result
         </button>
       </div>
@@ -133,6 +133,9 @@
         </button>
         <button type="button" class="primary-button" (click)="compareDatabaseLevenshtein()" [disabled]="!hasKeys() || isBusy() || !hasRiskPatterns()">
           Levenshtein DB
+        </button>
+        <button type="button" class="ghost-button" (click)="showResult()" [disabled]="!hasDatabaseResult() || isBusy()">
+          Result
         </button>
       </div>
     </section>
@@ -179,6 +182,15 @@
           <h2>Levenshtein-Distanz</h2>
           <strong>{{ levenshteinResult() }}</strong>
         </div>
+        <div class="match-indicator" [class.match]="levenshteinResult() === 0" [class.no-match]="levenshteinResult() !== 0">
+          {{ levenshteinResult() === 0 ? 'MATCH' : 'NO MATCH' }}
+        </div>
+        <div class="result-list">
+          <div class="result-row" [class.match-window]="levenshteinResult() === 0" [class.no-match-window]="levenshteinResult() !== 0">
+            <span>Distanz</span>
+            <strong>{{ levenshteinResult() }}</strong>
+          </div>
+        </div>
       }
 
       @if (resultKind() === 'db-hamming' || resultKind() === 'db-levenshtein') {
@@ -186,14 +198,28 @@
           <h2>Datenbank-Ergebnisse</h2>
           <span>{{ databaseResults().length }} Trefferlisten</span>
         </div>
+        <div class="db-match-summary" [class.match]="databaseMatchCount() > 0" [class.no-match]="databaseMatchCount() === 0">
+          <strong>{{ databaseMatchCount() }} MATCHES</strong>
+          <span>{{ databaseResults().length - databaseMatchCount() }} NO MATCH</span>
+        </div>
         <div class="db-grid">
-          @for (entry of databaseResults(); track entry.label) {
-            <article class="db-result">
-              <div>
+          @for (entry of sortedDatabaseResults(); track entry.label) {
+            <article class="db-result" [class.match-entry]="entryHasMatch(entry)" [class.no-match-entry]="!entryHasMatch(entry)">
+              <div class="db-result-heading">
                 <h3>{{ entry.label }}</h3>
                 <span>Bestwert: {{ entry.bestDistance ?? '-' }}</span>
               </div>
-              <p>{{ entry.distances.join(', ') }}</p>
+              <div class="match-indicator compact" [class.match]="entryHasMatch(entry)" [class.no-match]="!entryHasMatch(entry)">
+                {{ entryHasMatch(entry) ? 'MATCH' : 'NO MATCH' }}
+              </div>
+              <div class="result-list compact">
+                @for (distance of entry.distances; track $index) {
+                  <div class="result-row" [class.match-window]="distance === 0" [class.no-match-window]="distance > 0">
+                    <span>{{ resultKind() === 'db-hamming' ? 'Window ' + $index : 'Distanz' }}</span>
+                    <strong>{{ distance }}</strong>
+                  </div>
+                }
+              </div>
             </article>
           }
         </div>
