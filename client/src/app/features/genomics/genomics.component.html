@@ -1,52 +1,190 @@
-<h1>06 – Encrypted Genomics</h1>
-<p>Es werden ein Client-Key (lokal) und ein Server-Key (für das Backend) erzeugt. Dies dauert 30–90 Sekunden. </p>
+<section class="genomics-page">
+  <header class="page-header">
+    <div>
+      <h1>06 - Encrypted Genomics</h1>
+      <p>Client-Key lokal, Server-Rechnung homomorph.</p>
+    </div>
+    <div class="key-actions">
+      <button type="button" class="primary-button" (click)="generateKeys()" [disabled]="isBusy()">
+        Keyset erzeugen
+      </button>
+      @if (hasKeys()) {
+        <button type="button" class="ghost-button" (click)="showPublicKey()" [disabled]="isBusy()">
+          Public Key
+        </button>
+        <button type="button" class="ghost-button" (click)="showServerKey()" [disabled]="isBusy()">
+          Server Key
+        </button>
+        <button type="button" class="ghost-button" (click)="showPrivateKey()" [disabled]="isBusy()">
+          Private Key
+        </button>
+      }
+      <button type="button" class="ghost-button" (click)="reset()" [disabled]="isBusy() && status() !== 'generating'">
+        Zuruecksetzen
+      </button>
+    </div>
+  </header>
 
-<div class="action-grid">
-    <div class="action-flex">
-        <div class="action-card">
-            <p class="card-title">
-                Seqeunz hochladen
-            </p>
-            <p class="card-info">
-                Laden Sie eine neue DNA-Sequenz hoch, mit denen andere Sequenzen abgeglichen werden können.
-            </p>
-            <textarea></textarea>
-            <div class="button-spread">
-                <div class="submit-button">
-                    Hochladen
-                </div>
-                <div class="submit-button">
-                    Ergebnisse Abrufen
-                </div>
-            </div>
+  <div class="status-row" [class.status-error]="status() === 'error'">
+    <span class="status-dot" [class.ready]="hasKeys()"></span>
+    <span>
+      @if (status() === 'generating') {
+        Schluessel werden erzeugt...
+      } @else if (status() === 'encrypting') {
+        Sequenz wird verschluesselt...
+      } @else if (status() === 'processing') {
+        Homomorphe Rechnung laeuft...
+      } @else if (hasKeys()) {
+        Client-Key bereit
+      } @else {
+        Noch kein Keyset
+      }
+    </span>
+  </div>
+
+  @if (infoMessage()) {
+    <p class="message info">{{ infoMessage() }}</p>
+  }
+  @if (errorMessage()) {
+    <p class="message error">{{ errorMessage() }}</p>
+  }
+
+  @if (keyOutputValue()) {
+    <section class="key-output">
+      <div class="result-heading">
+        <h2>{{ keyOutputTitle() }}</h2>
+        <span>Base64</span>
+      </div>
+      <textarea class="output-textarea" rows="6" readonly [ngModel]="keyOutputValue()"></textarea>
+    </section>
+  }
+
+  <div class="action-grid">
+    <section class="action-card">
+      <div class="card-heading">
+        <h2>DNA-Sequenz</h2>
+        <span>{{ encryptedLength() }} verschluesselte Basen</span>
+      </div>
+      <textarea
+        rows="7"
+        [ngModel]="sequenceInput()"
+        (ngModelChange)="updateSequenceInput($event)"
+        spellcheck="false"
+      ></textarea>
+      <div class="button-row">
+        <button type="button" class="primary-button" (click)="encryptSequenceLocal()" [disabled]="!hasKeys() || isBusy()">
+          Lokal verschluesseln
+        </button>
+        <button type="button" class="ghost-button" (click)="showEncryptedSequence()" [disabled]="!hasEncryptedSequence() || isBusy()">
+          Encrypted
+        </button>
+      </div>
+
+      @if (sequenceOutputValue()) {
+        <div class="sequence-output">
+          <div class="result-heading compact">
+            <h2>{{ sequenceOutputTitle() }}</h2>
+            <span>Base64 pro Base</span>
+          </div>
+          <textarea class="output-textarea" rows="6" readonly [ngModel]="sequenceOutputValue()"></textarea>
         </div>
-    </div>
-    <div class="action-flex">
-        <div class="action-card">
-            <p class="card-title">
-                Risikomuster hochladen
-            </p>
-            <p class="card-info">
-                Laden Sie ein neues Risikomuster hoch, auf das hochgeladene DNA-Sequenzen überprüft werden können.
-            </p>
-            <textarea></textarea>
-            <div class="submit-button">
-                Hochladen
-            </div>
+      }
+    </section>
+
+    <section class="action-card">
+      <div class="card-heading">
+        <h2>Risikomuster</h2>
+        <span>Serverseitig</span>
+      </div>
+      <div class="button-row">
+        <button type="button" class="primary-button" (click)="computeHamming()" [disabled]="!hasKeys() || isBusy()">
+          Hamming
+        </button>
+        <button type="button" class="primary-button" (click)="computeLevenshtein()" [disabled]="!hasKeys() || isBusy()">
+          Levenshtein
+        </button>
+        <button type="button" class="ghost-button" (click)="showResult()" [disabled]="!hasResult() || isBusy()">
+          Result
+        </button>
+      </div>
+    </section>
+
+    <section class="action-card">
+      <div class="card-heading">
+        <h2>Datenbankvergleich</h2>
+        <span>3 Demo-Sequenzen</span>
+      </div>
+      <div class="button-row vertical">
+        <button type="button" class="primary-button" (click)="compareDatabaseHamming()" [disabled]="!hasKeys() || isBusy()">
+          Hamming DB
+        </button>
+        <button type="button" class="primary-button" (click)="compareDatabaseLevenshtein()" [disabled]="!hasKeys() || isBusy()">
+          Levenshtein DB
+        </button>
+      </div>
+    </section>
+
+    <section class="action-card">
+      <div class="card-heading">
+        <h2>Server-Sequenz</h2>
+        <span>Public-Key Encrypt</span>
+      </div>
+      <textarea
+        rows="4"
+        [ngModel]="serverSequenceInput()"
+        (ngModelChange)="serverSequenceInput.set($event)"
+        spellcheck="false"
+      ></textarea>
+      <button type="button" class="primary-button" (click)="encryptServerSequence()" [disabled]="!hasKeys() || isBusy()">
+        Am Server verschluesseln
+      </button>
+    </section>
+  </div>
+
+  @if (showResultPanel() && resultKind() !== 'none') {
+    <section class="results-panel">
+      @if (resultKind() === 'hamming') {
+        <div class="result-heading">
+          <h2>Hamming-Distanzen</h2>
+          <span>{{ hammingResults().length }} Fenster</span>
         </div>
-        <div class="action-card">
-            <p class="card-title">
-                Sequenz abgleichen
-            </p>
-            <p class="card-info">
-                Vergleichen Sie Ihre DNA-Sequenz mit einer zuvor hochgeladenen Sequenz.
-            </p>
-            <textarea></textarea>
-            <p>Session-ID:</p>
-            <input type="text" class="id-input">
-            <div class="submit-button">
-                Vergleichen
-            </div>
+        <div class="match-indicator" [class.match]="hasHammingMatch()" [class.no-match]="!hasHammingMatch()">
+          {{ hasHammingMatch() ? 'MATCH' : 'NO MATCH' }}
         </div>
-    </div>
-</div>
+        <div class="result-list">
+          @for (item of hammingResults(); track item.index) {
+            <div class="result-row" [class.match-window]="item.distance === 0" [class.no-match-window]="item.distance > 0">
+              <span>Window {{ item.index }}</span>
+              <strong>{{ item.distance }}</strong>
+            </div>
+          }
+        </div>
+      }
+
+      @if (resultKind() === 'levenshtein') {
+        <div class="result-heading">
+          <h2>Levenshtein-Distanz</h2>
+          <strong>{{ levenshteinResult() }}</strong>
+        </div>
+      }
+
+      @if (resultKind() === 'db-hamming' || resultKind() === 'db-levenshtein') {
+        <div class="result-heading">
+          <h2>Datenbank-Ergebnisse</h2>
+          <span>{{ databaseResults().length }} Trefferlisten</span>
+        </div>
+        <div class="db-grid">
+          @for (entry of databaseResults(); track entry.label) {
+            <article class="db-result">
+              <div>
+                <h3>{{ entry.label }}</h3>
+                <span>Bestwert: {{ entry.bestDistance ?? '-' }}</span>
+              </div>
+              <p>{{ entry.distances.join(', ') }}</p>
+            </article>
+          }
+        </div>
+      }
+    </section>
+  }
+</section>

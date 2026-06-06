@@ -16,8 +16,8 @@ tokio = { workspace = true, features = ["full"] }
 serde.workspace = true
 serde_json.workspace = true
 tfhe.workspace = true
+rayon = "1"
 tower = { version = "0.5.3", features = ["full"] }
 tower-http = { version = "0.6.8", features = ["cors"] }
 aide.workspace = true
 schemars.workspace = true
-rayon = "1.12.0"
