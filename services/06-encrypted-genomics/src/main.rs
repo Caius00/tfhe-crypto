@@ -29,6 +29,18 @@ async fn main() {
 
     let api_router = ApiRouter::new()
         .api_route(
+            "/sessions",
+            get_with(functions::sessions_handler, |op| {
+                op.description("List active encrypted genomics sessions")
+            }),
+        )
+        .api_route(
+            "/sessions",
+            post_with(functions::create_session_handler, |op| {
+                op.description("Create an encrypted genomics session with public and server keys")
+            }),
+        )
+        .api_route(
             "/patterns",
             get_with(functions::patterns_handler, |op| {
                 op.description("List cleartext risk patterns stored in the genomics database")

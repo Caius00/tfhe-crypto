@@ -6,7 +6,9 @@ import { KeyPair } from '../../core/crypto/key-pair.model';
 import { TfheService } from '../../core/crypto/tfhe.service';
 
 type GenomicsStatus = 'idle' | 'generating' | 'ready' | 'encrypting' | 'processing' | 'result' | 'error';
-type ResultKind = 'none' | 'hamming' | 'levenshtein' | 'db-hamming' | 'db-levenshtein';
+type ResultKind = 'none' | 'hamming' | 'levenshtein' | 'db-hamming' | 'db-levenshtein' | 'encrypted';
+type ResultScope = 'none' | 'single' | 'database';
+type SessionRole = 'creator' | 'participant';
 
 interface KeyMaterial {
   keyPair: KeyPair;
@@ -16,6 +18,20 @@ interface KeyMaterial {
 interface EncryptResponse {
   encrypted_bases: string[];
   original_length: number;
+}
+
+interface GenomicsSession {
+  id: string;
+  public_key: string;
+  created_at: string;
+}
+
+interface SessionsResponse {
+  sessions: GenomicsSession[];
+}
+
+interface CreateSessionResponse {
+  session: GenomicsSession;
 }
 
 interface ProcessResponse {
@@ -82,19 +98,27 @@ export class GenomicsComponent implements OnInit {
   infoMessage = signal('');
   errorMessage = signal('');
   keyOutputItems = signal<KeyOutput[]>([]);
+  encryptedResultTitle = signal('');
+  encryptedResultItems = signal<KeyOutput[]>([]);
   sequenceOutputTitle = signal('');
   sequenceOutputValue = signal('');
+  sessions = signal<GenomicsSession[]>([]);
+  activeSession = signal<GenomicsSession | null>(null);
+  sessionRole = signal<SessionRole | null>(null);
 
   private keyReady = signal(false);
   private encryptedSequenceReady = signal(false);
+  private resultScope = signal<ResultScope>('none');
 
-  hasKeys = computed(() => this.keyReady());
+  hasSession = computed(() => this.activeSession() !== null);
+  hasPrivateKeys = computed(() => this.keyReady());
+  hasKeys = computed(() => this.hasSession());
   hasEncryptedSequence = computed(() => this.encryptedSequenceReady());
   hasResult = computed(() => this.resultKind() !== 'none');
-  hasSingleResult = computed(() => this.resultKind() === 'hamming' || this.resultKind() === 'levenshtein');
+  hasSingleResult = computed(() => this.resultScope() === 'single');
   hasHammingMatch = computed(() => this.hammingResults().some((item) => item.distance === 0));
   hasRiskPatterns = computed(() => this.riskPatterns().length > 0);
-  hasDatabaseResult = computed(() => this.resultKind() === 'db-hamming' || this.resultKind() === 'db-levenshtein');
+  hasDatabaseResult = computed(() => this.resultScope() === 'database');
   databaseMatchCount = computed(
     () => this.databaseResults().filter((entry) => this.entryHasMatch(entry)).length,
   );
@@ -120,7 +144,27 @@ export class GenomicsComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
+    void this.loadSessions();
     void this.loadRiskPatterns();
+  }
+
+  async loadSessions(showMessage = false): Promise<void> {
+    const started = this.nowMs();
+
+    try {
+      const response = await firstValueFrom(
+        this.http.get<SessionsResponse>(`${API_BASE}/sessions`),
+      );
+      this.sessions.set(response.sessions);
+
+      if (showMessage) {
+        this.infoMessage.set(
+          `${response.sessions.length} aktive Sessions geladen in ${this.elapsedMs(started)} ms.`,
+        );
+      }
+    } catch (error) {
+      this.errorMessage.set(`Sessions konnten nicht geladen werden: ${this.errorText(error)}`);
+    }
   }
 
   async loadRiskPatterns(): Promise<void> {
@@ -147,7 +191,7 @@ export class GenomicsComponent implements OnInit {
     }
   }
 
-  async generateKeys(): Promise<void> {
+  async createSession(): Promise<void> {
     this.status.set('generating');
     this.clearMessages();
     await this.renderPause();
@@ -159,7 +203,16 @@ export class GenomicsComponent implements OnInit {
 
       this.keyPair = generated;
       this.serverKeyB64 = this.tfhe.toBase64(generated.serverKeyBytes);
-      this.publicKeyB64 = '';
+      this.publicKeyB64 = this.tfhe.toBase64(this.tfhe.generatePublicKey(generated.clientKey));
+      const response = await firstValueFrom(
+        this.http.post<CreateSessionResponse>(`${API_BASE}/sessions`, {
+          public_key: this.publicKeyB64,
+          server_key: this.serverKeyB64,
+        }),
+      );
+
+      this.activeSession.set(response.session);
+      this.sessionRole.set('creator');
       this.keyReady.set(true);
       this.encryptedSequenceReady.set(false);
       this.encryptedSequenceItems = [];
@@ -171,17 +224,65 @@ export class GenomicsComponent implements OnInit {
 
       this.status.set('ready');
       this.infoMessage.set(
-        `Keyset bereit. Der Client-Key bleibt lokal. Dauer: ${this.elapsedMs(started)} ms.`,
+        `Session erstellt. Der Client-Key bleibt lokal. Dauer: ${this.elapsedMs(started)} ms.`,
       );
+      void this.loadSessions();
     } catch (error) {
-      this.setError(`Fehler bei der Schluesselgenerierung: ${this.errorText(error)}`);
+      this.setError(`Fehler beim Erstellen der Session: ${this.errorText(error)}`);
     }
   }
 
+  async generateKeys(): Promise<void> {
+    await this.createSession();
+  }
+
+  joinSession(session: GenomicsSession): void {
+    const started = this.nowMs();
+    this.keyPair = null;
+    this.serverKeyB64 = '';
+    this.publicKeyB64 = session.public_key;
+    this.activeSession.set(session);
+    this.sessionRole.set('participant');
+    this.keyReady.set(false);
+    this.encryptedSequenceReady.set(false);
+    this.encryptedSequenceItems = [];
+    this.encryptedSource = '';
+    this.encryptedLength.set(0);
+    this.status.set('ready');
+    this.clearResults();
+    this.clearMessages();
+    this.clearKeyOutput();
+    this.clearSequenceOutput();
+    this.infoMessage.set(
+      `Session beigetreten. Nur der Public-Key ist verfuegbar. Dauer: ${this.elapsedMs(started)} ms.`,
+    );
+  }
+
+  leaveSession(): void {
+    const started = this.nowMs();
+    this.keyPair = null;
+    this.serverKeyB64 = '';
+    this.publicKeyB64 = '';
+    this.activeSession.set(null);
+    this.sessionRole.set(null);
+    this.keyReady.set(false);
+    this.encryptedSequenceReady.set(false);
+    this.encryptedSequenceItems = [];
+    this.encryptedSource = '';
+    this.encryptedLength.set(0);
+    this.status.set('idle');
+    this.clearResults();
+    this.clearMessages();
+    this.clearKeyOutput();
+    this.clearSequenceOutput();
+    this.infoMessage.set(`Session verlassen in ${this.elapsedMs(started)} ms.`);
+    void this.loadSessions();
+  }
+
   async encryptSequenceLocal(showMessage = true): Promise<void> {
-    const material = this.keyMaterial();
-    if (!material) {
-      this.setError('Bitte zuerst ein Client-Keyset erzeugen.');
+    const publicKeyB64 = this.currentPublicKeyB64();
+    if (!publicKeyB64) {
+      this.setError('Bitte zuerst eine Session erstellen oder beitreten.');
       return;
     }
 
@@ -194,9 +295,8 @@ export class GenomicsComponent implements OnInit {
       await this.renderPause();
       const started = this.nowMs();
 
-      this.encryptedSequenceItems = encoded.map((value) =>
-        this.tfhe.toBase64(this.tfhe.encryptUint8(value, material.keyPair.clientKey)),
-      );
+      await this.tfhe.ensureInitialized();
+      this.encryptedSequenceItems = this.tfhe.encryptUint8sCompact(publicKeyB64, encoded);
       this.encryptedSource = cleanSequence;
       this.encryptedLength.set(encoded.length);
       this.encryptedSequenceReady.set(true);
@@ -214,9 +314,9 @@ export class GenomicsComponent implements OnInit {
   }
 
   async encryptServerSequence(): Promise<void> {
-    const material = this.keyMaterial();
-    if (!material) {
-      this.setError('Bitte zuerst ein Client-Keyset erzeugen.');
+    const session = this.activeSession();
+    if (!session) {
+      this.setError('Bitte zuerst eine Session erstellen oder beitreten.');
       return;
     }
 
@@ -228,12 +328,11 @@ export class GenomicsComponent implements OnInit {
       this.clearMessages();
       await this.renderPause();
       const started = this.nowMs();
-      const publicKeyB64 = this.ensurePublicKeyB64(material.keyPair);
 
       const response = await firstValueFrom(
         this.http.post<EncryptResponse>(`${API_BASE}/encrypt`, {
           sequence: cleanSequence,
-          public_key: publicKeyB64,
+          session_id: session.id,
         }),
       );
 
@@ -266,13 +365,23 @@ export class GenomicsComponent implements OnInit {
       const response = await firstValueFrom(
         this.http.post<ProcessResponse>(`${API_BASE}/process`, body),
       );
-      const distances = this.decryptItems(response.encrypted_distance_items);
-      this.hammingResults.set(distances.map((distance, index) => ({ index, distance })));
-      this.resultKind.set('hamming');
+      if (this.canDecryptResults()) {
+        const distances = this.decryptItems(response.encrypted_distance_items);
+        this.hammingResults.set(distances.map((distance, index) => ({ index, distance })));
+        this.resultKind.set('hamming');
+      } else {
+        this.setEncryptedResult('Hamming-Ergebnis', [
+          {
+            label: 'Encrypted Hamming-Distanzen',
+            value: response.encrypted_distance_items.join('\n'),
+          },
+        ]);
+      }
+      this.resultScope.set('single');
       this.showResultPanel.set(false);
       this.status.set('result');
       this.infoMessage.set(
-        `${response.windows} Hamming-Fenster berechnet und lokal entschluesselt in ${this.elapsedMs(started)} ms. Result oeffnet die Anzeige.`,
+        `${response.windows} Hamming-Fenster berechnet${this.canDecryptResults() ? ' und lokal entschluesselt' : ''} in ${this.elapsedMs(started)} ms. Result oeffnet die Anzeige.`,
       );
     } catch (error) {
       this.setError(this.errorText(error));
@@ -293,13 +402,23 @@ export class GenomicsComponent implements OnInit {
       const response = await firstValueFrom(
         this.http.post<ProcessResponse>(`${API_BASE}/process-levenshtein`, body),
       );
-      const [distance] = this.decryptItems(response.encrypted_distance_items);
-      this.levenshteinResult.set(distance ?? null);
-      this.resultKind.set('levenshtein');
+      if (this.canDecryptResults()) {
+        const [distance] = this.decryptItems(response.encrypted_distance_items);
+        this.levenshteinResult.set(distance ?? null);
+        this.resultKind.set('levenshtein');
+      } else {
+        this.setEncryptedResult('Levenshtein-Ergebnis', [
+          {
+            label: 'Encrypted Levenshtein-Distanz',
+            value: response.encrypted_distance_items.join('\n'),
+          },
+        ]);
+      }
+      this.resultScope.set('single');
       this.showResultPanel.set(false);
       this.status.set('result');
       this.infoMessage.set(
-        `Levenshtein-Distanz berechnet und lokal entschluesselt in ${this.elapsedMs(started)} ms. Result oeffnet die Anzeige.`,
+        `Levenshtein-Distanz berechnet${this.canDecryptResults() ? ' und lokal entschluesselt' : ''} in ${this.elapsedMs(started)} ms. Result oeffnet die Anzeige.`,
       );
     } catch (error) {
       this.setError(this.errorText(error));
@@ -321,22 +440,33 @@ export class GenomicsComponent implements OnInit {
         this.http.post<CompareDatabaseResponse>(`${API_BASE}/compare-db`, body),
       );
 
-      this.databaseResults.set(
-        response.encrypted_result_items.map((items, index) => {
-          const distances = this.decryptItems(items);
-          const pattern = response.patterns[index];
-          return {
-            label: pattern ? `${pattern.sequence}` : `DB-Sequenz ${index + 1}`,
-            distances,
-            bestDistance: distances.length ? Math.min(...distances) : null,
-          };
-        }),
-      );
-      this.resultKind.set('db-hamming');
+      if (this.canDecryptResults()) {
+        this.databaseResults.set(
+          response.encrypted_result_items.map((items, index) => {
+            const distances = this.decryptItems(items);
+            const pattern = response.patterns[index];
+            return {
+              label: pattern ? `${pattern.sequence}` : `DB-Sequenz ${index + 1}`,
+              distances,
+              bestDistance: distances.length ? Math.min(...distances) : null,
+            };
+          }),
+        );
+        this.resultKind.set('db-hamming');
+      } else {
+        this.setEncryptedResult(
+          'Encrypted DB-Hamming-Ergebnisse',
+          response.encrypted_result_items.map((items, index) => ({
+            label: response.patterns[index]?.sequence ?? `DB-Sequenz ${index + 1}`,
+            value: items.join('\n'),
+          })),
+        );
+      }
+      this.resultScope.set('database');
       this.showResultPanel.set(false);
       this.status.set('result');
       this.infoMessage.set(
-        `${response.compared_sequences} Datenbanksequenzen verglichen und lokal entschluesselt in ${this.elapsedMs(started)} ms.`,
+        `${response.compared_sequences} Datenbanksequenzen verglichen${this.canDecryptResults() ? ' und lokal entschluesselt' : ''} in ${this.elapsedMs(started)} ms.`,
       );
     } catch (error) {
       this.setError(this.errorText(error));
@@ -358,22 +488,33 @@ export class GenomicsComponent implements OnInit {
         this.http.post<CompareDatabaseResponse>(`${API_BASE}/compare-db-levenshtein`, body),
       );
 
-      this.databaseResults.set(
-        response.encrypted_result_items.map((items, index) => {
-          const distances = this.decryptItems(items);
-          const pattern = response.patterns[index];
-          return {
-            label: pattern ? `${pattern.sequence}` : `DB-Sequenz ${index + 1}`,
-            distances,
-            bestDistance: distances[0] ?? null,
-          };
-        }),
-      );
-      this.resultKind.set('db-levenshtein');
+      if (this.canDecryptResults()) {
+        this.databaseResults.set(
+          response.encrypted_result_items.map((items, index) => {
+            const distances = this.decryptItems(items);
+            const pattern = response.patterns[index];
+            return {
+              label: pattern ? `${pattern.sequence}` : `DB-Sequenz ${index + 1}`,
+              distances,
+              bestDistance: distances[0] ?? null,
+            };
+          }),
+        );
+        this.resultKind.set('db-levenshtein');
+      } else {
+        this.setEncryptedResult(
+          'Encrypted DB-Levenshtein-Ergebnisse',
+          response.encrypted_result_items.map((items, index) => ({
+            label: response.patterns[index]?.sequence ?? `DB-Sequenz ${index + 1}`,
+            value: items.join('\n'),
+          })),
+        );
+      }
+      this.resultScope.set('database');
       this.showResultPanel.set(false);
       this.status.set('result');
       this.infoMessage.set(
-        `${response.compared_sequences} Levenshtein-Vergleiche berechnet und lokal entschluesselt in ${this.elapsedMs(started)} ms.`,
+        `${response.compared_sequences} Levenshtein-Vergleiche berechnet${this.canDecryptResults() ? ' und lokal entschluesselt' : ''} in ${this.elapsedMs(started)} ms.`,
       );
     } catch (error) {
       this.setError(this.errorText(error));
@@ -385,6 +526,8 @@ export class GenomicsComponent implements OnInit {
     this.keyPair = null;
     this.serverKeyB64 = '';
     this.publicKeyB64 = '';
+    this.activeSession.set(null);
+    this.sessionRole.set(null);
     this.keyReady.set(false);
     this.encryptedSequenceReady.set(false);
     this.encryptedSequenceItems = [];
@@ -409,8 +552,8 @@ export class GenomicsComponent implements OnInit {
 
   toggleKeys(): void {
     const started = this.nowMs();
-    const material = this.keyMaterial();
-    if (!material) return;
+    const publicKeyB64 = this.currentPublicKeyB64();
+    if (!publicKeyB64) return;
 
     this.clearMessages();
     if (this.keyOutputItems().length > 0) {
@@ -419,20 +562,25 @@ export class GenomicsComponent implements OnInit {
       return;
     }
 
-    this.keyOutputItems.set([
-      {
-        label: 'Private Key',
-        value: this.tfhe.toBase64(material.keyPair.clientKey.serialize()),
-      },
+    const items: KeyOutput[] = [
       {
         label: 'Public Key',
-        value: this.ensurePublicKeyB64(material.keyPair),
+        value: publicKeyB64,
       },
-      {
+    ];
+    const material = this.keyMaterial();
+    if (material) {
+      items.unshift({
+        label: 'Private Key',
+        value: this.tfhe.toBase64(material.keyPair.clientKey.serialize()),
+      });
+      items.push({
         label: 'Server Key',
         value: material.serverKeyB64,
-      },
-    ]);
+      });
+    }
+
+    this.keyOutputItems.set(items);
     this.infoMessage.set(`Keys angezeigt in ${this.elapsedMs(started)} ms.`);
   }
 
@@ -460,46 +608,50 @@ export class GenomicsComponent implements OnInit {
   }
 
   private async computeBody(): Promise<Record<string, string | string[] | undefined> | null> {
-    const material = await this.ensureEncryptedSequence();
-    if (!material) return null;
-
-    const publicKeyB64 = this.ensurePublicKeyB64(material.keyPair);
+    const session = this.activeSession();
+    if (!session) {
+      this.setError('Bitte zuerst eine Session erstellen oder beitreten.');
+      return null;
+    }
+    const ready = await this.ensureEncryptedSequence();
+    if (!ready) return null;
 
     return {
       encrypted_bases: this.encryptedSequenceItems,
-      server_key: material.serverKeyB64,
-      public_key: publicKeyB64,
+      session_id: session.id,
     };
   }
 
   private async databaseBody(): Promise<Record<string, number | string | string[] | undefined> | null> {
-    const material = await this.ensureEncryptedSequence();
-    if (!material) return null;
-    const publicKeyB64 = this.ensurePublicKeyB64(material.keyPair);
+    const session = this.activeSession();
+    if (!session) {
+      this.setError('Bitte zuerst eine Session erstellen oder beitreten.');
+      return null;
+    }
+    const ready = await this.ensureEncryptedSequence();
+    if (!ready) return null;
     const selectedPatternId = this.selectedPatternId();
 
     return {
       encrypted_bases: this.encryptedSequenceItems,
-      server_key: material.serverKeyB64,
-      public_key: publicKeyB64,
+      session_id: session.id,
       pattern_id: selectedPatternId === 'all' ? undefined : Number(selectedPatternId),
     };
   }
 
-  private async ensureEncryptedSequence(): Promise<KeyMaterial | null> {
-    const material = this.keyMaterial();
-    if (!material) {
-      this.setError('Bitte zuerst ein Client-Keyset erzeugen.');
-      return null;
+  private async ensureEncryptedSequence(): Promise<boolean> {
+    if (!this.activeSession()) {
+      this.setError('Bitte zuerst eine Session erstellen oder beitreten.');
+      return false;
     }
 
     const cleanSequence = this.normalizeDna(this.sequenceInput());
     if (this.encryptedSequenceItems.length === 0 || this.encryptedSource !== cleanSequence) {
       await this.encryptSequenceLocal(false);
-      if (this.status() === 'error') return null;
+      if (this.status() === 'error') return false;
     }
 
-    return material;
+    return true;
   }
 
   private keyMaterial(): KeyMaterial | null {
@@ -513,6 +665,22 @@ export class GenomicsComponent implements OnInit {
     };
   }
 
+  private currentPublicKeyB64(): string | null {
+    if (this.publicKeyB64) return this.publicKeyB64;
+
+    const session = this.activeSession();
+    if (session?.public_key) {
+      this.publicKeyB64 = session.public_key;
+      return this.publicKeyB64;
+    }
+
+    if (this.keyPair) {
+      return this.ensurePublicKeyB64(this.keyPair);
+    }
+
+    return null;
+  }
+
   private ensurePublicKeyB64(keyPair: KeyPair): string {
     if (!this.publicKeyB64) {
       const publicKeyBytes = this.tfhe.generatePublicKey(keyPair.clientKey);
@@ -520,6 +688,16 @@ export class GenomicsComponent implements OnInit {
     }
 
     return this.publicKeyB64;
+  }
+
+  private canDecryptResults(): boolean {
+    return this.keyReady() && this.keyPair !== null;
+  }
+
+  private setEncryptedResult(title: string, items: KeyOutput[]): void {
+    this.encryptedResultTitle.set(title);
+    this.encryptedResultItems.set(items);
+    this.resultKind.set('encrypted');
   }
 
   private decryptItems(items: string[]): number[] {
@@ -562,7 +740,10 @@ export class GenomicsComponent implements OnInit {
     this.hammingResults.set([]);
     this.levenshteinResult.set(null);
     this.databaseResults.set([]);
+    this.encryptedResultTitle.set('');
+    this.encryptedResultItems.set([]);
     this.resultKind.set('none');
+    this.resultScope.set('none');
     this.showResultPanel.set(false);
   }
 

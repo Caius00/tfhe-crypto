@@ -1,12 +1,70 @@
+@if (!hasSession()) {
+  <section class="genomics-page session-lobby">
+    <header class="page-header">
+      <div>
+        <h1>06 - Encrypted Genomics</h1>
+        <p>Session erstellen oder einer aktiven Session beitreten.</p>
+      </div>
+      <div class="key-actions">
+        <button type="button" class="primary-button" (click)="createSession()" [disabled]="isBusy()">
+          Neue Session
+        </button>
+        <button type="button" class="ghost-button" (click)="loadSessions(true)" [disabled]="isBusy()">
+          Aktualisieren
+        </button>
+      </div>
+    </header>
+
+    <div class="status-row" [class.status-error]="status() === 'error'">
+      <span class="status-dot"></span>
+      <span>
+        @if (status() === 'generating') {
+          Session wird erstellt...
+        } @else {
+          Keine Session aktiv
+        }
+      </span>
+    </div>
+
+    @if (infoMessage()) {
+      <p class="message info">{{ infoMessage() }}</p>
+    }
+    @if (errorMessage()) {
+      <p class="message error">{{ errorMessage() }}</p>
+    }
+
+    <section class="action-card session-list-card">
+      <div class="card-heading">
+        <h2>Aktive Sessions</h2>
+        <span>{{ sessions().length }} verfuegbar</span>
+      </div>
+      <div class="session-list">
+        @for (session of sessions(); track session.id) {
+          <article class="session-row">
+            <div>
+              <h3>{{ session.id }}</h3>
+              <span>{{ session.created_at }}</span>
+            </div>
+            <button type="button" class="ghost-button" (click)="joinSession(session)" [disabled]="isBusy()">
+              Beitreten
+            </button>
+          </article>
+        } @empty {
+          <div class="empty-state">Keine aktive Session vorhanden.</div>
+        }
+      </div>
+    </section>
+  </section>
+} @else {
 <section class="genomics-page">
   <header class="page-header">
     <div>
       <h1>06 - Encrypted Genomics</h1>
-      <p>Client-Key lokal, Server-Rechnung homomorph.</p>
+      <p>Session {{ activeSession()?.id }} - {{ sessionRole() === 'creator' ? 'Ersteller' : 'Teilnehmer' }}</p>
     </div>
     <div class="key-actions">
-      <button type="button" class="primary-button" (click)="generateKeys()" [disabled]="isBusy()">
-        Keyset erzeugen
+      <button type="button" class="primary-button" (click)="leaveSession()" [disabled]="isBusy()">
+        Session verlassen
       </button>
       @if (hasKeys()) {
         <button type="button" class="ghost-button" (click)="toggleKeys()" [disabled]="isBusy()">
@@ -28,8 +86,10 @@
         Sequenz wird verschluesselt...
       } @else if (status() === 'processing') {
         Homomorphe Rechnung laeuft...
-      } @else if (hasKeys()) {
+      } @else if (hasPrivateKeys()) {
         Client-Key bereit
+      } @else if (hasSession()) {
+        Public-Key bereit
       } @else {
         Noch kein Keyset
       }
@@ -224,6 +284,22 @@
           }
         </div>
       }
+
+      @if (resultKind() === 'encrypted') {
+        <div class="result-heading">
+          <h2>{{ encryptedResultTitle() }}</h2>
+          <span>nicht entschluesselbar</span>
+        </div>
+        <div class="key-list">
+          @for (item of encryptedResultItems(); track item.label) {
+            <div class="key-item">
+              <label>{{ item.label }}</label>
+              <textarea class="output-textarea" rows="5" readonly [ngModel]="item.value"></textarea>
+            </div>
+          }
+        </div>
+      }
     </section>
   }
 </section>
+}

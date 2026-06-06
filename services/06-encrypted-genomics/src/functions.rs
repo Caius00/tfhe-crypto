@@ -28,6 +28,19 @@ pub struct RiskPattern {
     pub sequence: String,
 }
 
+#[derive(Clone, Debug, Serialize, JsonSchema)]
+pub struct GenomicsSession {
+    pub id: String,
+    pub public_key: String,
+    pub created_at: String,
+}
+
+#[derive(Clone)]
+struct SessionKeys {
+    public_key: String,
+    server_key: String,
+}
+
 #[derive(Clone)]
 struct EncryptedRiskPattern {
     pattern: RiskPattern,
@@ -106,6 +119,14 @@ pub async fn initialize_database() -> Result<(), ApiError> {
                 sequence TEXT NOT NULL UNIQUE,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now()
             );
+
+            CREATE TABLE IF NOT EXISTS genomics_sessions (
+                id TEXT PRIMARY KEY,
+                public_key TEXT NOT NULL,
+                server_key TEXT NOT NULL,
+                active BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
             ",
         )
         .await
@@ -122,6 +143,115 @@ pub async fn initialize_database() -> Result<(), ApiError> {
     }
 
     Ok(())
+}
+
+async fn create_session(
+    public_key: String,
+    server_key: String,
+) -> Result<GenomicsSession, ApiError> {
+    let _timer = FunctionTimer::start("create_session");
+    initialize_database().await?;
+    let client = connect_database().await?;
+    let id = uuid::Uuid::new_v4().to_string();
+
+    let row = client
+        .query_one(
+            "INSERT INTO genomics_sessions (id, public_key, server_key) VALUES ($1, $2, $3) \
+             RETURNING created_at::TEXT AS created_at",
+            &[&id, &public_key, &server_key],
+        )
+        .await
+        .map_err(|e| internal_error(format!("Failed to create genomics session: {e}")))?;
+
+    Ok(GenomicsSession {
+        id,
+        public_key,
+        created_at: row.get("created_at"),
+    })
+}
+
+async fn list_sessions() -> Result<Vec<GenomicsSession>, ApiError> {
+    let _timer = FunctionTimer::start("list_sessions");
+    initialize_database().await?;
+    let client = connect_database().await?;
+    let rows = client
+        .query(
+            "SELECT id, public_key, created_at::TEXT AS created_at \
+             FROM genomics_sessions WHERE active = TRUE ORDER BY created_at DESC",
+            &[],
+        )
+        .await
+        .map_err(|e| internal_error(format!("Failed to list genomics sessions: {e}")))?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| GenomicsSession {
+            id: row.get("id"),
+            public_key: row.get("public_key"),
+            created_at: row.get("created_at"),
+        })
+        .collect())
+}
+
+async fn load_session_keys(session_id: &str) -> Result<SessionKeys, ApiError> {
+    let _timer = FunctionTimer::start("load_session_keys");
+    initialize_database().await?;
+    let client = connect_database().await?;
+    let row = client
+        .query_opt(
+            "SELECT public_key, server_key FROM genomics_sessions WHERE id = $1 AND active = TRUE",
+            &[&session_id],
+        )
+        .await
+        .map_err(|e| internal_error(format!("Failed to load genomics session: {e}")))?
+        .ok_or_else(|| bad_request(format!("Unknown genomics session: {session_id}")))?;
+
+    Ok(SessionKeys {
+        public_key: row.get("public_key"),
+        server_key: row.get("server_key"),
+    })
+}
+
+async fn resolve_public_key(
+    session_id: Option<&str>,
+    provided_public_key: Option<&str>,
+) -> Result<String, ApiError> {
+    if let Some(public_key) = provided_public_key.filter(|value| !value.trim().is_empty()) {
+        return Ok(public_key.to_string());
+    }
+
+    let session_id =
+        session_id.ok_or_else(|| bad_request("Request needs session_id or public_key"))?;
+    Ok(load_session_keys(session_id).await?.public_key)
+}
+
+async fn resolve_session_keys(
+    session_id: Option<&str>,
+    provided_public_key: Option<&str>,
+    provided_server_key: Option<&str>,
+) -> Result<SessionKeys, ApiError> {
+    if let Some(session_id) = session_id.filter(|value| !value.trim().is_empty()) {
+        let mut keys = load_session_keys(session_id).await?;
+        if let Some(public_key) = provided_public_key.filter(|value| !value.trim().is_empty()) {
+            keys.public_key = public_key.to_string();
+        }
+        if let Some(server_key) = provided_server_key.filter(|value| !value.trim().is_empty()) {
+            keys.server_key = server_key.to_string();
+        }
+        return Ok(keys);
+    }
+
+    let public_key = provided_public_key
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| bad_request("Request needs public_key when no session_id is provided"))?;
+    let server_key = provided_server_key
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| bad_request("Request needs server_key when no session_id is provided"))?;
+
+    Ok(SessionKeys {
+        public_key: public_key.to_string(),
+        server_key: server_key.to_string(),
+    })
 }
 
 async fn load_risk_patterns(pattern_id: Option<i32>) -> Result<Vec<RiskPattern>, ApiError> {
@@ -677,7 +807,10 @@ fn encrypt_risk_patterns(
 #[derive(Deserialize, Serialize, JsonSchema)]
 pub struct EncryptRequest {
     pub sequence: String,
-    pub public_key: String,
+    #[serde(default)]
+    pub public_key: Option<String>,
+    #[serde(default)]
+    pub session_id: Option<String>,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -692,8 +825,12 @@ pub struct ProcessRequest {
     pub encrypted_sequence: Option<String>,
     #[serde(default)]
     pub encrypted_bases: Option<Vec<String>>,
-    pub server_key: String,
-    pub public_key: String,
+    #[serde(default)]
+    pub server_key: Option<String>,
+    #[serde(default)]
+    pub public_key: Option<String>,
+    #[serde(default)]
+    pub session_id: Option<String>,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -707,14 +844,34 @@ pub struct PatternsResponse {
     pub patterns: Vec<RiskPattern>,
 }
 
+#[derive(Serialize, JsonSchema)]
+pub struct SessionsResponse {
+    pub sessions: Vec<GenomicsSession>,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema)]
+pub struct CreateSessionRequest {
+    pub public_key: String,
+    pub server_key: String,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct CreateSessionResponse {
+    pub session: GenomicsSession,
+}
+
 #[derive(Deserialize, Serialize, JsonSchema)]
 pub struct CompareDatabaseRequest {
     #[serde(default)]
     pub encrypted_sequence: Option<String>,
     #[serde(default)]
     pub encrypted_bases: Option<Vec<String>>,
-    pub server_key: String,
-    pub public_key: String,
+    #[serde(default)]
+    pub server_key: Option<String>,
+    #[serde(default)]
+    pub public_key: Option<String>,
+    #[serde(default)]
+    pub session_id: Option<String>,
     #[serde(default)]
     pub pattern_id: Option<i32>,
 }
@@ -739,14 +896,17 @@ pub struct CompareDatabaseLevenshteinResponse {
     pub patterns: Vec<RiskPattern>,
 }
 
-fn encrypt_sequence(req: EncryptRequest) -> Result<EncryptResponse, ApiError> {
+fn encrypt_sequence(
+    req: EncryptRequest,
+    public_key_b64: String,
+) -> Result<EncryptResponse, ApiError> {
     let _timer = FunctionTimer::start("encrypt_sequence");
     let clean = encode_dna(&req.sequence).map_err(bad_request)?;
     if clean.is_empty() {
         return Err(bad_request("Sequence must not be empty"));
     }
 
-    let public_key = decode_public_key(&req.public_key)?;
+    let public_key = decode_public_key(&public_key_b64)?;
     let len = clean.len();
 
     let encrypted = encrypt_clear_values(&clean, &public_key)?;
@@ -757,14 +917,14 @@ fn encrypt_sequence(req: EncryptRequest) -> Result<EncryptResponse, ApiError> {
     })
 }
 
-fn process_hamming(req: ProcessRequest) -> Result<ProcessResponse, ApiError> {
+fn process_hamming(req: ProcessRequest, keys: SessionKeys) -> Result<ProcessResponse, ApiError> {
     let _timer = FunctionTimer::start("process_hamming");
     let enc_seq = deserialize_encrypted_sequence(
         req.encrypted_sequence.as_deref(),
         req.encrypted_bases.as_deref(),
     )?;
     let pattern = parse_pattern(SERVER_RISK_PATTERN).map_err(bad_request)?;
-    let server_key = decode_server_key(&req.server_key)?;
+    let server_key = decode_server_key(&keys.server_key)?;
 
     let enc_distances = with_server_key(server_key, move || {
         homomorphic_sliding_window(&enc_seq, &pattern)
@@ -780,14 +940,15 @@ fn process_hamming(req: ProcessRequest) -> Result<ProcessResponse, ApiError> {
 fn compare_database(
     req: CompareDatabaseRequest,
     patterns: Vec<RiskPattern>,
+    keys: SessionKeys,
 ) -> Result<CompareDatabaseResponse, ApiError> {
     let _timer = FunctionTimer::start("compare_database");
     let enc_input = deserialize_encrypted_sequence(
         req.encrypted_sequence.as_deref(),
         req.encrypted_bases.as_deref(),
     )?;
-    let public_key = decode_public_key(&req.public_key)?;
-    let server_key = decode_server_key(&req.server_key)?;
+    let public_key = decode_public_key(&keys.public_key)?;
+    let server_key = decode_server_key(&keys.server_key)?;
     let encrypted_patterns = encrypt_risk_patterns(&patterns, &public_key)?;
     let response_patterns: Vec<RiskPattern> = encrypted_patterns
         .iter()
@@ -810,14 +971,17 @@ fn compare_database(
     })
 }
 
-fn process_levenshtein(req: ProcessRequest) -> Result<ProcessLevenshteinResponse, ApiError> {
+fn process_levenshtein(
+    req: ProcessRequest,
+    keys: SessionKeys,
+) -> Result<ProcessLevenshteinResponse, ApiError> {
     let _timer = FunctionTimer::start("process_levenshtein");
     let enc_seq = deserialize_encrypted_sequence(
         req.encrypted_sequence.as_deref(),
         req.encrypted_bases.as_deref(),
     )?;
     let pattern = parse_pattern(SERVER_RISK_PATTERN).map_err(bad_request)?;
-    let server_key = decode_server_key(&req.server_key)?;
+    let server_key = decode_server_key(&keys.server_key)?;
 
     let distance = with_server_key(server_key, move || {
         homomorphic_levenshtein_distance(&enc_seq, &pattern)
@@ -833,14 +997,15 @@ fn process_levenshtein(req: ProcessRequest) -> Result<ProcessLevenshteinResponse
 fn compare_database_levenshtein(
     req: CompareDatabaseRequest,
     patterns: Vec<RiskPattern>,
+    keys: SessionKeys,
 ) -> Result<CompareDatabaseLevenshteinResponse, ApiError> {
     let _timer = FunctionTimer::start("compare_database_levenshtein");
     let enc_input = deserialize_encrypted_sequence(
         req.encrypted_sequence.as_deref(),
         req.encrypted_bases.as_deref(),
     )?;
-    let public_key = decode_public_key(&req.public_key)?;
-    let server_key = decode_server_key(&req.server_key)?;
+    let public_key = decode_public_key(&keys.public_key)?;
+    let server_key = decode_server_key(&keys.server_key)?;
     let encrypted_patterns = encrypt_risk_patterns(&patterns, &public_key)?;
     let response_patterns: Vec<RiskPattern> = encrypted_patterns
         .iter()
@@ -864,6 +1029,20 @@ fn compare_database_levenshtein(
 }
 
 // API Handler
+pub async fn sessions_handler() -> Result<axum::Json<SessionsResponse>, ApiError> {
+    let _timer = FunctionTimer::start("sessions_handler");
+    let sessions = list_sessions().await?;
+    Ok(axum::Json(SessionsResponse { sessions }))
+}
+
+pub async fn create_session_handler(
+    axum::Json(req): axum::Json<CreateSessionRequest>,
+) -> Result<axum::Json<CreateSessionResponse>, ApiError> {
+    let _timer = FunctionTimer::start("create_session_handler");
+    let session = create_session(req.public_key, req.server_key).await?;
+    Ok(axum::Json(CreateSessionResponse { session }))
+}
+
 pub async fn patterns_handler() -> Result<axum::Json<PatternsResponse>, ApiError> {
     let _timer = FunctionTimer::start("patterns_handler");
     let patterns = load_risk_patterns(None).await?;
@@ -874,7 +1053,9 @@ pub async fn encrypt_handler(
     axum::Json(req): axum::Json<EncryptRequest>,
 ) -> Result<axum::Json<EncryptResponse>, ApiError> {
     let _timer = FunctionTimer::start("encrypt_handler");
-    let response = tokio::task::spawn_blocking(move || encrypt_sequence(req))
+    let public_key =
+        resolve_public_key(req.session_id.as_deref(), req.public_key.as_deref()).await?;
+    let response = tokio::task::spawn_blocking(move || encrypt_sequence(req, public_key))
         .await
         .map_err(join_error)??;
     Ok(axum::Json(response))
@@ -884,7 +1065,13 @@ pub async fn process_handler(
     axum::Json(req): axum::Json<ProcessRequest>,
 ) -> Result<axum::Json<ProcessResponse>, ApiError> {
     let _timer = FunctionTimer::start("process_handler");
-    let response = tokio::task::spawn_blocking(move || process_hamming(req))
+    let keys = resolve_session_keys(
+        req.session_id.as_deref(),
+        req.public_key.as_deref(),
+        req.server_key.as_deref(),
+    )
+    .await?;
+    let response = tokio::task::spawn_blocking(move || process_hamming(req, keys))
         .await
         .map_err(join_error)??;
     Ok(axum::Json(response))
@@ -894,8 +1081,14 @@ pub async fn compare_database_handler(
     axum::Json(req): axum::Json<CompareDatabaseRequest>,
 ) -> Result<axum::Json<CompareDatabaseResponse>, ApiError> {
     let _timer = FunctionTimer::start("compare_database_handler");
+    let keys = resolve_session_keys(
+        req.session_id.as_deref(),
+        req.public_key.as_deref(),
+        req.server_key.as_deref(),
+    )
+    .await?;
     let patterns = load_risk_patterns(req.pattern_id).await?;
-    let response = tokio::task::spawn_blocking(move || compare_database(req, patterns))
+    let response = tokio::task::spawn_blocking(move || compare_database(req, patterns, keys))
         .await
         .map_err(join_error)??;
     Ok(axum::Json(response))
@@ -905,7 +1098,13 @@ pub async fn process_levenshtein_handler(
     axum::Json(req): axum::Json<ProcessRequest>,
 ) -> Result<axum::Json<ProcessLevenshteinResponse>, ApiError> {
     let _timer = FunctionTimer::start("process_levenshtein_handler");
-    let response = tokio::task::spawn_blocking(move || process_levenshtein(req))
+    let keys = resolve_session_keys(
+        req.session_id.as_deref(),
+        req.public_key.as_deref(),
+        req.server_key.as_deref(),
+    )
+    .await?;
+    let response = tokio::task::spawn_blocking(move || process_levenshtein(req, keys))
         .await
         .map_err(join_error)??;
     Ok(axum::Json(response))
@@ -915,9 +1114,16 @@ pub async fn compare_database_levenshtein_handler(
     axum::Json(req): axum::Json<CompareDatabaseRequest>,
 ) -> Result<axum::Json<CompareDatabaseLevenshteinResponse>, ApiError> {
     let _timer = FunctionTimer::start("compare_database_levenshtein_handler");
+    let keys = resolve_session_keys(
+        req.session_id.as_deref(),
+        req.public_key.as_deref(),
+        req.server_key.as_deref(),
+    )
+    .await?;
     let patterns = load_risk_patterns(req.pattern_id).await?;
-    let response = tokio::task::spawn_blocking(move || compare_database_levenshtein(req, patterns))
-        .await
-        .map_err(join_error)??;
+    let response =
+        tokio::task::spawn_blocking(move || compare_database_levenshtein(req, patterns, keys))
+            .await
+            .map_err(join_error)??;
     Ok(axum::Json(response))
 }
