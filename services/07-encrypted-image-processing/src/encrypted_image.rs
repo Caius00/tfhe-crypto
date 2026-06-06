@@ -31,6 +31,42 @@ impl EncryptedImage {
         let elapsed = now.elapsed();
         println!("Manipulation Finished in: {:?}", elapsed);
     }
+
+    // Per Pixel extended by access to neighbors
+    fn extended_base_func<F>(
+        &mut self,
+        function: F
+    ) 
+    where 
+        F: Fn(u32, u32, &EncryptedImage) -> FheUint8 + Sync + Send,
+    {
+        let now = Instant::now();
+
+        let width = self.width;
+        let height = self.height;
+
+        let processed: Vec<FheUint8> = (0..width * height)
+            .into_par_iter()
+            .map(|index| {
+                let row = index / width;
+                let col = index % width;
+
+                function(row, col, self)
+            })
+            .collect();
+        self.pixels = processed;
+
+        println!(
+            "Neighborhood manipulation finished in {:?}",
+            now.elapsed()
+        );
+    }
+
+    fn get_pixel(&self, row: u32, col: u32) -> &FheUint8 {
+        let index = (row * self.width + col) as usize;
+        &self.pixels[index]
+    }
+
     pub fn invert(&mut self) {
         let inverting = |pixel_value: &FheUint8| !pixel_value;
 
@@ -58,6 +94,59 @@ impl EncryptedImage {
 
         self.base_func(black_threshold);
     }
+
+    pub fn blooming(&mut self) {
+        self.extended_base_func(|row, col, image| {
+            if row == 0 || col == 0 ||row == image.height - 1 || col == image.width - 1 {
+                return image.get_pixel(row, col).clone();
+            }
+
+            let threshhold = 220;
+            
+            let center = image.get_pixel(row, col);
+            
+            let n  = image.get_pixel(row - 1, col);
+            let s  = image.get_pixel(row + 1, col);
+            let e  = image.get_pixel(row, col + 1);
+            let w  = image.get_pixel(row, col - 1);
+            
+            let ne = image.get_pixel(row - 1, col + 1);
+            let nw = image.get_pixel(row - 1, col - 1);
+            let se = image.get_pixel(row + 1, col + 1);
+            let sw = image.get_pixel(row + 1, col - 1);
+            
+            let strong = FheUint8::encrypt_trivial(20u8);
+            let weak = FheUint8::encrypt_trivial(10u8);
+            let zero = FheUint8::encrypt_trivial(0u8);
+
+            let boost = n.gt(128).if_then_else(&strong, &zero)
+            + s.gt(threshhold).if_then_else(&strong, &zero)
+            + e.gt(threshhold).if_then_else(&strong, &zero)
+            + w.gt(threshhold).if_then_else(&strong, &zero)
+            + ne.gt(threshhold).if_then_else(&weak, &zero)
+            + nw.gt(threshhold).if_then_else(&weak, &zero)
+            + se.gt(threshhold).if_then_else(&weak, &zero)
+            + sw.gt(threshhold).if_then_else(&weak, &zero);
+            
+            center + boost
+    });}
+
+    pub fn box_blur(&mut self) {
+        self.extended_base_func(|row, col, image| {
+            if row == 0 || col == 0 ||row == image.height - 1 || col == image.width - 1 {
+                return image.get_pixel(row, col).clone();
+            }
+            
+            let center = image.get_pixel(row, col);
+            let north  = image.get_pixel(row - 1, col);
+            let south  = image.get_pixel(row + 1, col);
+            let east  = image.get_pixel(row, col + 1);
+            let west  = image.get_pixel(row, col - 1);
+
+            let sum = center + north + south + west + east;
+            
+            sum / 5u8
+    });}
 
     // ROTATIONS:
     pub fn rotate_90(&mut self) {
@@ -191,6 +280,7 @@ impl EncryptedImage {
     fn swap_width_height(&mut self) {
         swap(&mut self.width, &mut self.height)
     }
+
     fn is_square(&self) -> bool {
         self.width == self.height
     }

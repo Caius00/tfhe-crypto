@@ -241,4 +241,20 @@ impl ImageOperation {
             image.flip_horizontal()
         }).await
     }
+
+    // BLURRING AND BLOOMING
+    pub async fn blur(
+        State(state): State<AppState>,
+    ) -> (StatusCode, Json<ApiResponse>) {
+        Self::run_image_operation(state, |image| {
+            image.box_blur()
+        }).await
+    }
+    pub async fn bloom(
+        State(state): State<AppState>,
+    ) -> (StatusCode, Json<ApiResponse>) {
+        Self::run_image_operation(state, |image| {
+            image.blooming()
+        }).await
+    }
 }
