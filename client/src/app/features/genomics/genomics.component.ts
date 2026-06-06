@@ -1,5 +1,5 @@
 import { HttpClient } from '@angular/common/http';
-import { Component, computed, signal } from '@angular/core';
+import { Component, OnInit, computed, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom } from 'rxjs';
 import { KeyPair } from '../../core/crypto/key-pair.model';
@@ -26,6 +26,16 @@ interface ProcessResponse {
 interface CompareDatabaseResponse {
   encrypted_result_items: string[][];
   compared_sequences: number;
+  patterns: RiskPattern[];
+}
+
+interface PatternsResponse {
+  patterns: RiskPattern[];
+}
+
+interface RiskPattern {
+  id: number;
+  sequence: string;
 }
 
 interface WindowResult {
@@ -57,11 +67,13 @@ const BUSY_STATES: GenomicsStatus[] = ['generating', 'encrypting', 'processing']
   templateUrl: './genomics.component.html',
   styleUrl: './genomics.component.css',
 })
-export class GenomicsComponent {
+export class GenomicsComponent implements OnInit {
   status = signal<GenomicsStatus>('idle');
   resultKind = signal<ResultKind>('none');
   sequenceInput = signal('ATCGATCGAAAA');
   serverSequenceInput = signal('GGTTAC');
+  selectedPatternId = signal('all');
+  riskPatterns = signal<RiskPattern[]>([]);
   encryptedLength = signal(0);
   hammingResults = signal<WindowResult[]>([]);
   levenshteinResult = signal<number | null>(null);
@@ -80,6 +92,7 @@ export class GenomicsComponent {
   hasEncryptedSequence = computed(() => this.encryptedSequenceReady());
   hasResult = computed(() => this.resultKind() !== 'none');
   hasHammingMatch = computed(() => this.hammingResults().some((item) => item.distance === 0));
+  hasRiskPatterns = computed(() => this.riskPatterns().length > 0);
   isBusy = computed(() => BUSY_STATES.includes(this.status()));
 
   private keyPair: KeyPair | null = null;
@@ -92,6 +105,34 @@ export class GenomicsComponent {
     private http: HttpClient,
     private tfhe: TfheService,
   ) {}
+
+  ngOnInit(): void {
+    void this.loadRiskPatterns();
+  }
+
+  async loadRiskPatterns(): Promise<void> {
+    const started = this.nowMs();
+
+    try {
+      const response = await firstValueFrom(
+        this.http.get<PatternsResponse>(`${API_BASE}/patterns`),
+      );
+      this.riskPatterns.set(response.patterns);
+
+      if (
+        this.selectedPatternId() !== 'all' &&
+        !response.patterns.some((pattern) => String(pattern.id) === this.selectedPatternId())
+      ) {
+        this.selectedPatternId.set('all');
+      }
+
+      this.infoMessage.set(
+        `${response.patterns.length} Risikomuster aus der Datenbank geladen in ${this.elapsedMs(started)} ms.`,
+      );
+    } catch (error) {
+      this.errorMessage.set(`Risikomuster konnten nicht geladen werden: ${this.errorText(error)}`);
+    }
+  }
 
   async generateKeys(): Promise<void> {
     this.status.set('generating');
@@ -270,8 +311,9 @@ export class GenomicsComponent {
       this.databaseResults.set(
         response.encrypted_result_items.map((items, index) => {
           const distances = this.decryptItems(items);
+          const pattern = response.patterns[index];
           return {
-            label: `DB-Sequenz ${index + 1}`,
+            label: pattern ? `${pattern.sequence}` : `DB-Sequenz ${index + 1}`,
             distances,
             bestDistance: distances.length ? Math.min(...distances) : null,
           };
@@ -306,8 +348,9 @@ export class GenomicsComponent {
       this.databaseResults.set(
         response.encrypted_result_items.map((items, index) => {
           const distances = this.decryptItems(items);
+          const pattern = response.patterns[index];
           return {
-            label: `DB-Sequenz ${index + 1}`,
+            label: pattern ? `${pattern.sequence}` : `DB-Sequenz ${index + 1}`,
             distances,
             bestDistance: distances[0] ?? null,
           };
@@ -412,15 +455,17 @@ export class GenomicsComponent {
     };
   }
 
-  private async databaseBody(): Promise<Record<string, string | string[] | undefined> | null> {
+  private async databaseBody(): Promise<Record<string, number | string | string[] | undefined> | null> {
     const material = await this.ensureEncryptedSequence();
     if (!material) return null;
     const publicKeyB64 = this.ensurePublicKeyB64(material.keyPair);
+    const selectedPatternId = this.selectedPatternId();
 
     return {
       encrypted_bases: this.encryptedSequenceItems,
       server_key: material.serverKeyB64,
       public_key: publicKeyB64,
+      pattern_id: selectedPatternId === 'all' ? undefined : Number(selectedPatternId),
     };
   }
 

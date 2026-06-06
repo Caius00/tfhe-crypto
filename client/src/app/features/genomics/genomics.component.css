@@ -190,6 +190,32 @@ button:disabled {
   text-align: right;
 }
 
+.field-label {
+  color: #20313a;
+  display: block;
+  font-size: 13px;
+  font-weight: 750;
+  margin-bottom: 6px;
+}
+
+select {
+  background: #ffffff;
+  border: 1px solid #cfd8de;
+  border-radius: 8px;
+  box-sizing: border-box;
+  color: #111827;
+  font: inherit;
+  margin-bottom: 12px;
+  min-height: 40px;
+  padding: 8px 10px;
+  width: 100%;
+}
+
+select:disabled {
+  background: #f3f6f8;
+  color: #7a8790;
+}
+
 textarea {
   border: 1px solid #cfd8de;
   border-radius: 8px;

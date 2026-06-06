@@ -9,15 +9,30 @@ use tfhe::{
     set_server_key, CompactCiphertextList, CompactPublicKey, CompressedServerKey, FheUint8,
     ServerKey,
 };
+use tokio_postgres::NoTls;
 
 type ApiError = (axum::http::StatusCode, String);
 
-const DATABASE_SEQUENCES: [&str; 3] = ["ATC", "GGTT", "TA"];
 const SERVER_RISK_PATTERN: &str = "ATC";
+const SEEDED_RISK_PATTERNS: [&str; 3] = ["ATC", "GGTT", "TA"];
+const DEFAULT_DATABASE_CONFIG: &str =
+    "host=159.195.145.100 port=5432 user=genomics password=genomics dbname=genomics";
 const PARALLEL_HAMMING_WINDOWS: usize = 2;
 const PARALLEL_LEVENSHTEIN_CELLS: usize = 2;
 
 static FHE_SERVER_KEY_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+#[derive(Clone, Debug, Serialize, JsonSchema)]
+pub struct RiskPattern {
+    pub id: i32,
+    pub sequence: String,
+}
+
+#[derive(Clone)]
+struct EncryptedRiskPattern {
+    pattern: RiskPattern,
+    encrypted_bases: Vec<FheUint8>,
+}
 
 struct FunctionTimer {
     function_name: &'static str,
@@ -57,6 +72,90 @@ fn internal_error(message: impl Into<String>) -> ApiError {
 
 fn join_error(error: tokio::task::JoinError) -> ApiError {
     internal_error(format!("Blocking task failed: {error}"))
+}
+
+fn database_config() -> String {
+    std::env::var("GENOMICS_DATABASE_URL").unwrap_or_else(|_| DEFAULT_DATABASE_CONFIG.to_string())
+}
+
+async fn connect_database() -> Result<tokio_postgres::Client, ApiError> {
+    let _timer = FunctionTimer::start("connect_database");
+    let config = database_config();
+    let (client, connection) = tokio_postgres::connect(config.as_str(), NoTls)
+        .await
+        .map_err(|e| internal_error(format!("Failed to connect to genomics database: {e}")))?;
+
+    tokio::spawn(async move {
+        if let Err(error) = connection.await {
+            eprintln!("Genomics database connection failed: {error}");
+        }
+    });
+
+    Ok(client)
+}
+
+pub async fn initialize_database() -> Result<(), ApiError> {
+    let _timer = FunctionTimer::start("initialize_database");
+    let client = connect_database().await?;
+
+    client
+        .batch_execute(
+            "
+            CREATE TABLE IF NOT EXISTS risk_patterns (
+                id SERIAL PRIMARY KEY,
+                sequence TEXT NOT NULL UNIQUE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+            ",
+        )
+        .await
+        .map_err(|e| internal_error(format!("Failed to create risk_patterns table: {e}")))?;
+
+    for sequence in SEEDED_RISK_PATTERNS {
+        client
+            .execute(
+                "INSERT INTO risk_patterns (sequence) VALUES ($1) ON CONFLICT (sequence) DO NOTHING",
+                &[&sequence],
+            )
+            .await
+            .map_err(|e| internal_error(format!("Failed to seed risk pattern {sequence}: {e}")))?;
+    }
+
+    Ok(())
+}
+
+async fn load_risk_patterns(pattern_id: Option<i32>) -> Result<Vec<RiskPattern>, ApiError> {
+    let _timer = FunctionTimer::start("load_risk_patterns");
+    initialize_database().await?;
+    let client = connect_database().await?;
+
+    let rows = if let Some(id) = pattern_id {
+        client
+            .query(
+                "SELECT id, sequence FROM risk_patterns WHERE id = $1 ORDER BY id",
+                &[&id],
+            )
+            .await
+    } else {
+        client
+            .query("SELECT id, sequence FROM risk_patterns ORDER BY id", &[])
+            .await
+    }
+    .map_err(|e| internal_error(format!("Failed to load risk patterns: {e}")))?;
+
+    let patterns: Vec<RiskPattern> = rows
+        .into_iter()
+        .map(|row| RiskPattern {
+            id: row.get("id"),
+            sequence: row.get("sequence"),
+        })
+        .collect();
+
+    if patterns.is_empty() {
+        return Err(bad_request("No risk patterns found for selection"));
+    }
+
+    Ok(patterns)
 }
 
 pub fn encode_dna(seq: &str) -> Result<Vec<u8>, String> {
@@ -198,6 +297,23 @@ fn homomorphic_hamming_distance(window: &[FheUint8], pattern: &[u8]) -> FheUint8
     acc
 }
 
+fn homomorphic_hamming_distance_encrypted(
+    window: &[FheUint8],
+    enc_pattern: &[FheUint8],
+) -> FheUint8 {
+    let mut pairs = window.iter().zip(enc_pattern.iter());
+    let (first_value, first_pattern) = pairs
+        .next()
+        .expect("hamming distance needs a non-empty pattern");
+    let mut acc = FheUint8::cast_from(first_value.ne(first_pattern));
+
+    for (value, pattern_value) in pairs {
+        let diff = FheUint8::cast_from(value.ne(pattern_value));
+        acc = &acc + &diff;
+    }
+    acc
+}
+
 pub fn homomorphic_sliding_window(
     enc_seq: &[FheUint8],
     pattern: &[u8],
@@ -240,38 +356,57 @@ pub fn homomorphic_sliding_window(
     }
 }
 
-pub fn compare_against_database(
-    input_sequence: &[FheUint8],
-    database_sequences: &[Vec<u8>],
-) -> Result<Vec<Vec<FheUint8>>, ApiError> {
-    let _timer = FunctionTimer::start("compare_against_database");
-    database_sequences
-        .par_iter()
-        .map(|db_sequence| {
-            let input_len = input_sequence.len();
-            let db_len = db_sequence.len();
+fn homomorphic_sliding_window_encrypted(
+    enc_seq: &[FheUint8],
+    enc_pattern: &[FheUint8],
+) -> Result<Vec<FheUint8>, ApiError> {
+    let _timer = FunctionTimer::start("homomorphic_sliding_window_encrypted");
+    let n = enc_seq.len();
+    let m = enc_pattern.len();
 
-            if input_len >= db_len {
-                homomorphic_sliding_window(input_sequence, db_sequence)
-            } else {
-                let windows = 0..=(db_len - input_len);
-                if db_len - input_len + 1 >= PARALLEL_HAMMING_WINDOWS {
-                    Ok(windows
-                        .into_par_iter()
-                        .map(|start| {
-                            let window = &db_sequence[start..start + input_len];
-                            homomorphic_hamming_distance(input_sequence, window)
-                        })
-                        .collect())
-                } else {
-                    Ok(windows
-                        .map(|start| {
-                            let window = &db_sequence[start..start + input_len];
-                            homomorphic_hamming_distance(input_sequence, window)
-                        })
-                        .collect())
-                }
-            }
+    if n == 0 {
+        return Err(bad_request("Encrypted sequence must not be empty"));
+    }
+    if m == 0 {
+        return Err(bad_request("Risk pattern must not be empty"));
+    }
+    if m > n {
+        return Err(bad_request("Risk pattern is longer than sequence"));
+    }
+    if m > u8::MAX as usize {
+        return Err(bad_request(
+            "Risk pattern is too long for uint8 Hamming distances",
+        ));
+    }
+
+    let windows = 0..=(n - m);
+    if n - m + 1 >= PARALLEL_HAMMING_WINDOWS {
+        Ok(windows
+            .into_par_iter()
+            .map(|start| {
+                let window = &enc_seq[start..start + m];
+                homomorphic_hamming_distance_encrypted(window, enc_pattern)
+            })
+            .collect())
+    } else {
+        Ok(windows
+            .map(|start| {
+                let window = &enc_seq[start..start + m];
+                homomorphic_hamming_distance_encrypted(window, enc_pattern)
+            })
+            .collect())
+    }
+}
+
+fn compare_against_encrypted_patterns(
+    input_sequence: &[FheUint8],
+    patterns: &[EncryptedRiskPattern],
+) -> Result<Vec<Vec<FheUint8>>, ApiError> {
+    let _timer = FunctionTimer::start("compare_against_encrypted_patterns");
+    patterns
+        .par_iter()
+        .map(|pattern| {
+            homomorphic_sliding_window_encrypted(input_sequence, &pattern.encrypted_bases)
         })
         .collect()
 }
@@ -343,6 +478,73 @@ fn homomorphic_levenshtein_distance(
     Ok(dp[m][n].clone())
 }
 
+fn homomorphic_levenshtein_distance_encrypted(
+    seq_a: &[FheUint8],
+    seq_b: &[FheUint8],
+) -> Result<FheUint8, ApiError> {
+    let _timer = FunctionTimer::start("homomorphic_levenshtein_distance_encrypted");
+    let m = seq_a.len();
+    let n = seq_b.len();
+
+    if m == 0 || n == 0 {
+        return Err(bad_request(
+            "Levenshtein comparison needs two non-empty sequences",
+        ));
+    }
+    if m > u8::MAX as usize || n > u8::MAX as usize {
+        return Err(bad_request(
+            "Sequences are too long for uint8 Levenshtein distances",
+        ));
+    }
+
+    let init_values = encrypted_counting_values(m.max(n), &seq_a[0]);
+    let zero = init_values[0].clone();
+    let mut dp: Vec<Vec<FheUint8>> = vec![vec![zero.clone(); n + 1]; m + 1];
+
+    for i in 0..=m {
+        dp[i][0] = init_values[i].clone();
+    }
+
+    for j in 0..=n {
+        dp[0][j] = init_values[j].clone();
+    }
+
+    for diagonal in 2..=(m + n) {
+        let start_i = diagonal.saturating_sub(n).max(1);
+        let end_i = (diagonal - 1).min(m);
+
+        if start_i > end_i {
+            continue;
+        }
+
+        let cells: Vec<usize> = (start_i..=end_i).collect();
+        let values: Vec<(usize, FheUint8)> = if cells.len() >= PARALLEL_LEVENSHTEIN_CELLS {
+            cells
+                .par_iter()
+                .map(|&i| {
+                    let j = diagonal - i;
+                    (i, levenshtein_cell_encrypted(seq_a, seq_b, &dp, i, j))
+                })
+                .collect()
+        } else {
+            cells
+                .iter()
+                .map(|&i| {
+                    let j = diagonal - i;
+                    (i, levenshtein_cell_encrypted(seq_a, seq_b, &dp, i, j))
+                })
+                .collect()
+        };
+
+        for (i, value) in values {
+            let j = diagonal - i;
+            dp[i][j] = value;
+        }
+    }
+
+    Ok(dp[m][n].clone())
+}
+
 fn encrypted_counting_values(max_value: usize, reference: &FheUint8) -> Vec<FheUint8> {
     let zero = FheUint8::cast_from(reference.ne(reference));
     let mut values = Vec::with_capacity(max_value + 1);
@@ -370,14 +572,31 @@ fn levenshtein_cell(
     fhe_min3(&deletion, &insertion, &substitution)
 }
 
-pub fn compare_against_database_levenshtein(
+fn levenshtein_cell_encrypted(
+    seq_a: &[FheUint8],
+    seq_b: &[FheUint8],
+    dp: &[Vec<FheUint8>],
+    i: usize,
+    j: usize,
+) -> FheUint8 {
+    let cost = FheUint8::cast_from(seq_a[i - 1].ne(&seq_b[j - 1]));
+    let deletion = &dp[i - 1][j] + 1u8;
+    let insertion = &dp[i][j - 1] + 1u8;
+    let substitution = &dp[i - 1][j - 1] + cost;
+
+    fhe_min3(&deletion, &insertion, &substitution)
+}
+
+fn compare_against_encrypted_patterns_levenshtein(
     input_sequence: &[FheUint8],
-    database_sequences: &[Vec<u8>],
+    patterns: &[EncryptedRiskPattern],
 ) -> Result<Vec<FheUint8>, ApiError> {
-    let _timer = FunctionTimer::start("compare_against_database_levenshtein");
-    database_sequences
+    let _timer = FunctionTimer::start("compare_against_encrypted_patterns_levenshtein");
+    patterns
         .par_iter()
-        .map(|db_sequence| homomorphic_levenshtein_distance(input_sequence, db_sequence))
+        .map(|pattern| {
+            homomorphic_levenshtein_distance_encrypted(input_sequence, &pattern.encrypted_bases)
+        })
         .collect()
 }
 
@@ -430,11 +649,27 @@ fn deserialize_encrypted_sequence(
     ))
 }
 
-fn database_sequences_encoded() -> Result<Vec<Vec<u8>>, ApiError> {
-    let _timer = FunctionTimer::start("database_sequences_encoded");
-    DATABASE_SEQUENCES
-        .par_iter()
-        .map(|sequence| encode_dna(sequence).map_err(bad_request))
+fn encrypt_risk_patterns(
+    patterns: &[RiskPattern],
+    public_key: &CompactPublicKey,
+) -> Result<Vec<EncryptedRiskPattern>, ApiError> {
+    let _timer = FunctionTimer::start("encrypt_risk_patterns");
+    patterns
+        .iter()
+        .map(|pattern| {
+            let encoded = encode_dna(&pattern.sequence).map_err(bad_request)?;
+            if encoded.is_empty() {
+                return Err(bad_request(format!(
+                    "Risk pattern {} must not be empty",
+                    pattern.id
+                )));
+            }
+
+            Ok(EncryptedRiskPattern {
+                pattern: pattern.clone(),
+                encrypted_bases: encrypt_clear_values_on_current_pool(&encoded, public_key)?,
+            })
+        })
         .collect()
 }
 
@@ -467,6 +702,11 @@ pub struct ProcessResponse {
     pub windows: usize,
 }
 
+#[derive(Serialize, JsonSchema)]
+pub struct PatternsResponse {
+    pub patterns: Vec<RiskPattern>,
+}
+
 #[derive(Deserialize, Serialize, JsonSchema)]
 pub struct CompareDatabaseRequest {
     #[serde(default)]
@@ -475,12 +715,15 @@ pub struct CompareDatabaseRequest {
     pub encrypted_bases: Option<Vec<String>>,
     pub server_key: String,
     pub public_key: String,
+    #[serde(default)]
+    pub pattern_id: Option<i32>,
 }
 
 #[derive(Serialize, JsonSchema)]
 pub struct CompareDatabaseResponse {
     pub encrypted_result_items: Vec<Vec<String>>,
     pub compared_sequences: usize,
+    pub patterns: Vec<RiskPattern>,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -493,6 +736,7 @@ pub struct ProcessLevenshteinResponse {
 pub struct CompareDatabaseLevenshteinResponse {
     pub encrypted_result_items: Vec<Vec<String>>,
     pub compared_sequences: usize,
+    pub patterns: Vec<RiskPattern>,
 }
 
 fn encrypt_sequence(req: EncryptRequest) -> Result<EncryptResponse, ApiError> {
@@ -533,17 +777,25 @@ fn process_hamming(req: ProcessRequest) -> Result<ProcessResponse, ApiError> {
     })
 }
 
-fn compare_database(req: CompareDatabaseRequest) -> Result<CompareDatabaseResponse, ApiError> {
+fn compare_database(
+    req: CompareDatabaseRequest,
+    patterns: Vec<RiskPattern>,
+) -> Result<CompareDatabaseResponse, ApiError> {
     let _timer = FunctionTimer::start("compare_database");
     let enc_input = deserialize_encrypted_sequence(
         req.encrypted_sequence.as_deref(),
         req.encrypted_bases.as_deref(),
     )?;
+    let public_key = decode_public_key(&req.public_key)?;
     let server_key = decode_server_key(&req.server_key)?;
+    let encrypted_patterns = encrypt_risk_patterns(&patterns, &public_key)?;
+    let response_patterns: Vec<RiskPattern> = encrypted_patterns
+        .iter()
+        .map(|pattern| pattern.pattern.clone())
+        .collect();
 
     let results = with_server_key(server_key, move || {
-        let database_sequences = database_sequences_encoded()?;
-        compare_against_database(&enc_input, &database_sequences)
+        compare_against_encrypted_patterns(&enc_input, &encrypted_patterns)
     })?;
 
     let encrypted_result_items: Vec<Vec<String>> = results
@@ -553,7 +805,8 @@ fn compare_database(req: CompareDatabaseRequest) -> Result<CompareDatabaseRespon
 
     Ok(CompareDatabaseResponse {
         encrypted_result_items,
-        compared_sequences: DATABASE_SEQUENCES.len(),
+        compared_sequences: response_patterns.len(),
+        patterns: response_patterns,
     })
 }
 
@@ -579,17 +832,23 @@ fn process_levenshtein(req: ProcessRequest) -> Result<ProcessLevenshteinResponse
 
 fn compare_database_levenshtein(
     req: CompareDatabaseRequest,
+    patterns: Vec<RiskPattern>,
 ) -> Result<CompareDatabaseLevenshteinResponse, ApiError> {
     let _timer = FunctionTimer::start("compare_database_levenshtein");
     let enc_input = deserialize_encrypted_sequence(
         req.encrypted_sequence.as_deref(),
         req.encrypted_bases.as_deref(),
     )?;
+    let public_key = decode_public_key(&req.public_key)?;
     let server_key = decode_server_key(&req.server_key)?;
+    let encrypted_patterns = encrypt_risk_patterns(&patterns, &public_key)?;
+    let response_patterns: Vec<RiskPattern> = encrypted_patterns
+        .iter()
+        .map(|pattern| pattern.pattern.clone())
+        .collect();
 
     let results = with_server_key(server_key, move || {
-        let database_sequences = database_sequences_encoded()?;
-        compare_against_database_levenshtein(&enc_input, &database_sequences)
+        compare_against_encrypted_patterns_levenshtein(&enc_input, &encrypted_patterns)
     })?;
 
     let encrypted_result_items: Vec<Vec<String>> = results
@@ -599,11 +858,18 @@ fn compare_database_levenshtein(
 
     Ok(CompareDatabaseLevenshteinResponse {
         encrypted_result_items,
-        compared_sequences: DATABASE_SEQUENCES.len(),
+        compared_sequences: response_patterns.len(),
+        patterns: response_patterns,
     })
 }
 
 // API Handler
+pub async fn patterns_handler() -> Result<axum::Json<PatternsResponse>, ApiError> {
+    let _timer = FunctionTimer::start("patterns_handler");
+    let patterns = load_risk_patterns(None).await?;
+    Ok(axum::Json(PatternsResponse { patterns }))
+}
+
 pub async fn encrypt_handler(
     axum::Json(req): axum::Json<EncryptRequest>,
 ) -> Result<axum::Json<EncryptResponse>, ApiError> {
@@ -628,7 +894,8 @@ pub async fn compare_database_handler(
     axum::Json(req): axum::Json<CompareDatabaseRequest>,
 ) -> Result<axum::Json<CompareDatabaseResponse>, ApiError> {
     let _timer = FunctionTimer::start("compare_database_handler");
-    let response = tokio::task::spawn_blocking(move || compare_database(req))
+    let patterns = load_risk_patterns(req.pattern_id).await?;
+    let response = tokio::task::spawn_blocking(move || compare_database(req, patterns))
         .await
         .map_err(join_error)??;
     Ok(axum::Json(response))
@@ -648,7 +915,8 @@ pub async fn compare_database_levenshtein_handler(
     axum::Json(req): axum::Json<CompareDatabaseRequest>,
 ) -> Result<axum::Json<CompareDatabaseLevenshteinResponse>, ApiError> {
     let _timer = FunctionTimer::start("compare_database_levenshtein_handler");
-    let response = tokio::task::spawn_blocking(move || compare_database_levenshtein(req))
+    let patterns = load_risk_patterns(req.pattern_id).await?;
+    let response = tokio::task::spawn_blocking(move || compare_database_levenshtein(req, patterns))
         .await
         .map_err(join_error)??;
     Ok(axum::Json(response))

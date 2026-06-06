@@ -1,4 +1,7 @@
-use aide::axum::{routing::post_with, ApiRouter};
+use aide::axum::{
+    routing::{get_with, post_with},
+    ApiRouter,
+};
 use axum::extract::DefaultBodyLimit;
 use tower_http::cors::{Any, CorsLayer};
 
@@ -15,6 +18,9 @@ async fn main() {
     {
         eprintln!("Rayon thread pool already initialized: {error}");
     }
+    if let Err((_, error)) = functions::initialize_database().await {
+        eprintln!("Genomics database initialization failed: {error}");
+    }
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -22,6 +28,12 @@ async fn main() {
         .allow_headers(Any);
 
     let api_router = ApiRouter::new()
+        .api_route(
+            "/patterns",
+            get_with(functions::patterns_handler, |op| {
+                op.description("List cleartext risk patterns stored in the genomics database")
+            }),
+        )
         .api_route(
             "/encrypt",
             post_with(functions::encrypt_handler, |op| {

@@ -113,13 +113,25 @@
     <section class="action-card">
       <div class="card-heading">
         <h2>Datenbankvergleich</h2>
-        <span>3 Demo-Sequenzen</span>
+        <span>{{ riskPatterns().length }} Patterns</span>
       </div>
+      <label class="field-label" for="risk-pattern-select">Risikomuster</label>
+      <select
+        id="risk-pattern-select"
+        [ngModel]="selectedPatternId()"
+        (ngModelChange)="selectedPatternId.set($event)"
+        [disabled]="isBusy() || !hasRiskPatterns()"
+      >
+        <option value="all">All patterns</option>
+        @for (pattern of riskPatterns(); track pattern.id) {
+          <option [value]="pattern.id">{{ pattern.sequence }}</option>
+        }
+      </select>
       <div class="button-row vertical">
-        <button type="button" class="primary-button" (click)="compareDatabaseHamming()" [disabled]="!hasKeys() || isBusy()">
+        <button type="button" class="primary-button" (click)="compareDatabaseHamming()" [disabled]="!hasKeys() || isBusy() || !hasRiskPatterns()">
           Hamming DB
         </button>
-        <button type="button" class="primary-button" (click)="compareDatabaseLevenshtein()" [disabled]="!hasKeys() || isBusy()">
+        <button type="button" class="primary-button" (click)="compareDatabaseLevenshtein()" [disabled]="!hasKeys() || isBusy() || !hasRiskPatterns()">
           Levenshtein DB
         </button>
       </div>
