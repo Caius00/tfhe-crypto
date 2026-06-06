@@ -7,3 +7,4 @@ description = "Encrypted Program Execution"
 
 [dependencies]
 tfhe = { workspace = true, features = ["software-prng"] }
+rayon = "1.11.0"

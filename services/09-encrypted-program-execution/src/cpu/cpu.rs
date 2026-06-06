@@ -1,15 +1,16 @@
 use std::array;
 use std::ops::{BitAnd, BitOr};
-use std::time::Instant;
-use tfhe::prelude::{FheDecrypt, FheEncrypt, FheEq, IfThenElse, OverflowingAdd, OverflowingSub};
-use tfhe::{set_server_key, ClientKey, FheBool, FheUint2, FheUint8, ServerKey};
+use tfhe::prelude::{
+    FheEq, FheTrivialEncrypt, IfThenElse, OverflowingAdd, OverflowingSub,
+};
+use tfhe::{set_server_key, FheBool, FheUint8, ServerKey};
 
 pub struct CPU {
     pub a: FheUint8,
     pub b: FheUint8,
     pub carry: FheBool,
     pub pc: FheUint8,
-    pub memory: [FheUint8; 1],
+    pub memory: [FheUint8; 0],
 }
 
 pub fn make_cpu(zero_enc: &FheUint8, false_enc: &FheBool) -> CPU {
@@ -25,21 +26,9 @@ pub fn make_cpu(zero_enc: &FheUint8, false_enc: &FheBool) -> CPU {
 }
 
 impl CPU {
-    pub fn execute_cycle(
-        &mut self,
-        opcode: &FheUint8,
-        operand: &FheUint8,
-        sk: &ServerKey,
-        zero_u8: &FheUint8,
-        one_u8: &FheUint8,
-
-        f_enc: &FheBool,
-        msb_enc: &FheUint8,
-        ck: &ClientKey,
-    ) {
+    // specify needed additional instructions?
+    pub fn execute_cycle(&mut self, opcode: &FheUint8, operand: &FheUint8, sk: &ServerKey) {
         set_server_key(sk.clone());
-
-        println!("start decode at {:?}", Instant::now());
 
         let is_lda_d = opcode.eq(0x01u8);
         let is_lda_i = opcode.eq(0x02u8);
@@ -73,66 +62,154 @@ impl CPU {
         let is_xor = opcode.eq(0x1Eu8);
         let is_dec = opcode.eq(0x1Fu8);
         let is_inc = opcode.eq(0x20u8);
-        println!("done decode at {:?}", Instant::now());
 
-        println!("start add at {:?}", Instant::now());
-        let (res_add, carry_add) = (&self.a).overflowing_add(&self.b);
-        let (res_addc, carry_addc) =
-            (&self.a).overflowing_add(&(&self.b + self.carry.cmux(one_u8, zero_u8)));
-        let (res_add_i, carry_add_i) = (&self.a).overflowing_add(operand);
-        let (res_addc_i, carry_addc_i) =
-            (&self.a).overflowing_add(&(operand + self.carry.cmux(one_u8, zero_u8)));
-        println!("done add at {:?}", Instant::now());
+        let one_u8 = &FheUint8::encrypt_trivial(1u8);
+        let zero_u8 = &FheUint8::encrypt_trivial(0u8);
+        let msb_enc = &FheUint8::encrypt_trivial(0x80u8);
 
-        println!("start sub at {:?}", Instant::now());
-        let (res_sub, borrow_sub) = (&self.a).overflowing_sub(&self.b);
-        let (res_subc, borrow_subc) =
-            (&self.a).overflowing_sub(&(&self.b + self.carry.cmux(one_u8, zero_u8)));
-        let (res_sub_i, borrow_sub_i) = (&self.a).overflowing_sub(operand);
-        let (res_subc_i, borrow_subc_i) =
-            (&self.a).overflowing_sub(&(operand + self.carry.cmux(one_u8, zero_u8)));
-        println!("done sub at {:?}", Instant::now());
+        let mut res_add_tuple = None;
+        let mut res_addc_tuple = None;
+        let mut res_add_i_tuple = None;
+        let mut res_addc_i_tuple = None;
+        let mut res_sub_tuple = None;
+        let mut res_subc_tuple = None;
+        let mut res_sub_i_tuple = None;
+        let mut res_subc_i_tuple = None;
+        let mut res_mul = None;
+        let mut res_mul_i = None;
+        let mut res_div = None;
+        let mut res_div_i = None;
+        let mut res_dec_tuple = None;
+        let mut res_inc_tuple = None;
+        let mut res_cca = None;
+        let mut res_and = None;
+        let mut res_or = None;
+        let mut res_xor = None;
+        let mut res_sla = None;
+        let mut res_sra = None;
+        let mut res_rla = None;
+        let mut res_rlc = None;
+        let mut res_rra = None;
+        let mut res_rrc = None;
 
-        println!("start mul at {:?}", Instant::now());
-        let res_mul = &self.a * &self.b;
-        let res_mul_i = &self.a * operand;
-        println!("done mul at {:?}", Instant::now());
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(rayon::current_num_threads())
+            .build_scoped(
+                |thread| {
+                    set_server_key(sk.clone());
+                    thread.run();
+                },
+                |pool| {
+                    pool.install(|| {
+                        rayon::scope(|s| {
+                            s.spawn(|_| res_add_tuple = Some((&self.a).overflowing_add(&self.b)));
+                            s.spawn(|_| {
+                                res_addc_tuple =
+                                    Some((&self.a).overflowing_add(
+                                        &(&self.b + self.carry.cmux(one_u8, zero_u8)),
+                                    ))
+                            });
+                            s.spawn(|_| res_add_i_tuple = Some((&self.a).overflowing_add(operand)));
+                            s.spawn(|_| {
+                                res_addc_i_tuple =
+                                    Some((&self.a).overflowing_add(
+                                        &(operand + self.carry.cmux(one_u8, zero_u8)),
+                                    ))
+                            });
 
-        println!("start div at {:?}", Instant::now());
+                            s.spawn(|_| res_sub_tuple = Some((&self.a).overflowing_sub(&self.b)));
+                            s.spawn(|_| {
+                                res_subc_tuple =
+                                    Some((&self.a).overflowing_sub(
+                                        &(&self.b + self.carry.cmux(one_u8, zero_u8)),
+                                    ))
+                            });
+                            s.spawn(|_| res_sub_i_tuple = Some((&self.a).overflowing_sub(operand)));
+                            s.spawn(|_| {
+                                res_subc_i_tuple =
+                                    Some((&self.a).overflowing_sub(
+                                        &(operand + self.carry.cmux(one_u8, zero_u8)),
+                                    ))
+                            });
 
-        let res_div = &self.a / &self.b;
-        let res_div_i = &self.a / operand;
-        println!("done div at {:?}", Instant::now());
+                            s.spawn(|_| res_mul = Some(&self.a * &self.b));
+                            s.spawn(|_| res_mul_i = Some(&self.a * operand));
+                            s.spawn(|_| res_div = Some(&self.a / &self.b));
+                            s.spawn(|_| res_div_i = Some(&self.a / operand));
 
-        println!("start logic and bit at {:?}", Instant::now());
-        let (res_dec, borrow_dec) = (&self.a).overflowing_sub(1u8);
-        let (res_inc, carry_inc) = (&self.a).overflowing_add(1u8);
+                            s.spawn(|_| res_dec_tuple = Some((&self.a).overflowing_sub(1u8)));
+                            s.spawn(|_| res_inc_tuple = Some((&self.a).overflowing_add(1u8)));
+                            s.spawn(|_| res_cca = Some(!&self.a));
+                            s.spawn(|_| res_and = Some(&self.a & &self.b));
+                            s.spawn(|_| res_or = Some(&self.a | &self.b));
+                            s.spawn(|_| res_xor = Some(&self.a ^ &self.b));
 
-        let res_cca = !&self.a;
-        let res_and = &self.a & &self.b;
-        let res_or = &self.a | &self.b;
-        let res_xor = &self.a ^ &self.b;
+                            s.spawn(|_| res_sla = Some(&self.a << 1u8));
+                            s.spawn(|_| res_sra = Some(&self.a >> 1u8));
+
+                            s.spawn(|_| {
+                                res_rla = Some((&self.a << 1u8) + self.carry.cmux(one_u8, zero_u8))
+                            });
+                            s.spawn(|_| {
+                                res_rra =
+                                    Some((&self.a >> 1u8) + self.carry.cmux(one_u8, zero_u8) * 128)
+                            });
+
+                            s.spawn(|_| {
+                                let bit_7 = (&self.a & msb_enc).ne(0u8);
+                                res_rlc = Some((&self.a << 1u8) + bit_7.cmux(one_u8, zero_u8));
+                            });
+
+                            s.spawn(|_| {
+                                let bit_0 = (&self.a & one_u8).ne(0u8);
+                                res_rrc =
+                                    Some((&self.a >> 1u8) + bit_0.cmux(one_u8, zero_u8) * 128);
+                            });
+                        });
+                    });
+                },
+            )
+            .expect("");
 
         let bit_7 = (&self.a & msb_enc).ne(0u8);
         let bit_0 = (&self.a & one_u8).ne(0u8);
 
-        let res_sla = &self.a << 1u8;
-        let res_sra = &self.a >> 1u8;
-        let res_rla = (&self.a << 1u8) + self.carry.cmux(one_u8, zero_u8);
-        let res_rlc = (&self.a << 1u8) + bit_7.cmux(one_u8, zero_u8);
-        let res_rra = (&self.a >> 1u8) + self.carry.cmux(one_u8, zero_u8) * 128;
-        let res_rrc = (&self.a >> 1u8) + bit_0.cmux(one_u8, zero_u8) * 128;
-        println!("done logic and bit at {:?}", Instant::now());
+        let (res_add, carry_add) = res_add_tuple.unwrap();
+        let (res_addc, carry_addc) = res_addc_tuple.unwrap();
+        let (res_add_i, carry_add_i) = res_add_i_tuple.unwrap();
+        let (res_addc_i, carry_addc_i) = res_addc_i_tuple.unwrap();
 
-        println!("start read ram at {:?}", Instant::now());
+        let (res_sub, borrow_sub) = res_sub_tuple.unwrap();
+        let (res_subc, borrow_subc) = res_subc_tuple.unwrap();
+        let (res_sub_i, borrow_sub_i) = res_sub_i_tuple.unwrap();
+        let (res_subc_i, borrow_subc_i) = res_subc_i_tuple.unwrap();
+
+        let res_mul = res_mul.unwrap();
+        let res_mul_i = res_mul_i.unwrap();
+        let res_div = res_div.unwrap();
+        let res_div_i = res_div_i.unwrap();
+
+        let (res_dec, borrow_dec): (FheUint8, FheBool) = res_dec_tuple.unwrap();
+        let (res_inc, carry_inc) = res_inc_tuple.unwrap();
+
+        let res_cca = res_cca.unwrap();
+        let res_and = res_and.unwrap();
+        let res_or = res_or.unwrap();
+        let res_xor = res_xor.unwrap();
+
+        let res_sla = res_sla.unwrap();
+        let res_sra = res_sra.unwrap();
+        let res_rla = res_rla.unwrap();
+        let res_rlc = res_rlc.unwrap();
+        let res_rra = res_rra.unwrap();
+        let res_rrc = res_rrc.unwrap();
+
         let mut loaded_mem_val: FheUint8 = zero_u8.clone();
         for (idx, cell) in self.memory.iter().enumerate() {
             let matches_idx = operand.eq(idx as u8);
             loaded_mem_val = matches_idx.cmux(cell, &loaded_mem_val);
         }
-        println!("done read ram at {:?}", Instant::now());
 
-        println!("start next adr at {:?}", Instant::now());
         let a_is_zero = self.a.eq(0u8);
 
         let take_jmp = is_jmp.clone();
@@ -142,9 +219,7 @@ impl CPU {
 
         let trigger_branch = take_jmp.bitor(&take_jmz).bitor(&take_jmc).bitor(&take_djnz);
         let branch_target = operand - 1u8;
-        println!("done next adr at {:?}", Instant::now());
 
-        println!("start mux a at {:?}", Instant::now());
         let mut next_a = self.a.clone();
         next_a = is_lda_d.cmux(&loaded_mem_val, &next_a);
         next_a = is_lda_i.cmux(operand, &next_a);
@@ -174,7 +249,6 @@ impl CPU {
         next_a = is_xor.cmux(&res_xor, &next_a);
         next_a = is_dec.cmux(&res_dec, &next_a);
         next_a = is_inc.cmux(&res_inc, &next_a);
-        println!("done mux a at {:?}", Instant::now());
 
         let mut next_b = self.b.clone();
         next_b = is_swp.cmux(&self.a, &next_b);
@@ -198,6 +272,7 @@ impl CPU {
         next_carry = is_inc.cmux(&carry_inc, &next_carry);
 
         let clears_carry = is_mul | is_mul_i | is_div | is_div_i;
+        let f_enc = FheBool::encrypt_trivial(false);
         next_carry = clears_carry.cmux(&f_enc, &next_carry);
 
         next_carry = is_sla.cmux(&bit_7, &next_carry);
@@ -206,7 +281,6 @@ impl CPU {
         next_carry = is_rlc.cmux(&bit_7, &next_carry);
         next_carry = is_rra.cmux(&bit_0, &next_carry);
         next_carry = is_rrc.cmux(&bit_0, &next_carry);
-        println!("carry after shift: {}", next_carry.decrypt(ck));
 
         for (idx, cell) in self.memory.iter_mut().enumerate() {
             let matches_target = operand.eq(idx as u8);
@@ -225,26 +299,22 @@ impl CPU {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tfhe::prelude::FheDecrypt;
-    use tfhe::ConfigBuilder;
+    use tfhe::prelude::{FheDecrypt, FheTrivialEncrypt};
+    use tfhe::{set_server_key, ConfigBuilder};
 
     #[test]
     fn add() {
         let config = ConfigBuilder::default().build();
         let (ck, sk) = tfhe::generate_keys(config);
-        println!("have keys");
+        set_server_key(sk.clone());
 
-        let zero_enc = FheUint8::encrypt(0u8, &ck);
-        let zero_enc1 = FheUint8::encrypt(0u8, &ck);
-        let one_enc = FheUint8::encrypt(1u8, &ck);
+        let zero_enc = FheUint8::encrypt_trivial(0u8);
 
-        let msb_enc = FheUint8::encrypt(0x80u8, &ck);
+        let false_enc = FheBool::encrypt_trivial(false);
 
-        let false_enc = FheBool::encrypt(false, &ck);
-
-        let add_opcode = FheUint8::encrypt(0b0000_1001u8, &ck);
-        let operand1 = FheUint8::encrypt(13u8, &ck);
-        let operand2 = FheUint8::encrypt(18u8, &ck);
+        let add_opcode = FheUint8::encrypt_trivial(0b0000_1001u8);
+        let operand1 = FheUint8::encrypt_trivial(13u8);
+        let operand2 = FheUint8::encrypt_trivial(18u8);
 
         let mut cpu = make_cpu(&zero_enc, &false_enc);
 
@@ -261,18 +331,7 @@ mod tests {
         cpu.a = operand1;
         cpu.b = operand2;
 
-        println!("start exec");
-
-        cpu.execute_cycle(
-            &add_opcode,
-            &zero_enc,
-            &sk,
-            &zero_enc1,
-            &one_enc,
-            &false_enc,
-            &msb_enc,
-            &ck,
-        );
+        cpu.execute_cycle(&add_opcode, &zero_enc, &sk);
 
         let a_dec: u8 = cpu.a.decrypt(&ck);
         let pc_dec: u8 = cpu.pc.decrypt(&ck);
@@ -284,18 +343,9 @@ mod tests {
         assert_eq!(b_dec, 18, "unchanged");
         assert_eq!(c_dec, false, "no carry");
 
-        let opcode_add_immediate = FheUint8::encrypt(0b0000_1011u8, &ck);
-        let operand3 = FheUint8::encrypt(225u8, &ck);
-        cpu.execute_cycle(
-            &opcode_add_immediate,
-            &operand3,
-            &sk,
-            &zero_enc,
-            &one_enc,
-            &false_enc,
-            &msb_enc,
-            &ck,
-        );
+        let opcode_add_immediate = FheUint8::encrypt_trivial(0b0000_1011u8);
+        let operand3 = FheUint8::encrypt_trivial(225u8);
+        cpu.execute_cycle(&opcode_add_immediate, &operand3, &sk);
 
         let a_dec: u8 = cpu.a.decrypt(&ck);
         let pc_dec: u8 = cpu.pc.decrypt(&ck);
@@ -306,16 +356,5 @@ mod tests {
         assert_eq!(pc_dec, 2, "second execute");
         assert_eq!(b_dec, 18, "unchanged");
         assert_eq!(c_dec, true, "overflow");
-    }
-
-    #[test]
-    fn reality_check() {
-        let config = ConfigBuilder::default().build();
-        let (ck, sk) = tfhe::generate_keys(config);
-        set_server_key(sk);
-        let add_opcode = FheUint8::encrypt(0b0000_1001u8, &ck);
-        let is_add = add_opcode.eq(0x09u8);
-        let dec = is_add.decrypt(&ck);
-        assert!(dec);
     }
 }

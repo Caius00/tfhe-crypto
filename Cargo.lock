@@ -1018,12 +1018,8 @@ dependencies = [
 name = "encrypted-program-execution"
 version = "0.1.21"
 dependencies = [
- "axum 0.8.9",
- "health",
- "serde",
- "serde_json",
+ "rayon",
  "tfhe",
- "tokio",
 ]
 
 [[package]]
