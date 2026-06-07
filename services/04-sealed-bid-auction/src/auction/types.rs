@@ -14,7 +14,7 @@ pub struct Bid {
     pub server_key_bytes: Vec<u8>,
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct BidRequest {
     pub bidder_name: String,
     pub encrypted_amount: String,

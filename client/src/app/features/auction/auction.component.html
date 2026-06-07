@@ -7,21 +7,31 @@
 
   <div style="margin-bottom: 30px; border: 1px solid #ccc; padding: 15px; border-radius: 5px">
     <h3>1. Neues Gebot abgeben</h3>
+
     <div style="margin-bottom: 10px">
       <label style="display: block">Bieter Name:</label>
       <input
         type="text"
-        [(ngModel)]="bidderName"
+        [ngModel]="bidderName()"
+        (ngModelChange)="bidderName.set($event)"
         placeholder="z.B. Bieter A"
         style="padding: 5px; width: 200px"
       />
     </div>
+
     <div style="margin-bottom: 10px">
       <label style="display: block">Gebot (wird FHE-verschlüsselt):</label>
-      <input type="number" [(ngModel)]="bidAmount" style="padding: 5px; width: 200px" />
+      <input
+        type="number"
+        [ngModel]="bidAmount()"
+        (ngModelChange)="bidAmount.set($event)"
+        style="padding: 5px; width: 200px"
+      />
     </div>
+
     <button
       (click)="sendBid()"
+      [disabled]="step() === 'generating' || step() === 'sending'"
       style="
         padding: 8px 15px;
         background: #007bff;
@@ -33,9 +43,12 @@
     >
       Gebot absenden
     </button>
-    <p *ngIf="statusMessage" style="margin-top: 10px; color: green; font-weight: bold">
-      {{ statusMessage }}
-    </p>
+
+    @if (statusMessage()) {
+      <p style="margin-top: 10px; color: green; font-weight: bold">
+        {{ statusMessage() }}
+      </p>
+    }
   </div>
 
   <div style="border: 1px solid #ccc; padding: 15px; border-radius: 5px">
@@ -43,8 +56,10 @@
     <p>
       Der Server ermittelt den Gewinner homomorph, ohne die Beträge jemals entschlüsselt zu sehen.
     </p>
+
     <button
       (click)="evaluateAuction()"
+      [disabled]="step() === 'generating' || step() === 'evaluating'"
       style="
         padding: 8px 15px;
         background: #28a745;
@@ -56,11 +71,11 @@
     >
       Gewinner berechnen
     </button>
-    <p
-      *ngIf="evaluationResult"
-      style="margin-top: 10px; background: #e2e3e5; padding: 10px; border-radius: 3px"
-    >
-      <strong>Ergebnis:</strong> {{ evaluationResult }}
-    </p>
+
+    @if (evaluationResult()) {
+      <p style="margin-top: 10px; background: #e2e3e5; padding: 10px; border-radius: 3px">
+        <strong>Ergebnis:</strong> {{ evaluationResult() }}
+      </p>
+    }
   </div>
 </div>
