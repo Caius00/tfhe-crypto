@@ -9,7 +9,7 @@
 
 UC5 berechnet statistische Kennzahlen (Summe, Anzahl, Minimum, Maximum, Durchschnitt, Median) über eine Ganzzahlen-Liste, ohne dass der Server die Eingabewerte oder Ergebnisse jemals im Klartext sieht. Alle Berechnungen laufen vollständig auf verschlüsselten Daten.
 
-**Session-Lebenszyklus:**
+**Ablauf eines Requests** (UC5 ist zustandslos — jeder Request ist in sich abgeschlossen):
 
 ```mermaid
 sequenceDiagram
@@ -90,9 +90,16 @@ Berechnet alle Statistiken für eine verschlüsselte Ganzzahlen-Liste.
 | 400 Bad Request | Leere Liste, ungültiger Base64, falscher Ciphertext-Typ, ungültige `bit_width` |
 | 500 Internal Server Error | Serialisierungsfehler beim Zusammenstellen der Response |
 
-#### `GET /health`
+#### Weitere Endpunkte
 
-Standard-Health-Check (von der internen `health`-Crate bereitgestellt). Gibt `200 OK` mit Service-Version zurück.
+| Endpunkt | Methode | Beschreibung |
+|----------|---------|--------------|
+| `/healthz` | GET | Liveness-Probe (Kubernetes) |
+| `/readyz` | GET | Readiness-Probe (Kubernetes) |
+| `/version` | GET | Service-Version als JSON |
+| `/metrics` | GET | Prometheus-Metriken |
+| `/docs` | GET | Swagger UI (OpenAPI-Dokumentation) |
+| `/openapi.json` | GET | OpenAPI-Spec als JSON |
 
 ---
 
@@ -136,11 +143,9 @@ Der Server muss die Berechnungen korrekt ausführen. Ein böswilliger Server kö
 - TFHE-rs wird als korrekte Blackbox behandelt — keine eigene Kryptanalyse.
 - Kein Auth-Gateway: jeder kann beliebige Requests an `POST /` schicken.
 
-**Was konkret versprochen wird:**
+**Sicherheitsgarantie:**
 
-> „Der Server kennt die statistischen Kennzahlen deiner Eingabewerte nicht — er berechnet sie, ohne sie je zu sehen. Er weiß lediglich, wie viele Werte du eingegeben hast und in welchem Größenordnungsbereich sie liegen."
-
-Was **nicht** produktionsreif ist: es gibt keine Verifikation, dass der Client echte FHE-Ciphertexte schickt (kein ZKP), und keine Authentifizierung des Clients.
+Der Server kennt die statistischen Kennzahlen der Eingabewerte nicht — er berechnet sie, ohne sie je zu sehen. Bekannt sind ihm nur die Anzahl der Werte und der grobe Wertebereich (über `bit_width`). Keine ZKP-Verifikation der Ciphertexte und keine Client-Authentifizierung — beides ist im Rahmen dieses Use Cases nicht vorgesehen.
 
 ---
 
@@ -161,6 +166,8 @@ Der Client bestimmt anhand von `min` und `max` der Eingabe die kleinste ausreich
 - Int16 wenn min ≥ −32.768 und max ≤ 32.767
 - Int32 sonst
 
+Der Server benötigt `bit_width` zwingend, um den richtigen FHE-Typ für die Deserialisierung zu wählen — `FheInt8`, `FheInt16` und `FheInt32` sind binär inkompatibel. Das Feld ist daher keine optionale Optimierung, sondern technisch notwendig.
+
 Kleinere Bitbreiten reduzieren die Berechnungszeit deutlich, da die TFHE-Kosten mit der Bitbreite skalieren.
 
 **Verwendete FHE-Operationen:**
@@ -178,7 +185,7 @@ Kleinere Bitbreiten reduzieren die Berechnungszeit deutlich, da die TFHE-Kosten 
 - **Float (f32/f64):** Semantisch passend für Durchschnitt, aber TFHE-rs bietet keine Float-Typen.
 - **Vollständig homomorphe Division:** TFHE-rs hat keine generische `Div<FheInt>`-Implementierung. Division durch einen Klartextwert ist hier ausreichend, weil die Listenlänge dem Server ohnehin bekannt ist.
 - **Naiver sequentieller Sortieralgorithmus für Median:** Bubblesort wäre O(n²) Komparatoren und vollständig sequentiell — auf FHE-Niveau unakzeptabel. Das Batcher-Netzwerk ist datenunabhängig (keine Branches auf Plaintext-Vergleichsergebnissen) und hat O(log²n) Tiefe.
-- **Vollständig partielles Sortiernetz:** Ein auf den Median-Index optimiertes Netz würde weniger Komparatoren brauchen. Nicht umgesetzt, weil der Aufwand für das UC-Projekt nicht gerechtfertigt ist.
+- **Partielles Sortiernetz (Median-optimiert):** Ein Netz, das nur den Median-Index isoliert berechnet, würde weniger Komparatoren brauchen. Nicht umgesetzt, weil der Aufwand für das UC-Projekt nicht gerechtfertigt ist.
 
 ---
 
@@ -235,12 +242,10 @@ Messbedingungen: lokaler Entwicklungs-PC (Windows/WSL2), Rust release build, 1 C
 
 ### Limitationen
 
-- **Nur Ganzzahlen:** TFHE-rs bietet keine Float-Typen. Alle Berechnungen sind auf i8/i16/i32 beschränkt.
-- **Durchschnitt trunciert:** Die Division ist eine ganzzahlige Truncation toward zero. Beispiel: Durchschnitt von [1, 2] = 1, nicht 1,5.
-- **bit_width verrät den Wertebereich:** `bit_width=8` verrät, dass alle Werte in [-128, 127] liegen. Eine uniforme Bitbreite (immer Int32) wäre privacy-stärker, aber deutlich teurer in der Berechnung.
-- **count ist kein Geheimnis:** Die Listenlänge ist aus dem Request direkt ablesbar. Padding auf eine feste Länge wäre möglich, wurde aber nicht umgesetzt.
-- **Keine ZKP-Verifikation:** Der Server kann nicht prüfen, ob der Client korrekte FHE-Ciphertexte schickt. Ein böswilliger Client könnte manipulierte Ciphertexte senden.
-- **Kein Auth-Gateway:** Jeder kann den Endpunkt ansprechen. Bei öffentlicher Erreichbarkeit ist Missbrauch durch Masse-Requests (teurer Rechenaufwand) möglich.
-- **ServerKey-Dekomprimierung pro Request:** Kein Session-Caching. Jeder Request zahlt den vollen Dekomprimierungs-Overhead.
-- **Kein partielles Sortiernetz für Median:** Der Batcher-Algorithmus sortiert die gesamte Liste. Ein optimiertes Netz, das nur den Median-Index isoliert berechnet, wurde nicht implementiert.
-- **Praktisches Eingabelimit:** Bei n > ~20 mit Int32 übersteigt die Rechenzeit mehrere Minuten. Der Service ist für kleine Listen (n ≤ ~15) konzipiert.
+**Typsystem:** TFHE-rs unterstützt keine Float-Typen — alle Berechnungen sind auf i8/i16/i32 beschränkt. Der Durchschnitt ist eine ganzzahlige Truncation toward zero (`[1, 2]` → `1`, nicht `1,5`).
+
+**Privacy-Einschränkungen:** Die Listenlänge ist aus dem Request direkt ablesbar; `bit_width` verrät zusätzlich die Größenordnung der Werte (`bit_width=8` → alle Werte in [-128, 127]). Beides lässt sich durch Padding bzw. uniforme Bitbreite abmildern — für diesen Use Case nicht umgesetzt, da der Mehraufwand die Performance deutlich verschlechtern würde.
+
+**Keine Verifikation der Eingaben:** Der Server kann nicht prüfen, ob der Client korrekte FHE-Ciphertexte schickt — kein ZKP, keine Authentifizierung. Bei öffentlicher Erreichbarkeit sind Missbrauch durch Masse-Requests (teurer Rechenaufwand) und manipulierte Ciphertexte möglich.
+
+**Performance:** Kein Session-Caching — `CompressedServerKey::decompress()` läuft bei jedem Request neu. Bei n > ~20 mit Int32 übersteigt die Rechenzeit mehrere Minuten; der Service ist für kleine Listen (n ≤ ~15) konzipiert. Der Batcher-Algorithmus sortiert außerdem die gesamte Liste, statt nur den Median-Index zu isolieren.
