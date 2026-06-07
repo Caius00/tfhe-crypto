@@ -178,6 +178,7 @@
         rows="7"
         [ngModel]="sequenceInput()"
         (ngModelChange)="updateSequenceInput($event)"
+        maxlength="255"
         spellcheck="false"
       ></textarea>
       <div class="button-row">
@@ -206,10 +207,10 @@
         <span>Serverseitig</span>
       </div>
       <div class="button-row">
-        <button type="button" class="primary-button" (click)="computeHamming()" [disabled]="!hasKeys() || isBusy() || fifoLocked()">
+        <button type="button" class="primary-button" (click)="computeHamming()" [disabled]="!hasKeys() || isBusy() || fifoLocked() || !hasRiskPatterns()">
           Hamming
         </button>
-        <button type="button" class="primary-button" (click)="computeLevenshtein()" [disabled]="!hasKeys() || isBusy() || fifoLocked()">
+        <button type="button" class="primary-button" (click)="computeLevenshtein()" [disabled]="!hasKeys() || isBusy() || fifoLocked() || !hasRiskPatterns()">
           Levenshtein
         </button>
         <button type="button" class="ghost-button" (click)="showResult()" [disabled]="!hasSingleResult() || isBusy()">
@@ -223,6 +224,19 @@
         <h2>Datenbankvergleich</h2>
         <span>{{ riskPatterns().length }} Patterns</span>
       </div>
+      <label class="field-label" for="risk-pattern-input">Neues Risikomuster</label>
+      <textarea
+        id="risk-pattern-input"
+        rows="3"
+        [ngModel]="newPatternInput()"
+        (ngModelChange)="newPatternInput.set($event)"
+        spellcheck="false"
+      ></textarea>
+      <div class="button-row">
+        <button type="button" class="primary-button" (click)="addRiskPattern()" [disabled]="!hasKeys() || isBusy() || fifoLocked() || !hasNewPatternInput()">
+          Pattern speichern
+        </button>
+      </div>
       <label class="field-label" for="risk-pattern-select">Risikomuster</label>
       <select
         id="risk-pattern-select"
@@ -235,9 +249,12 @@
           <option [value]="pattern.id">{{ pattern.sequence }}</option>
         }
       </select>
-      <div class="button-row vertical">
+      <div class="db-action-grid">
         <button type="button" class="primary-button" (click)="compareDatabaseHamming()" [disabled]="!hasKeys() || isBusy() || !hasRiskPatterns() || fifoLocked()">
           Hamming DB
+        </button>
+        <button type="button" class="ghost-button" (click)="loadRiskPatterns(true)" [disabled]="isBusy()">
+          Refresh
         </button>
         <button type="button" class="primary-button" (click)="compareDatabaseLevenshtein()" [disabled]="!hasKeys() || isBusy() || !hasRiskPatterns() || fifoLocked()">
           Levenshtein DB

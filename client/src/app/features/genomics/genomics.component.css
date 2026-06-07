@@ -37,6 +37,20 @@
   flex-direction: column;
 }
 
+.db-action-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.db-action-grid button {
+  width: 100%;
+}
+
+.button-row + .field-label {
+  margin-top: 12px;
+}
+
 .session-lobby {
   min-height: 60vh;
 }

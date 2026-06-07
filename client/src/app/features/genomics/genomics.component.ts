@@ -64,6 +64,10 @@ interface PatternsResponse {
   patterns: RiskPattern[];
 }
 
+interface CreateRiskPatternResponse {
+  pattern: RiskPattern;
+}
+
 interface RiskPattern {
   id: number;
   sequence: string;
@@ -91,6 +95,8 @@ const API_BASE = (() => {
   return localHosts.has(window.location.hostname) ? 'http://127.0.0.1:8080' : '/genomics';
 })();
 const BUSY_STATES: GenomicsStatus[] = ['generating', 'encrypting', 'processing'];
+const MAX_HAMMING_SEQUENCE_LENGTH = 255;
+const MAX_LEVENSHTEIN_SEQUENCE_LENGTH = 122;
 const EMPTY_FIFO_STATUS: FifoStatusResponse = {
   capacity: 4,
   used: 0,
@@ -109,6 +115,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
   resultKind = signal<ResultKind>('none');
   sequenceInput = signal('ATCGATCGAAAA');
   serverSequenceInput = signal('GGTTAC');
+  newPatternInput = signal('');
   selectedPatternId = signal('all');
   riskPatterns = signal<RiskPattern[]>([]);
   encryptedLength = signal(0);
@@ -142,6 +149,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
   hasRiskPatterns = computed(() => this.riskPatterns().length > 0);
   hasDatabaseResult = computed(() => this.resultScope() === 'database');
   fifoLocked = computed(() => this.fifoStatus().locked);
+  hasNewPatternInput = computed(() => this.normalizeDna(this.newPatternInput()).length > 0);
   databaseMatchCount = computed(
     () => this.databaseResults().filter((entry) => this.entryHasMatch(entry)).length,
   );
@@ -221,7 +229,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
     }
   }
 
-  async loadRiskPatterns(): Promise<void> {
+  async loadRiskPatterns(showMessage = true): Promise<void> {
     const started = this.nowMs();
 
     try {
@@ -237,11 +245,49 @@ export class GenomicsComponent implements OnInit, OnDestroy {
         this.selectedPatternId.set('all');
       }
 
-      this.infoMessage.set(
-        `${response.patterns.length} Risikomuster aus der Datenbank geladen in ${this.elapsedMs(started)} ms.`,
-      );
+      if (showMessage) {
+        this.infoMessage.set(
+          `${response.patterns.length} Risikomuster aus der Datenbank geladen in ${this.elapsedMs(started)} ms.`,
+        );
+      }
     } catch (error) {
       this.errorMessage.set(`Risikomuster konnten nicht geladen werden: ${this.errorText(error)}`);
+    }
+  }
+
+  async addRiskPattern(): Promise<void> {
+    const session = this.activeSession();
+    if (!session) {
+      this.setError('Bitte zuerst eine Session erstellen oder beitreten.');
+      return;
+    }
+
+    try {
+      const cleanPattern = this.normalizeDna(this.newPatternInput());
+      this.encodeDna(cleanPattern);
+      this.status.set('processing');
+      this.clearResults();
+      this.clearMessages();
+      await this.renderPause();
+      const started = this.nowMs();
+
+      const response = await firstValueFrom(
+        this.http.post<CreateRiskPatternResponse>(`${API_BASE}/patterns`, {
+          sequence: cleanPattern,
+          session_id: session.id,
+        }),
+      );
+
+      this.newPatternInput.set('');
+      await this.loadRiskPatterns(false);
+      this.selectedPatternId.set(String(response.pattern.id));
+      this.status.set('ready');
+      this.infoMessage.set(
+        `Risikomuster ${response.pattern.sequence} gespeichert in ${this.elapsedMs(started)} ms.`,
+      );
+      void this.loadFifoStatus();
+    } catch (error) {
+      this.setError(this.errorText(error));
     }
   }
 
@@ -407,12 +453,13 @@ export class GenomicsComponent implements OnInit, OnDestroy {
 
   async computeHamming(): Promise<void> {
     try {
+      if (!this.comparisonSequenceWithinLimit(MAX_HAMMING_SEQUENCE_LENGTH, 'Hamming')) return;
       this.status.set('processing');
       this.clearResults();
       this.clearMessages();
       await this.renderPause();
       const started = this.nowMs();
-      const body = await this.computeBody();
+      const body = await this.computeBody(MAX_HAMMING_SEQUENCE_LENGTH, 'Hamming');
       if (!body) return;
       this.status.set('processing');
 
@@ -444,12 +491,13 @@ export class GenomicsComponent implements OnInit, OnDestroy {
 
   async computeLevenshtein(): Promise<void> {
     try {
+      if (!this.comparisonSequenceWithinLimit(MAX_LEVENSHTEIN_SEQUENCE_LENGTH, 'Levenshtein')) return;
       this.status.set('processing');
       this.clearResults();
       this.clearMessages();
       await this.renderPause();
       const started = this.nowMs();
-      const body = await this.computeBody();
+      const body = await this.computeBody(MAX_LEVENSHTEIN_SEQUENCE_LENGTH, 'Levenshtein');
       if (!body) return;
       this.status.set('processing');
 
@@ -481,12 +529,13 @@ export class GenomicsComponent implements OnInit, OnDestroy {
 
   async compareDatabaseHamming(): Promise<void> {
     try {
+      if (!this.comparisonSequenceWithinLimit(MAX_HAMMING_SEQUENCE_LENGTH, 'Hamming')) return;
       this.status.set('processing');
       this.clearResults();
       this.clearMessages();
       await this.renderPause();
       const started = this.nowMs();
-      const body = await this.databaseBody();
+      const body = await this.databaseBody(MAX_HAMMING_SEQUENCE_LENGTH, 'Hamming');
       if (!body) return;
       this.status.set('processing');
 
@@ -529,12 +578,13 @@ export class GenomicsComponent implements OnInit, OnDestroy {
 
   async compareDatabaseLevenshtein(): Promise<void> {
     try {
+      if (!this.comparisonSequenceWithinLimit(MAX_LEVENSHTEIN_SEQUENCE_LENGTH, 'Levenshtein')) return;
       this.status.set('processing');
       this.clearResults();
       this.clearMessages();
       await this.renderPause();
       const started = this.nowMs();
-      const body = await this.databaseBody();
+      const body = await this.databaseBody(MAX_LEVENSHTEIN_SEQUENCE_LENGTH, 'Levenshtein');
       if (!body) return;
       this.status.set('processing');
 
@@ -669,27 +719,16 @@ export class GenomicsComponent implements OnInit, OnDestroy {
     return this.activeSession()?.id === job.session_id;
   }
 
-  private async computeBody(): Promise<Record<string, string | string[] | undefined> | null> {
+  private async computeBody(
+    maxLength: number,
+    operation: string,
+  ): Promise<Record<string, number | string | string[] | undefined> | null> {
     const session = this.activeSession();
     if (!session) {
       this.setError('Bitte zuerst eine Session erstellen oder beitreten.');
       return null;
     }
-    const ready = await this.ensureEncryptedSequence();
-    if (!ready) return null;
-
-    return {
-      encrypted_bases: this.encryptedSequenceItems,
-      session_id: session.id,
-    };
-  }
-
-  private async databaseBody(): Promise<Record<string, number | string | string[] | undefined> | null> {
-    const session = this.activeSession();
-    if (!session) {
-      this.setError('Bitte zuerst eine Session erstellen oder beitreten.');
-      return null;
-    }
+    if (!this.comparisonSequenceWithinLimit(maxLength, operation)) return null;
     const ready = await this.ensureEncryptedSequence();
     if (!ready) return null;
     const selectedPatternId = this.selectedPatternId();
@@ -699,6 +738,39 @@ export class GenomicsComponent implements OnInit, OnDestroy {
       session_id: session.id,
       pattern_id: selectedPatternId === 'all' ? undefined : Number(selectedPatternId),
     };
+  }
+
+  private async databaseBody(
+    maxLength: number,
+    operation: string,
+  ): Promise<Record<string, number | string | string[] | undefined> | null> {
+    const session = this.activeSession();
+    if (!session) {
+      this.setError('Bitte zuerst eine Session erstellen oder beitreten.');
+      return null;
+    }
+    if (!this.comparisonSequenceWithinLimit(maxLength, operation)) return null;
+    const ready = await this.ensureEncryptedSequence();
+    if (!ready) return null;
+    const selectedPatternId = this.selectedPatternId();
+
+    return {
+      encrypted_bases: this.encryptedSequenceItems,
+      session_id: session.id,
+      pattern_id: selectedPatternId === 'all' ? undefined : Number(selectedPatternId),
+    };
+  }
+
+  private comparisonSequenceWithinLimit(maxLength: number, operation: string): boolean {
+    const cleanSequence = this.normalizeDna(this.sequenceInput());
+    if (cleanSequence.length > maxLength) {
+      this.setError(
+        `${operation}: Die Vergleichssequenz darf maximal ${maxLength} Zeichen lang sein.`,
+      );
+      return false;
+    }
+
+    return true;
   }
 
   private async ensureEncryptedSequence(): Promise<boolean> {
