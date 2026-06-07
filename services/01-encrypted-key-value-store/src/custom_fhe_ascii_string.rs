@@ -1,6 +1,8 @@
 use std::ops::{BitAnd, Not};
 use tfhe::prelude::{CiphertextList, FheDecrypt, FheEncrypt, FheEq, FheTrivialEncrypt, IfThenElse};
-use tfhe::{ClientKey, CompressedCiphertextList, CompressedCiphertextListBuilder, FheBool, FheUint8};
+use tfhe::{
+    ClientKey, CompressedCiphertextList, CompressedCiphertextListBuilder, FheBool, FheUint8,
+};
 
 #[derive(Clone)]
 pub struct CustomFheAsciiString {
@@ -51,7 +53,7 @@ impl CompressedCustomFheAsciiString {
             .map(|i| compressed_list.get(i).unwrap().unwrap())
             .collect::<Vec<FheUint8>>();
 
-        CustomFheAsciiString{ string }
+        CustomFheAsciiString { string }
     }
 }
 
@@ -59,7 +61,7 @@ impl CustomFheAsciiString {
     pub fn new(str: &str, client_key: &ClientKey) -> CustomFheAsciiString {
         let string = str
             .bytes()
-            .map(|char| FheUint8::encrypt(char,client_key))
+            .map(|char| FheUint8::encrypt(char, client_key))
             .collect();
         CustomFheAsciiString { string }
     }
@@ -68,21 +70,20 @@ impl CustomFheAsciiString {
         SerializedCustomFheAsciiString { string }
     }
 
-    pub fn compress(&self) ->  CompressedCustomFheAsciiString {
-        let compressed_list = self.string.clone()
+    pub fn compress(&self) -> CompressedCustomFheAsciiString {
+        let compressed_list = self
+            .string
+            .clone()
             .into_iter()
-            .fold(
-                CompressedCiphertextListBuilder::new(),
-                |mut builder, s| {
-                    builder.push(s);
-                    builder
-                },
-            )
+            .fold(CompressedCiphertextListBuilder::new(), |mut builder, s| {
+                builder.push(s);
+                builder
+            })
             .build()
             .unwrap();
         let serialized = bincode::serialize(&compressed_list).unwrap();
 
-        CompressedCustomFheAsciiString{ string: serialized }
+        CompressedCustomFheAsciiString { string: serialized }
     }
 }
 
@@ -112,7 +113,8 @@ impl FheEq for CustomFheAsciiString {
 
 impl FheDecrypt<String> for CustomFheAsciiString {
     fn decrypt(&self, key: &ClientKey) -> String {
-        let bytes = self.string
+        let bytes = self
+            .string
             .iter()
             .map(|char| char.decrypt(key))
             .collect::<Vec<u8>>();
@@ -122,34 +124,43 @@ impl FheDecrypt<String> for CustomFheAsciiString {
 }
 
 impl IfThenElse<CustomFheAsciiString> for FheBool {
-    fn if_then_else(&self, ct_then: &CustomFheAsciiString, ct_else: &CustomFheAsciiString) -> CustomFheAsciiString {
-        assert_eq!(ct_then.string.len(), ct_else.string.len(), "Key length mismatch");
+    fn if_then_else(
+        &self,
+        ct_then: &CustomFheAsciiString,
+        ct_else: &CustomFheAsciiString,
+    ) -> CustomFheAsciiString {
+        assert_eq!(
+            ct_then.string.len(),
+            ct_else.string.len(),
+            "Key length mismatch"
+        );
 
-        let constructed_key = ct_then.string
+        let constructed_key = ct_then
+            .string
             .iter()
             .zip(ct_else.string.iter())
             .map(|(a, b)| self.if_then_else(a, b))
             .collect::<Vec<FheUint8>>();
 
-        CustomFheAsciiString { string: constructed_key }
+        CustomFheAsciiString {
+            string: constructed_key,
+        }
     }
 }
 
 #[cfg(test)]
 mod test_custom_fhe_ascii_string {
-    use tfhe::{set_server_key, CompressedServerKey};
-    use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
     use super::*;
+    use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
+    use tfhe::{set_server_key, CompressedServerKey};
 
     #[test]
     fn eq() {
-        let parameters = MetaParametersFinder::new(
-            Constraint::LessThanOrEqual(Log2PFail(-128.0)),
-            Backend::Cpu
-        )
-            .with_compression(true)
-            .find()
-            .expect("Could not find suitable parameters");
+        let parameters =
+            MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
+                .with_compression(true)
+                .find()
+                .expect("Could not find suitable parameters");
 
         let client_key = ClientKey::generate(parameters);
         let compressed_server_key = CompressedServerKey::new(&client_key);
@@ -171,13 +182,11 @@ mod test_custom_fhe_ascii_string {
 
     #[test]
     fn compress_decompress() {
-        let parameters = MetaParametersFinder::new(
-            Constraint::LessThanOrEqual(Log2PFail(-128.0)),
-            Backend::Cpu
-        )
-            .with_compression(true)
-            .find()
-            .expect("Could not find suitable parameters");
+        let parameters =
+            MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
+                .with_compression(true)
+                .find()
+                .expect("Could not find suitable parameters");
 
         let client_key = ClientKey::generate(parameters);
         let compressed_server_key = CompressedServerKey::new(&client_key);

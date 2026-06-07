@@ -1,26 +1,34 @@
-use std::sync::Arc;
 use axum::extract::DefaultBodyLimit;
-use axum::Router;
 use axum::routing::{delete, get, post};
+use axum::Router;
 use axum_test::TestServer;
-use base64::Engine;
 use base64::engine::general_purpose;
-use tfhe::{ClientKey, CompressedFheBool, CompressedServerKey};
-use tfhe::prelude::FheDecrypt;
-use encrypted_key_value_store::custom_fhe_ascii_string::{CompressedCustomFheAsciiString, CustomFheAsciiString};
-use encrypted_key_value_store::models::{CreateSessionRequest, DeleteRequest, ExistsRequest, GetRequest, MessageResponse, PutRequest, ValueResponse};
-use encrypted_key_value_store::routes::{clear_db, create_session_route, delete_route, exists_route, get_route, put_route};
+use base64::Engine;
+use encrypted_key_value_store::custom_fhe_ascii_string::{
+    CompressedCustomFheAsciiString, CustomFheAsciiString,
+};
+use encrypted_key_value_store::models::{
+    CreateSessionRequest, DeleteRequest, ExistsRequest, GetRequest, MessageResponse, PutRequest,
+    ValueResponse,
+};
+use encrypted_key_value_store::routes::{
+    clear_db, create_session_route, delete_route, exists_route, get_route, put_route,
+};
 use encrypted_key_value_store::store::{AppState, SharedState};
+use std::sync::Arc;
+use tfhe::prelude::FheDecrypt;
+use tfhe::{ClientKey, CompressedFheBool, CompressedServerKey};
 
-async fn get_session_id(server: &TestServer, compressed_server_key: &CompressedServerKey) -> String {
+async fn get_session_id(
+    server: &TestServer,
+    compressed_server_key: &CompressedServerKey,
+) -> String {
     let serialized_server_key = bincode::serialize(&compressed_server_key).unwrap();
     session_req(&server, serialized_server_key).await
 }
 
 fn get_test_server() -> TestServer {
-    let state: SharedState = Arc::new(
-        AppState::new()
-    );
+    let state: SharedState = Arc::new(AppState::new());
     let app = Router::new()
         .route("/session", post(create_session_route))
         .route("/entry", post(put_route))
@@ -35,20 +43,27 @@ fn get_test_server() -> TestServer {
 }
 
 async fn session_req(server: &TestServer, compressed_server_key: Vec<u8>) -> String {
-    let session_response = server.post("/session")
-        .json(&CreateSessionRequest{
-            server_key: compressed_server_key
+    let session_response = server
+        .post("/session")
+        .json(&CreateSessionRequest {
+            server_key: compressed_server_key,
         })
         .await;
     session_response.json::<MessageResponse>().message
 }
 
-async fn put_req(server: &TestServer, enc_key: &CustomFheAsciiString, enc_value: &CustomFheAsciiString, session_id: &str) {
-    let response = server.post("/entry")
+async fn put_req(
+    server: &TestServer,
+    enc_key: &CustomFheAsciiString,
+    enc_value: &CustomFheAsciiString,
+    session_id: &str,
+) {
+    let response = server
+        .post("/entry")
         .json(&PutRequest {
             key: enc_key.compress().string,
             value: enc_value.compress().string,
-            session_id: session_id.to_string()
+            session_id: session_id.to_string(),
         })
         .await;
 
@@ -59,10 +74,10 @@ async fn get_req(
     server: &TestServer,
     enc_key: &CustomFheAsciiString,
     session_id: &String,
-    client_key: &ClientKey
-) -> String
-{
-    let response = server.get("/entry")
+    client_key: &ClientKey,
+) -> String {
+    let response = server
+        .get("/entry")
         .json(&GetRequest {
             key: enc_key.compress().string,
             session_id: session_id.clone(),
@@ -82,10 +97,10 @@ async fn exists_req(
     server: &TestServer,
     enc_key: &CustomFheAsciiString,
     session_id: &String,
-    client_key: &ClientKey
-) -> bool
-{
-    let response = server.get("/entry/exists")
+    client_key: &ClientKey,
+) -> bool {
+    let response = server
+        .get("/entry/exists")
         .json(&ExistsRequest {
             key: enc_key.compress().string,
             session_id: session_id.clone(),
@@ -96,13 +111,12 @@ async fn exists_req(
     let body = response.json::<ValueResponse>();
 
     let response_value: CompressedFheBool = bincode::deserialize(&body.value).unwrap();
-    response_value
-        .decompress()
-        .decrypt(client_key)
+    response_value.decompress().decrypt(client_key)
 }
 
 async fn delete_req(server: &TestServer, enc_key: &CustomFheAsciiString, session_id: &String) {
-    let response = server.delete("/entry")
+    let response = server
+        .delete("/entry")
         .json(&DeleteRequest {
             key: enc_key.compress().string,
             session_id: session_id.clone(),
@@ -114,21 +128,19 @@ async fn delete_req(server: &TestServer, enc_key: &CustomFheAsciiString, session
 
 #[cfg(test)]
 mod test_set {
-    use std::time::Duration;
-    use tfhe::{set_server_key, ServerKey};
-    use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
-    use tokio::time::sleep;
-    use encrypted_key_value_store::custom_fhe_ascii_string::CustomFheAsciiString;
     use super::*;
+    use encrypted_key_value_store::custom_fhe_ascii_string::CustomFheAsciiString;
+    use std::time::Duration;
+    use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
+    use tfhe::{set_server_key, ServerKey};
+    use tokio::time::sleep;
 
     async fn run_client(server: Arc<TestServer>, key: &str, value: &str) {
-        let parameters = MetaParametersFinder::new(
-            Constraint::LessThanOrEqual(Log2PFail(-128.0)),
-            Backend::Cpu
-        )
-            .with_compression(true)
-            .find()
-            .expect("Could not find suitable parameters");
+        let parameters =
+            MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
+                .with_compression(true)
+                .find()
+                .expect("Could not find suitable parameters");
 
         let client_key = ClientKey::generate(parameters);
         let compressed_server_key = CompressedServerKey::new(&client_key);
@@ -145,13 +157,11 @@ mod test_set {
     async fn basic() {
         let server = get_test_server();
 
-        let parameters = MetaParametersFinder::new(
-            Constraint::LessThanOrEqual(Log2PFail(-128.0)),
-            Backend::Cpu
-        )
-            .with_compression(true)
-            .find()
-            .expect("Could not find suitable parameters");
+        let parameters =
+            MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
+                .with_compression(true)
+                .find()
+                .expect("Could not find suitable parameters");
 
         let client_key = ClientKey::generate(parameters);
         let compressed_server_key = CompressedServerKey::new(&client_key);
@@ -228,22 +238,20 @@ mod test_set {
 }
 
 #[cfg(test)]
-mod test_get{
-    use std::time::Duration;
-    use tfhe::{set_server_key, CompressedServerKey};
-    use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
-    use tokio::time::sleep;
-    use encrypted_key_value_store::custom_fhe_ascii_string::{CustomFheAsciiString};
+mod test_get {
     use super::*;
+    use encrypted_key_value_store::custom_fhe_ascii_string::CustomFheAsciiString;
+    use std::time::Duration;
+    use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
+    use tfhe::{set_server_key, CompressedServerKey};
+    use tokio::time::sleep;
 
     async fn run_client(server: Arc<TestServer>, key: &str, value: &str) {
-        let parameters = MetaParametersFinder::new(
-            Constraint::LessThanOrEqual(Log2PFail(-128.0)),
-            Backend::Cpu
-        )
-            .with_compression(true)
-            .find()
-            .expect("Could not find suitable parameters");
+        let parameters =
+            MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
+                .with_compression(true)
+                .find()
+                .expect("Could not find suitable parameters");
 
         let client_key = ClientKey::generate(parameters);
         let compressed_server_key = CompressedServerKey::new(&client_key);
@@ -265,13 +273,11 @@ mod test_get{
     async fn basic() {
         let server = get_test_server();
 
-        let parameters = MetaParametersFinder::new(
-            Constraint::LessThanOrEqual(Log2PFail(-128.0)),
-            Backend::Cpu
-        )
-            .with_compression(true)
-            .find()
-            .expect("Could not find suitable parameters");
+        let parameters =
+            MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
+                .with_compression(true)
+                .find()
+                .expect("Could not find suitable parameters");
 
         let client_key = tfhe::ClientKey::generate(parameters);
         let compressed_server_key = CompressedServerKey::new(&client_key);
@@ -309,22 +315,25 @@ mod test_get{
 
 #[cfg(test)]
 mod test_exists {
-    use std::time::Duration;
-    use serial_test::serial;
-    use tfhe::{set_server_key, CompressedServerKey};
-    use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
-    use tokio::time::sleep;
-    use encrypted_key_value_store::custom_fhe_ascii_string::{CustomFheAsciiString};
     use super::*;
+    use encrypted_key_value_store::custom_fhe_ascii_string::CustomFheAsciiString;
+    use serial_test::serial;
+    use std::time::Duration;
+    use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
+    use tfhe::{set_server_key, CompressedServerKey};
+    use tokio::time::sleep;
 
-    async fn run_client(server: Arc<TestServer>, key: &str, value: &str, insert_before: bool) -> bool {
-        let parameters = MetaParametersFinder::new(
-            Constraint::LessThanOrEqual(Log2PFail(-128.0)),
-            Backend::Cpu
-        )
-            .with_compression(true)
-            .find()
-            .expect("Could not find suitable parameters");
+    async fn run_client(
+        server: Arc<TestServer>,
+        key: &str,
+        value: &str,
+        insert_before: bool,
+    ) -> bool {
+        let parameters =
+            MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
+                .with_compression(true)
+                .find()
+                .expect("Could not find suitable parameters");
 
         let client_key = ClientKey::generate(parameters);
         let compressed_server_key = CompressedServerKey::new(&client_key);
@@ -345,13 +354,11 @@ mod test_exists {
     async fn basic() {
         let server = get_test_server();
 
-        let parameters = MetaParametersFinder::new(
-            Constraint::LessThanOrEqual(Log2PFail(-128.0)),
-            Backend::Cpu
-        )
-            .with_compression(true)
-            .find()
-            .expect("Could not find suitable parameters");
+        let parameters =
+            MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
+                .with_compression(true)
+                .find()
+                .expect("Could not find suitable parameters");
 
         let client_key = tfhe::ClientKey::generate(parameters);
         let compressed_server_key = CompressedServerKey::new(&client_key);
@@ -401,10 +408,10 @@ mod test_exists {
 
     #[cfg(test)]
     mod test_delete {
-        use tfhe::{set_server_key};
-        use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
-        use encrypted_key_value_store::custom_fhe_ascii_string::CustomFheAsciiString;
         use super::*;
+        use encrypted_key_value_store::custom_fhe_ascii_string::CustomFheAsciiString;
+        use tfhe::set_server_key;
+        use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
 
         #[tokio::test]
         async fn test_delete_route() {
@@ -412,11 +419,11 @@ mod test_exists {
 
             let parameters = MetaParametersFinder::new(
                 Constraint::LessThanOrEqual(Log2PFail(-128.0)),
-                Backend::Cpu
+                Backend::Cpu,
             )
-                .with_compression(true)
-                .find()
-                .expect("Could not find suitable parameters");
+            .with_compression(true)
+            .find()
+            .expect("Could not find suitable parameters");
 
             let client_key = tfhe::ClientKey::generate(parameters);
             let compressed_server_key = CompressedServerKey::new(&client_key);
@@ -441,13 +448,13 @@ mod test_exists {
 
     #[cfg(test)]
     mod test_all {
-        use std::time::Duration;
+        use super::*;
+        use encrypted_key_value_store::custom_fhe_ascii_string::CustomFheAsciiString;
         use serial_test::serial;
-        use tfhe::{set_server_key};
+        use std::time::Duration;
+        use tfhe::set_server_key;
         use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
         use tokio::time::sleep;
-        use encrypted_key_value_store::custom_fhe_ascii_string::CustomFheAsciiString;
-        use super::*;
 
         async fn test_all(
             server: &TestServer,
@@ -489,11 +496,11 @@ mod test_exists {
         async fn run_client(server: Arc<TestServer>, key: &str, value: &str) {
             let parameters = MetaParametersFinder::new(
                 Constraint::LessThanOrEqual(Log2PFail(-128.0)),
-                Backend::Cpu
+                Backend::Cpu,
             )
-                .with_compression(true)
-                .find()
-                .expect("Could not find suitable parameters");
+            .with_compression(true)
+            .find()
+            .expect("Could not find suitable parameters");
 
             let client_key = ClientKey::generate(parameters);
             let compressed_server_key = CompressedServerKey::new(&client_key);
@@ -502,7 +509,15 @@ mod test_exists {
             let enc_key = CustomFheAsciiString::new(key, &client_key);
             let enc_value = CustomFheAsciiString::new(value, &client_key);
 
-            test_all(&server, compressed_server_key, enc_key, enc_value, value, &client_key).await;
+            test_all(
+                &server,
+                compressed_server_key,
+                enc_key,
+                enc_value,
+                value,
+                &client_key,
+            )
+            .await;
         }
 
         #[tokio::test]
@@ -513,11 +528,11 @@ mod test_exists {
 
             let parameters = MetaParametersFinder::new(
                 Constraint::LessThanOrEqual(Log2PFail(-128.0)),
-                Backend::Cpu
+                Backend::Cpu,
             )
-                .with_compression(true)
-                .find()
-                .expect("Could not find suitable parameters");
+            .with_compression(true)
+            .find()
+            .expect("Could not find suitable parameters");
 
             let client_key = ClientKey::generate(parameters);
             let compressed_server_key = CompressedServerKey::new(&client_key);
@@ -528,7 +543,15 @@ mod test_exists {
             let enc_key = CustomFheAsciiString::new(key, &client_key);
             let enc_value = CustomFheAsciiString::new(value, &client_key);
 
-            test_all(&server, compressed_server_key, enc_key, enc_value, value, &client_key).await;
+            test_all(
+                &server,
+                compressed_server_key,
+                enc_key,
+                enc_value,
+                value,
+                &client_key,
+            )
+            .await;
         }
 
         #[tokio::test]

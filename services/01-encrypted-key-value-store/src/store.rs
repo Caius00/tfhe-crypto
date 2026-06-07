@@ -1,15 +1,15 @@
-use std::collections::HashMap;
-use std::{env, thread};
-use std::sync::{Arc};
-use redis::{AsyncCommands, Client, ConnectionAddr, ConnectionInfo, RedisConnectionInfo};
-use tfhe::{FheBool};
-use tfhe::prelude::{FheEq, FheTrivialEncrypt, IfThenElse};
-use std::ops::{BitOr};
-use dotenvy::from_path;
-use tfhe::ServerKey;
-use tokio::sync::RwLock;
 use crate::custom_fhe_ascii_string::{CompressedCustomFheAsciiString, CustomFheAsciiString};
 use crate::models::AppError;
+use dotenvy::from_path;
+use redis::{AsyncCommands, Client, ConnectionAddr, ConnectionInfo, RedisConnectionInfo};
+use std::collections::HashMap;
+use std::ops::BitOr;
+use std::sync::Arc;
+use std::{env, thread};
+use tfhe::prelude::{FheEq, FheTrivialEncrypt, IfThenElse};
+use tfhe::FheBool;
+use tfhe::ServerKey;
+use tokio::sync::RwLock;
 
 fn get_redis_client() -> Client {
     let password = env::var("REDIS_PASSWORD").unwrap_or_default();
@@ -25,7 +25,11 @@ fn get_redis_client() -> Client {
         redis: RedisConnectionInfo {
             db: 0,
             username: None,
-            password: if password.is_empty() { None } else { Some(password) },
+            password: if password.is_empty() {
+                None
+            } else {
+                Some(password)
+            },
         },
     };
 
@@ -35,7 +39,7 @@ fn get_redis_client() -> Client {
 pub struct AppState {
     pub client: Client,
     pub ttl_sec: u64,
-    pub server_keys: RwLock<HashMap<String, ServerKey>>
+    pub server_keys: RwLock<HashMap<String, ServerKey>>,
 }
 
 // get state from router
@@ -44,7 +48,10 @@ pub type SharedState = Arc<AppState>;
 impl AppState {
     pub fn new() -> Self {
         if let Err(e) = from_path("./services/01-encrypted-key-value-store/.env") {
-            eprintln!("Warning: could not load .env: {}. Falling back to localhost defaults.", e);
+            eprintln!(
+                "Warning: could not load .env: {}. Falling back to localhost defaults.",
+                e
+            );
         }
 
         let ttl_minutes = env::var("TTL_MINUTES")
@@ -55,26 +62,26 @@ impl AppState {
         let client = get_redis_client();
         let server_keys = RwLock::new(HashMap::new());
 
-        Self {client, ttl_sec, server_keys}
+        Self {
+            client,
+            ttl_sec,
+            server_keys,
+        }
     }
 
     pub async fn put(
         &self,
         key: &CustomFheAsciiString,
         value: &CustomFheAsciiString,
-        session_id: &str
+        session_id: &str,
     ) -> Result<(), AppError> {
         println!("Putting in thread: {:?}", thread::current().id());
-        let mut con = self
-            .client
-            .get_multiplexed_async_connection()
-            .await?;
+        let mut con = self.client.get_multiplexed_async_connection().await?;
 
         let db_key = Self::create_db_key(key, session_id);
         let compressed_value = value.compress().string;
 
-        con
-            .set_ex::<Vec<u8>, Vec<u8>, ()>(db_key, compressed_value, self.ttl_sec)
+        con.set_ex::<Vec<u8>, Vec<u8>, ()>(db_key, compressed_value, self.ttl_sec)
             .await?;
 
         Ok(())
@@ -83,7 +90,7 @@ impl AppState {
     pub async fn get(
         &self,
         key: &CustomFheAsciiString,
-        session_id: &str
+        session_id: &str,
     ) -> Result<(CustomFheAsciiString, FheBool), AppError> {
         let mut con = self.client.get_multiplexed_async_connection().await?;
         let mut iter: redis::AsyncIter<Vec<u8>> = con.scan().await?;
@@ -112,19 +119,16 @@ impl AppState {
                     ))
                 }
             })
-            .fold(
-                None::<(FheBool, CustomFheAsciiString)>,
-                |acc, (m, v)| {
-                    Some(match acc {
-                        None => (m.clone(), v),
-                        Some((acc_m, acc_v)) => {
-                            let new_m = acc_m.bitor(m);
-                            let new_v = new_m.if_then_else(&v, &acc_v);
-                            (new_m, new_v)
-                        }
-                    })
-                },
-            )
+            .fold(None::<(FheBool, CustomFheAsciiString)>, |acc, (m, v)| {
+                Some(match acc {
+                    None => (m.clone(), v),
+                    Some((acc_m, acc_v)) => {
+                        let new_m = acc_m.bitor(m);
+                        let new_v = new_m.if_then_else(&v, &acc_v);
+                        (new_m, new_v)
+                    }
+                })
+            })
             .ok_or_else(|| AppError::NotFound(session_id.to_string()))?;
 
         Ok((last_found_value, is_match))
@@ -133,9 +137,8 @@ impl AppState {
     pub async fn exists(
         &self,
         key: &CustomFheAsciiString,
-        session_id: &str
-    ) -> Result<FheBool, AppError>
-    {
+        session_id: &str,
+    ) -> Result<FheBool, AppError> {
         println!("Exists in thread: {:?}", thread::current().id());
         let mut con = self.client.get_multiplexed_async_connection().await?;
         let mut iter: redis::AsyncIter<Vec<u8>> = con.scan().await?;
@@ -216,23 +219,21 @@ impl AppState {
 
 #[cfg(test)]
 mod test_exists {
-    use std::time::Duration;
+    use super::*;
     use redis::Commands;
-    use tfhe::{set_server_key, ClientKey, CompressedServerKey};
+    use std::time::Duration;
     use tfhe::prelude::FheDecrypt;
     use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
+    use tfhe::{set_server_key, ClientKey, CompressedServerKey};
     use tokio::time::sleep;
     use uuid::Uuid;
-    use super::*;
 
     async fn run_basic(app_state: Arc<AppState>, key: &str, value: &str) {
-        let parameters = MetaParametersFinder::new(
-            Constraint::LessThanOrEqual(Log2PFail(-128.0)),
-            Backend::Cpu
-        )
-            .with_compression(true)
-            .find()
-            .expect("Could not find suitable parameters");
+        let parameters =
+            MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
+                .with_compression(true)
+                .find()
+                .expect("Could not find suitable parameters");
 
         let client_key = ClientKey::generate(parameters);
         let compressed_server_key = CompressedServerKey::new(&client_key);
@@ -243,12 +244,11 @@ mod test_exists {
         let session_id = Uuid::new_v4().to_string();
         let db_key = AppState::create_db_key(&enc_key, &session_id);
 
-
-
         let enc_should_false = app_state.exists(&enc_key, &session_id).await.unwrap();
 
         let mut con = app_state.client.get_connection().unwrap();
-        con.set::<Vec<u8>, Vec<u8>, ()>(db_key, enc_value.compress().string).unwrap();
+        con.set::<Vec<u8>, Vec<u8>, ()>(db_key, enc_value.compress().string)
+            .unwrap();
 
         let enc_should_true = app_state.exists(&enc_key, &session_id).await.unwrap();
 
@@ -261,13 +261,11 @@ mod test_exists {
 
     #[tokio::test]
     async fn basic() {
-        let parameters = MetaParametersFinder::new(
-            Constraint::LessThanOrEqual(Log2PFail(-128.0)),
-            Backend::Cpu
-        )
-            .with_compression(true)
-            .find()
-            .expect("Could not find suitable parameters");
+        let parameters =
+            MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
+                .with_compression(true)
+                .find()
+                .expect("Could not find suitable parameters");
 
         let client_key = ClientKey::generate(parameters);
         let compressed_server_key = CompressedServerKey::new(&client_key);
@@ -283,7 +281,8 @@ mod test_exists {
         let enc_should_false = app_state.exists(&enc_key, &session_id).await.unwrap();
 
         let mut con = app_state.client.get_connection().unwrap();
-        con.set::<Vec<u8>, Vec<u8>, ()>(db_key, enc_value.compress().string).unwrap();
+        con.set::<Vec<u8>, Vec<u8>, ()>(db_key, enc_value.compress().string)
+            .unwrap();
 
         let enc_should_true = app_state.exists(&enc_key, &session_id).await.unwrap();
 

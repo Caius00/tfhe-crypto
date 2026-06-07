@@ -1,11 +1,14 @@
-use std::thread;
-use axum::extract::{State};
+use crate::custom_fhe_ascii_string::CompressedCustomFheAsciiString;
+use crate::models::{
+    AppError, CreateSessionRequest, DeleteRequest, ExistsRequest, GetRequest, MessageResponse,
+    PutRequest, ValueResponse,
+};
+use crate::store::SharedState;
+use axum::extract::State;
 use axum::Json;
+use std::thread;
 use tfhe::{set_server_key, CompressedServerKey};
 use uuid::Uuid;
-use crate::custom_fhe_ascii_string::{CompressedCustomFheAsciiString};
-use crate::models::{AppError, CreateSessionRequest, DeleteRequest, ExistsRequest, GetRequest, MessageResponse, PutRequest, ValueResponse};
-use crate::store::SharedState;
 
 async fn set_route_server_key(state: &SharedState, session_id: &str) {
     let keys_lock = state.server_keys.read().await;
@@ -17,21 +20,26 @@ pub async fn create_session_route(
     State(state): State<SharedState>,
     body: Json<CreateSessionRequest>,
 ) -> Result<Json<MessageResponse>, AppError> {
-    let compressed_server_key: CompressedServerKey = bincode::deserialize(&body.server_key).unwrap();
+    let compressed_server_key: CompressedServerKey =
+        bincode::deserialize(&body.server_key).unwrap();
     let server_key = compressed_server_key.decompress();
 
     let session_id = Uuid::new_v4().to_string();
-    state.server_keys.write().await.insert(session_id.clone(), server_key);
+    state
+        .server_keys
+        .write()
+        .await
+        .insert(session_id.clone(), server_key);
 
     Ok(Json(MessageResponse {
-        message: session_id
+        message: session_id,
     }))
 }
 
 /// TODO() Use compression?
-pub async fn put_route (
+pub async fn put_route(
     State(state): State<SharedState>,
-    Json(body): Json<PutRequest>
+    Json(body): Json<PutRequest>,
 ) -> Result<(), AppError> {
     set_route_server_key(&state, &body.session_id).await;
     println!("Set Server key for thread: {:?}", thread::current().id());
@@ -41,14 +49,16 @@ pub async fn put_route (
 
     let decompressed_key = parsed_key.decompress();
     let decompressed_value = parsed_value.decompress();
-    state.put(&decompressed_key, &decompressed_value, &body.session_id).await?;
+    state
+        .put(&decompressed_key, &decompressed_value, &body.session_id)
+        .await?;
 
     Ok(())
 }
 
-pub async fn get_route (
+pub async fn get_route(
     State(state): State<SharedState>,
-    Json(body): Json<GetRequest>
+    Json(body): Json<GetRequest>,
 ) -> Result<Json<ValueResponse>, AppError> {
     set_route_server_key(&state, &body.session_id).await;
 
@@ -58,13 +68,13 @@ pub async fn get_route (
     let (value, found_value) = state.get(&decompressed_key, &body.session_id).await?;
 
     Ok(Json(ValueResponse {
-        value: value.compress().string
+        value: value.compress().string,
     }))
 }
 
-pub async fn exists_route (
+pub async fn exists_route(
     State(state): State<SharedState>,
-    Json(body): Json<ExistsRequest>
+    Json(body): Json<ExistsRequest>,
 ) -> Result<Json<ValueResponse>, AppError> {
     set_route_server_key(&state, &body.session_id).await;
     println!("Set Server key for thread: {:?}", thread::current().id());
@@ -76,14 +86,12 @@ pub async fn exists_route (
     let compressed = exists.compress();
     let serialized = bincode::serialize(&compressed).unwrap();
 
-    Ok(Json(ValueResponse {
-        value: serialized
-    }))
+    Ok(Json(ValueResponse { value: serialized }))
 }
 
-pub async fn delete_route (
+pub async fn delete_route(
     State(state): State<SharedState>,
-    Json(body): Json<DeleteRequest>
+    Json(body): Json<DeleteRequest>,
 ) -> Result<(), AppError> {
     set_route_server_key(&state, &body.session_id).await;
     let parsed_key = CompressedCustomFheAsciiString::new(body.key).decompress();
@@ -93,13 +101,11 @@ pub async fn delete_route (
     Ok(())
 }
 
-pub async fn clear_db (
-    State(state): State<SharedState>,
-) -> Result<Json<MessageResponse>, AppError> {
+pub async fn clear_db(State(state): State<SharedState>) -> Result<Json<MessageResponse>, AppError> {
     let mut con = state.client.get_multiplexed_async_connection().await?;
     redis::cmd("FLUSHDB").query_async::<_, ()>(&mut con).await?;
 
     Ok(Json(MessageResponse {
-        message: "Cleared DB Successful".to_string()
+        message: "Cleared DB Successful".to_string(),
     }))
 }

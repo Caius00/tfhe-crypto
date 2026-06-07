@@ -1,21 +1,19 @@
+mod custom_fhe_ascii_string;
+mod models;
 mod routes;
 mod store;
-mod models;
-mod custom_fhe_ascii_string;
 
-use std::env;
-use std::sync::Arc;
-use axum::extract::DefaultBodyLimit;
-use axum::Router;
-use axum::routing::{delete, get, post};
 use crate::routes::{create_session_route, delete_route, exists_route, get_route, put_route};
 use crate::store::{AppState, SharedState};
+use axum::extract::DefaultBodyLimit;
+use axum::routing::{delete, get, post};
+use axum::Router;
+use std::env;
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() {
-    let state: SharedState = Arc::new(
-        AppState::new()
-    );
+    let state: SharedState = Arc::new(AppState::new());
 
     // TODO() set fixed length for keys/ values
     // TODO() check if works
