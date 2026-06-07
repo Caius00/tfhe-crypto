@@ -88,9 +88,4 @@ pub async fn auktion_auswerten() -> ApiResult<AuctionResponse> {
     }))
 }
 
-/// GET /hallo
-pub async fn hallo_test() -> Json<StringResponse> {
-    Json(StringResponse {
-        response: "Hallo aus der FHE-Auktion!".to_string(),
-    })
-}
+
