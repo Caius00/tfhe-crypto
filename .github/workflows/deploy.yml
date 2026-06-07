@@ -69,5 +69,7 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           push: true
-          build-args: SERVICE_NAME=${{ inputs.service }}
+          build-args: |
+            SERVICE_NAME=${{ inputs.service }}
+            TARGET_CPU=znver5
           tags: ${{ steps.meta.outputs.tags }}

@@ -51,7 +51,7 @@ export class CreateSessionComponent {
   creatorId = signal('');
   /** Liste der Fragen (mind. eine, leere Initialfrage) */
   questions = signal<Question[]>([
-    { id: 1, text: '', question_type: 'single', options: null, multiple: false },
+    { id: 1, text: '', question_type: 'single', options: null},
   ]);
 
   /** Generiertes FHE-KeyPair – null bis "Keys generieren" geklickt wurde */
@@ -114,7 +114,6 @@ export class CreateSessionComponent {
       this.isGeneratingKeys.set(false);
     }
   }
-
   // --- Fragen-Management ----------------------------------------------------
 
   /** Update einer Frage (von QuestionEditor emittiert) */
@@ -126,7 +125,7 @@ export class CreateSessionComponent {
   addQuestion(): void {
     this.questions.update((arr) => [
       ...arr,
-      { id: arr.length + 1, text: '', question_type: 'single', options: null, multiple: false },
+      { id: arr.length + 1, text: '', question_type: 'single', options: null},
     ]);
   }
 
@@ -143,11 +142,14 @@ export class CreateSessionComponent {
     this.errorMessage.set(null);
     this.successMessage.set(null);
     this.isCreating.set(true);
-
+    //console.log("Server Key Bytes: " + this.keyPair.serverKeyBytes);
     const serverKeyB64 = this.tfhe.toBase64(this.keyPair.serverKeyBytes);
+    //console.log("Server Key Base64: " + serverKeyB64);
+    //console.log("Public Key Bytes: " + this.keyPair.publicKeyBytes);
     const publicKeyB64 = this.keyPair.publicKeyBytes
       ? this.tfhe.toBase64(this.keyPair.publicKeyBytes)
       : null;
+    //console.log("Public Key Base64: " + publicKeyB64);
 
     // Bereinigte Fragen ans Backend (leere Optionen rauswerfen)
     const cleanedQuestions: Question[] = this.questions().map((q) => ({

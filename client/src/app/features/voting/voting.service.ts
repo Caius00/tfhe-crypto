@@ -1,7 +1,6 @@
-// src/app/voting/voting.service.ts
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Question } from './voting.types';
+import { ParticipantAdminView, Question } from './voting.types';
 import { Observable } from 'rxjs';
 import { SERVICE_URLS } from '../../core/api/service-urls';
 
@@ -74,16 +73,6 @@ export class VotingService {
     );
   }
 
-  /**
-   * Get pending participants for a session (creator only).
-   * Returns array of { participant_id, enc_name_chunks }.
-   */
-  getPending(sessionId: string, creatorId: string) {
-    return this.http.get<PendingEntry[]>(
-      `${this.baseUrl}/pending/${sessionId}/${creatorId}`
-    );
-  }
-
   approveParticipant(sessionId: string, creatorId: string, participantId: string, approved: boolean) {
     return this.http.post<{ status: string }>(
       `${this.baseUrl}/approve`,
@@ -123,4 +112,10 @@ export class VotingService {
       {}
     );
   }
+
+  getParticipants(sessionId: string, creatorId: string) {
+  return this.http.get<ParticipantAdminView[]>(
+    `${this.baseUrl}/participants/${sessionId}/${creatorId}`
+  );
+}
 }

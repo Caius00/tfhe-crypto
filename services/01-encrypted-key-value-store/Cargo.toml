@@ -1,6 +1,6 @@
 [package]
 name = "encrypted-key-value-store"
-version = "0.1.14"
+version = "0.1.20"
 edition = "2021"
 publish = false
 description = "Encrypted Key-Value Store"

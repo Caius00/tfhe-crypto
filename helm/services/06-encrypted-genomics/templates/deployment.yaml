@@ -14,11 +14,38 @@ spec:
     metadata:
       labels:
         app: {{ .Chart.Name }}
+      annotations:
+        # Prometheus (kube-prometheus-stack) scraped Pods mit diesem Label
+        # automatisch – Discovery-Konfig in helm/infrastructure/monitoring/values.yaml.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ .Values.service.port }}"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            # Downward API → Resource Attributes für Spans (k8s.namespace.name / k8s.pod.name).
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://monitoring-tempo.monitoring.svc.cluster.local:4317"
+            - name: RUST_LOG
+              value: "info"
+            {{- if .Values.postgres.enabled }}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.postgres.fullnameOverride }}"
+                  key: uri
+            {{- end }}
           ports:
             - containerPort: {{ .Values.service.port }}
           livenessProbe:

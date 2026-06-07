@@ -13,76 +13,27 @@ use axum::{
     Router,
 };
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
-use encrypted_leaderboard::{app, state::AppState};
+use encrypted_leaderboard::{
+    app,
+    loadtest_support::{dec_bool, dec_id, dec_score, enc_id, enc_score, keys},
+    state::AppState,
+};
 use serde_json::{json, Value};
-use std::sync::OnceLock;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
-use tfhe::prelude::*;
-use tfhe::{ClientKey, CompressedServerKey, ConfigBuilder, FheBool, FheUint16, FheUint8};
 use tower::util::ServiceExt;
 
 // ---------------------------------------------------------------------------
 // Test-Helfer
 // ---------------------------------------------------------------------------
-
-// Ein TFHE-Schlüsselpaar wird genau einmal pro Test-Prozess erzeugt (~30–60 s).
-// Tests teilen sich die teuren Bytes — jede Session dekomprimiert dann selbst.
-struct TestKeys {
-    client_key: ClientKey,
-    server_key_b64: String,
-}
-
-fn keys() -> &'static TestKeys {
-    static KEYS: OnceLock<TestKeys> = OnceLock::new();
-    KEYS.get_or_init(|| {
-        let config = ConfigBuilder::default().build();
-        let client_key = ClientKey::generate(config);
-        let compressed = CompressedServerKey::new(&client_key);
-        let server_bytes = bincode::serialize(&compressed).expect("serialize server key");
-        TestKeys {
-            client_key,
-            server_key_b64: B64.encode(server_bytes),
-        }
-    })
-}
+//
+// FHE-Schlüssel und Encrypt-/Decrypt-Funktionen kommen aus
+// `encrypted_leaderboard::loadtest_support` — dasselbe Modul nutzt auch der
+// Corpus-Generator (`src/bin/gen_corpus.rs`), damit Tests und Loadtest
+// garantiert mit identischen Parametern arbeiten.
 
 fn fresh_app() -> Router {
     app(AppState::new(), "test")
-}
-
-// Verschlüsselt einen Score (u16) und gibt ihn als Base64(bincode(FheUint16)) zurück
-fn enc_score(value: u16) -> String {
-    let ck = &keys().client_key;
-    let enc = FheUint16::try_encrypt(value, ck).expect("encrypt score");
-    B64.encode(bincode::serialize(&enc).expect("serialize"))
-}
-
-// Verschlüsselt eine Spieler-ID (u8)
-fn enc_id(value: u8) -> String {
-    let ck = &keys().client_key;
-    let enc = FheUint8::try_encrypt(value, ck).expect("encrypt id");
-    B64.encode(bincode::serialize(&enc).expect("serialize"))
-}
-
-// Entschlüsselt einen verschlüsselten u16-Score aus Base64
-fn dec_score(b64: &str) -> u16 {
-    let bytes = B64.decode(b64).expect("decode");
-    let enc: FheUint16 = bincode::deserialize(&bytes).expect("deser");
-    enc.decrypt(&keys().client_key)
-}
-
-// Entschlüsselt eine verschlüsselte u8-ID aus Base64
-fn dec_id(b64: &str) -> u8 {
-    let bytes = B64.decode(b64).expect("decode");
-    let enc: FheUint8 = bincode::deserialize(&bytes).expect("deser");
-    enc.decrypt(&keys().client_key)
-}
-
-// Entschlüsselt einen verschlüsselten Bool aus Base64
-fn dec_bool(b64: &str) -> bool {
-    let bytes = B64.decode(b64).expect("decode");
-    let enc: FheBool = bincode::deserialize(&bytes).expect("deser");
-    enc.decrypt(&keys().client_key)
 }
 
 // HTTP-Helfer: GET → (Status, JSON)
@@ -292,8 +243,15 @@ async fn empty_leaderboard_returns_empty_entries_and_matches() {
 //   8. Rank mit kaputtem Ciphertext → 500
 #[tokio::test]
 async fn full_lifecycle_create_submit_max_sort_rank() {
-    #[cfg(debug_assertions)]
-    panic!("FHE integration test requires --release: rerun with `cargo test --release` (debug FHE is ~10× slower)");
+    // Runtime-Guard (statt #[cfg(debug_assertions)] panic!), damit der Compiler
+    // den Rest der Funktion nicht als unreachable markiert — die IDE würde sonst
+    // dauerhaft Unreachable-Warnings im ganzen Test anzeigen.
+    if cfg!(debug_assertions) {
+        panic!(
+            "FHE integration test requires --release: \
+             rerun with `cargo test --release` (debug FHE is ~10× slower)"
+        );
+    }
 
     let app = fresh_app();
     let code = create_room(&app).await;
@@ -434,6 +392,62 @@ async fn leaderboard_rejects_player_when_full() {
     )
     .await;
     assert_eq!(s, StatusCode::CONFLICT);
+}
+
+// Der Janitor entfernt Sessions, an denen länger als `idle_timeout` keine
+// Aktivität war. Test:
+//   1. Raum anlegen.
+//   2. `last_access` der Session manuell auf 0 (Unix-Epoch) zurücksetzen —
+//      so wirkt sie für den Janitor sofort uralt.
+//   3. Janitor mit kurzem Intervall (50 ms) starten, kurz warten.
+//   4. Verifizieren, dass /public-key jetzt 404 liefert (Session ist weg).
+//
+// Wir bauen `state` und `app` hier separat (statt `fresh_app`), damit wir
+// den geteilten `AppState` zum Reingreifen behalten — `AppState` ist `Clone`,
+// beide Klone teilen sich dieselbe `Arc<RwLock<HashMap>>`.
+#[tokio::test]
+async fn janitor_evicts_idle_sessions() {
+    let state = AppState::new();
+    let app_router = app(state.clone(), "test");
+
+    // Echten Raum anlegen — braucht einen gültigen ServerKey (aus dem geteilten
+    // TestKeys-Fixture, das beim ersten Aufruf einmalig erzeugt wird).
+    let body = json!({
+        "server_key": &keys().server_key_b64,
+        "public_key": "AAAA",
+    });
+    let (status, value) = post_json(&app_router, "/create", body).await;
+    assert_eq!(status, StatusCode::OK, "create failed: {value}");
+    let code = value["code"].as_str().unwrap().to_string();
+
+    // Sanity-Check: Raum existiert direkt nach /create
+    let (status, _) = get_json(&app_router, &format!("/{code}/public-key")).await;
+    assert_eq!(status, StatusCode::OK);
+
+    // `state.get()` touched die Session auf jetzt — wir überschreiben sie direkt
+    // danach auf 0, damit der nächste Janitor-Scan sie als idle einstuft.
+    // Der Arc-Clone darf danach gedroppt werden; der Eintrag in der Map bleibt
+    // und zeigt auf dieselbe Session-Instanz.
+    {
+        let session = state.get(&code).await.expect("session exists");
+        session.last_access.store(0, Ordering::Relaxed);
+    }
+
+    // Janitor mit 60 s Idle-Timeout: da `last_access = 0` (Epoch) ist, gilt die
+    // Session sofort als ~50+ Jahre idle und wird beim ersten Tick entfernt.
+    state.spawn_janitor(Duration::from_secs(60), Duration::from_millis(50));
+
+    // Genug Zeit für mindestens einen Janitor-Tick (`interval`-Tick wird vom
+    // Janitor-Code übersprungen, d.h. erster echter Scan kommt nach ~50 ms).
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // Session muss weg sein — alle Endpoints liefern jetzt 404.
+    let (status, _) = get_text(&app_router, &format!("/{code}/public-key")).await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "session should have been evicted by janitor"
+    );
 }
 
 // Submit mit ungültigem Base64 wird vor jeder FHE-Op abgewiesen (400).

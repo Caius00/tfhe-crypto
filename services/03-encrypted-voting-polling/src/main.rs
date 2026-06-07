@@ -13,8 +13,8 @@ use axum::extract::DefaultBodyLimit;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::voting::logic::{
-    approve_participant, create_session, finalize_session, get_pending, get_results, get_session,
-    get_status, join_session, submit_vote,
+    approve_participant, create_session, finalize_session, get_participants, get_results,
+    get_session, get_status, join_session, submit_vote,
 };
 use crate::voting::types::AppState;
 
@@ -27,6 +27,9 @@ async fn main() {
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
+
+    // Prometheus-Exporter + Layer
+    let (metrics_layer, metrics_router) = metrics_exporter::setup();
 
     let api_router = ApiRouter::new()
         .api_route(
@@ -45,12 +48,6 @@ async fn main() {
             "/join",
             post_with(join_session, |op| {
                 op.description("Request to join a session (pending until approved).")
-            }),
-        )
-        .api_route(
-            "/pending/{session_id}/{creator_id}",
-            get_with(get_pending, |op| {
-                op.description("List participants pending approval (creator only).")
             }),
         )
         .api_route(
@@ -78,6 +75,12 @@ async fn main() {
             }),
         )
         .api_route(
+            "/participants/{session_id}/{creator_id}",
+            get_with(get_participants, |op| {
+                op.description("Get full participant status (approved + voting state).")
+            }),
+        )
+        .api_route(
             "/finalize/{session_id}/{creator_id}",
             post_with(finalize_session, |op| {
                 op.description("Close the session – no further votes accepted.")
@@ -94,7 +97,10 @@ async fn main() {
         env!("CARGO_PKG_VERSION"),
     )
     .merge(health::router(env!("CARGO_PKG_VERSION")))
+    .merge(metrics_router)
     .layer(DefaultBodyLimit::max(2 * 1024 * 1024 * 1024))
+    .layer(metrics_layer)
+    .layer(observability::http_trace_layer())
     .layer(cors);
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));
