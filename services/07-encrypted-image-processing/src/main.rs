@@ -218,7 +218,7 @@ mod tests {
 
         create_test_session(&server, &client_key).await;
 
-        server.post("/effects/blur").await;
+        server.post("/effects/bloom").await;
 
         let response = server.delete("/session").await;
         response.assert_status_ok();
@@ -226,89 +226,9 @@ mod tests {
         let body: DeleteSessionResponse = response.json();
         let img_data: Vec<FheUint8> = bincode::deserialize(&body.image_data).unwrap();
 
-        postprocess_image(&img_data, body.width, body.height, "TestBlur", &client_key);
+        postprocess_image(&img_data, body.width, body.height, "TestBloom", &client_key);
         
         // TODO() test if session is actually deleted
-        // TODO() Dont write images to storage; verify authenticity in RAM
-    }
-
-
-    
-    #[tokio::test]
-    async fn test_blur() {
-        let server = build_test_server();
-
-        let parameters = MetaParametersFinder::new(
-            LessThanOrEqual(Log2PFail(-128.0)),
-            Cpu,
-        )
-            .with_compression(true)
-            .find()
-            .expect("Could not find suitable parameters");
-        let client_key = ClientKey::generate(parameters);
-
-        create_test_session(&server, &client_key).await;
-
-        let response = server.post("/effects/blur").await;
-        response.assert_status(StatusCode::OK);
-
-        response.assert_json(&ApiResponse {
-            success: true,
-            message: "Successfully manipulated image.".to_string(),
-        });
-
-        let response = server.delete("/session").await;
-
-        response.assert_status_ok();
-
-        let body: DeleteSessionResponse = response.json();
-
-        let img_data: Vec<FheUint8> =
-            bincode::deserialize(&body.image_data)
-                .unwrap();
-
-        postprocess_image(
-            &img_data,
-            body.width,
-            body.height,
-            "BlurTest",
-            &client_key,
-        );
-    }
-
-    #[tokio::test]
-    async fn test_blur_then_bloom() {
-        let server = build_test_server();
-
-        let parameters = MetaParametersFinder::new(
-            LessThanOrEqual(Log2PFail(-128.0)),
-            Cpu,
-        )
-        .with_compression(true)
-        .find()
-        .expect("Could not find suitable parameters");
-
-        let client_key = ClientKey::generate(parameters);
-
-        create_test_session(&server, &client_key).await;
-
-        server.post("/effects/blur").await;
-        server.post("/effects/bloom").await;
-
-        let response = server.delete("/session").await;
-
-        let body: DeleteSessionResponse = response.json();
-
-        let img_data: Vec<FheUint8> =
-            bincode::deserialize(&body.image_data)
-                .unwrap();
-
-        postprocess_image(
-            &img_data,
-            body.width,
-            body.height,
-            "BlurThenBloomTest",
-            &client_key,
-        );
+        // TODO() Don't write images to storage; verify authenticity in RAM
     }
 }

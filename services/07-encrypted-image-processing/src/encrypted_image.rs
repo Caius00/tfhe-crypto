@@ -94,8 +94,86 @@ impl EncryptedImage {
 
         self.base_func(black_threshold);
     }
+    
+    // EFFECTS
+    fn map_pixels<F>(&self, function: F) -> EncryptedImage
+    where
+        F: Fn(&FheUint8) -> FheUint8 + Sync + Send  
+    {
+        let pixels = self.pixels.par_iter().map(function).collect();
+        EncryptedImage { pixels, width: self.width, height: self.height }
+    }
+    
+    fn add_image(&mut self, other: &EncryptedImage) {
+        let max = FheUint8::encrypt_trivial(255u8);
+        self.extended_base_func( |row, col, image| {
+            let sum = image.get_pixel(row, col) + other.get_pixel(row, col);
+            sum.gt(255u8).if_then_else(&max, &sum)
+        });
+    }
 
+    fn add_image_faster(&mut self, other: &EncryptedImage, factor: u8) {
+        self.extended_base_func(|row, col, image| {
+            image.get_pixel(row, col) + (other.get_pixel(row, col) >> factor)
+        });
+    }
+
+    fn create_lightmap(&self) -> EncryptedImage {
+        let theshhold = 220u8;
+        let zero = FheUint8::encrypt_trivial(0u8);
+
+        self.map_pixels(|pixel| {
+            pixel.lt(theshhold).if_then_else(&zero, pixel)
+        })       
+    }
+    
     pub fn blooming(&mut self) {
+        let mut lightmap = self.create_lightmap();
+        lightmap.box_blur();
+        self.add_image_faster(&lightmap, 2u8);
+    }
+
+    pub fn box_blur(&mut self) {
+        self.extended_base_func(|row, col, image| {
+            if row == 0 || col == 0 ||row == image.height - 1 || col == image.width - 1 {
+                return image.get_pixel(row, col).clone();
+            }
+            
+            let center = image.get_pixel(row, col);
+
+            let n  = image.get_pixel(row - 1, col);
+            let s  = image.get_pixel(row + 1, col);
+            let e  = image.get_pixel(row, col + 1);
+            let w  = image.get_pixel(row, col - 1);
+
+            (center >> 2u8) 
+                + (n >> 3u8) + (e >> 3u8) + (s >> 3u8) + (w >> 3u8)
+    });}
+
+    pub fn box_blur_weighted(&mut self) {
+        self.extended_base_func(|row, col, image| {
+            if row == 0 || col == 0 ||row == image.height - 1 || col == image.width - 1 {
+                return image.get_pixel(row, col).clone();
+            }
+            
+            let center = image.get_pixel(row, col);
+
+            let n  = image.get_pixel(row - 1, col);
+            let s  = image.get_pixel(row + 1, col);
+            let e  = image.get_pixel(row, col + 1);
+            let w  = image.get_pixel(row, col - 1);
+            
+            let ne = image.get_pixel(row - 1, col + 1);
+            let nw = image.get_pixel(row - 1, col - 1);
+            let se = image.get_pixel(row + 1, col + 1);
+            let sw = image.get_pixel(row + 1, col - 1);
+
+            (center >> 2u8) 
+                + (n >> 3u8) + (e >> 3u8) + (s >> 3u8) + (w >> 3u8)
+                + (ne >> 4u8) + (nw >> 4u8) + (se >> 4u8) + (sw >> 4u8)
+    });}
+
+    pub fn blooming_per_pixel(&mut self) {
         self.extended_base_func(|row, col, image| {
             if row == 0 || col == 0 ||row == image.height - 1 || col == image.width - 1 {
                 return image.get_pixel(row, col).clone();
@@ -129,23 +207,6 @@ impl EncryptedImage {
             + sw.gt(threshhold).if_then_else(&weak, &zero);
             
             center + boost
-    });}
-
-    pub fn box_blur(&mut self) {
-        self.extended_base_func(|row, col, image| {
-            if row == 0 || col == 0 ||row == image.height - 1 || col == image.width - 1 {
-                return image.get_pixel(row, col).clone();
-            }
-            
-            let center = image.get_pixel(row, col);
-            let north  = image.get_pixel(row - 1, col);
-            let south  = image.get_pixel(row + 1, col);
-            let east  = image.get_pixel(row, col + 1);
-            let west  = image.get_pixel(row, col - 1);
-
-            let sum = center + north + south + west + east;
-            
-            sum / 5u8
     });}
 
     // ROTATIONS:
