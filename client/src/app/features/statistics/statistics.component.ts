@@ -19,6 +19,23 @@ export interface StatisticsResult {
 }
 
 /**
+ * Wählt die kleinstmögliche FHE-Bitbreite anhand des tatsächlichen Wertebereichs
+ * der Eingabeliste. Kleinere Bitbreiten bedeuten deutlich kürzere Rechenzeiten.
+ *
+ *   Int8  → [-128, 127]
+ *   Int16 → [-32.768, 32.767]
+ *   Int32 → [-2.147.483.648, 2.147.483.647]
+ */
+export function selectOptimalBitWidth(numbers: number[]): 8 | 16 | 32 {
+  const smallestValue = Math.min(...numbers);
+  const largestValue  = Math.max(...numbers);
+
+  if (smallestValue >= -128 && largestValue <= 127)        return 8;
+  if (smallestValue >= -32_768 && largestValue <= 32_767)  return 16;
+  return 32;
+}
+
+/**
  * Steuert den vollständigen Statistics-Workflow:
  * Schlüsselgenerierung → Eingabe → homomorphe Berechnung → Ergebnisanzeige.
  *
@@ -157,21 +174,8 @@ export class StatisticsComponent {
       });
   }
 
-  /**
-   * Wählt die kleinstmögliche FHE-Bitbreite anhand des tatsächlichen Wertebereichs
-   * der Eingabeliste. Kleinere Bitbreiten bedeuten deutlich kürzere Rechenzeiten.
-   *
-   *   Int8  → [-128, 127]            (schnellste Option)
-   *   Int16 → [-32.768, 32.767]
-   *   Int32 → [-2.147.483.648, 2.147.483.647]
-   */
   private selectOptimalBitWidth(numbers: number[]): 8 | 16 | 32 {
-    const smallestValue = Math.min(...numbers);
-    const largestValue  = Math.max(...numbers);
-
-    if (smallestValue >= -128 && largestValue <= 127)   return 8;
-    if (smallestValue >= -32_768 && largestValue <= 32_767) return 16;
-    return 32;
+    return selectOptimalBitWidth(numbers);
   }
 
   /** Verschlüsselt einen Klartextwert mit dem zum `bitWidth` passenden TFHE-Typ. */
