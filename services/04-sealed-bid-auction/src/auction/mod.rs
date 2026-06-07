@@ -87,5 +87,3 @@ pub async fn auktion_auswerten() -> ApiResult<AuctionResponse> {
         encrypted_result: general_purpose::STANDARD.encode(gewinner_nachricht),
     }))
 }
-
-
