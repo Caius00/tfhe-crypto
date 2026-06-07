@@ -18,13 +18,13 @@ use tokio_postgres::NoTls;
 
 type ApiError = (axum::http::StatusCode, String);
 
-const SERVER_RISK_PATTERN: &str = "ATC";
-const SEEDED_RISK_PATTERNS: [&str; 3] = ["ATC", "GGTT", "TA"];
 const DEFAULT_DATABASE_CONFIG: &str =
     "host=159.195.145.100 port=5432 user=genomics password=genomics dbname=genomics";
 const PARALLEL_HAMMING_WINDOWS: usize = 2;
 const PARALLEL_LEVENSHTEIN_CELLS: usize = 2;
 const PROCESSING_QUEUE_CAPACITY: usize = 4;
+const MAX_HAMMING_SEQUENCE_LEN: usize = 255;
+const MAX_LEVENSHTEIN_SEQUENCE_LEN: usize = 122;
 
 static FHE_SERVER_KEY_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 static PROCESSING_QUEUE: OnceLock<ProcessingQueue> = OnceLock::new();
@@ -302,16 +302,6 @@ pub async fn initialize_database() -> Result<(), ApiError> {
         .await
         .map_err(|e| internal_error(format!("Failed to create risk_patterns table: {e}")))?;
 
-    for sequence in SEEDED_RISK_PATTERNS {
-        client
-            .execute(
-                "INSERT INTO risk_patterns (sequence) VALUES ($1) ON CONFLICT (sequence) DO NOTHING",
-                &[&sequence],
-            )
-            .await
-            .map_err(|e| internal_error(format!("Failed to seed risk pattern {sequence}: {e}")))?;
-    }
-
     Ok(())
 }
 
@@ -451,11 +441,72 @@ async fn load_risk_patterns(pattern_id: Option<i32>) -> Result<Vec<RiskPattern>,
         })
         .collect();
 
-    if patterns.is_empty() {
-        return Err(bad_request("No risk patterns found for selection"));
+    Ok(patterns)
+}
+
+async fn load_single_risk_pattern(pattern_id: Option<i32>) -> Result<RiskPattern, ApiError> {
+    let _timer = FunctionTimer::start("load_single_risk_pattern");
+    load_risk_patterns(pattern_id)
+        .await?
+        .into_iter()
+        .next()
+        .ok_or_else(|| bad_request("No risk patterns found for selection"))
+}
+
+async fn create_risk_pattern(sequence: String) -> Result<RiskPattern, ApiError> {
+    let _timer = FunctionTimer::start("create_risk_pattern");
+    let clean = normalize_dna_sequence(&sequence)?;
+    initialize_database().await?;
+    let client = connect_database().await?;
+
+    let row = client
+        .query_one(
+            "INSERT INTO risk_patterns (sequence) VALUES ($1) \
+             ON CONFLICT (sequence) DO UPDATE SET sequence = EXCLUDED.sequence \
+             RETURNING id, sequence",
+            &[&clean],
+        )
+        .await
+        .map_err(|e| internal_error(format!("Failed to create risk pattern: {e}")))?;
+
+    Ok(RiskPattern {
+        id: row.get("id"),
+        sequence: row.get("sequence"),
+    })
+}
+
+fn normalize_dna_sequence(sequence: &str) -> Result<String, ApiError> {
+    let _timer = FunctionTimer::start("normalize_dna_sequence");
+    let clean: String = sequence
+        .to_uppercase()
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+
+    if clean.is_empty() {
+        return Err(bad_request("Risk pattern must not be empty"));
     }
 
-    Ok(patterns)
+    if let Some(illegal) = clean
+        .chars()
+        .find(|base| !matches!(base, 'A' | 'T' | 'C' | 'G'))
+    {
+        return Err(bad_request(format!(
+            "Illegal base '{illegal}' in risk pattern"
+        )));
+    }
+
+    Ok(clean)
+}
+
+fn enforce_sequence_limit(len: usize, max_len: usize, operation: &str) -> Result<(), ApiError> {
+    if len > max_len {
+        return Err(bad_request(format!(
+            "{operation} sequence is too long. Maximum is {max_len} bases."
+        )));
+    }
+
+    Ok(())
 }
 
 pub fn encode_dna(seq: &str) -> Result<Vec<u8>, String> {
@@ -1001,6 +1052,8 @@ pub struct ProcessRequest {
     pub public_key: Option<String>,
     #[serde(default)]
     pub session_id: Option<String>,
+    #[serde(default)]
+    pub pattern_id: Option<i32>,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -1012,6 +1065,18 @@ pub struct ProcessResponse {
 #[derive(Serialize, JsonSchema)]
 pub struct PatternsResponse {
     pub patterns: Vec<RiskPattern>,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema)]
+pub struct CreateRiskPatternRequest {
+    pub sequence: String,
+    #[serde(default)]
+    pub session_id: Option<String>,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct CreateRiskPatternResponse {
+    pub pattern: RiskPattern,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -1104,13 +1169,18 @@ fn encrypt_sequence(
     })
 }
 
-fn process_hamming(req: ProcessRequest, keys: SessionKeys) -> Result<ProcessResponse, ApiError> {
+fn process_hamming(
+    req: ProcessRequest,
+    pattern: RiskPattern,
+    keys: SessionKeys,
+) -> Result<ProcessResponse, ApiError> {
     let _timer = FunctionTimer::start("process_hamming");
     let enc_seq = deserialize_encrypted_sequence(
         req.encrypted_sequence.as_deref(),
         req.encrypted_bases.as_deref(),
     )?;
-    let pattern = parse_pattern(SERVER_RISK_PATTERN).map_err(bad_request)?;
+    enforce_sequence_limit(enc_seq.len(), MAX_HAMMING_SEQUENCE_LEN, "Hamming")?;
+    let pattern = parse_pattern(&pattern.sequence).map_err(bad_request)?;
     let server_key = decode_server_key(&keys.server_key)?;
 
     let enc_distances = with_server_key(server_key, move || {
@@ -1134,6 +1204,7 @@ fn compare_database(
         req.encrypted_sequence.as_deref(),
         req.encrypted_bases.as_deref(),
     )?;
+    enforce_sequence_limit(enc_input.len(), MAX_HAMMING_SEQUENCE_LEN, "Hamming")?;
     let public_key = decode_public_key(&keys.public_key)?;
     let server_key = decode_server_key(&keys.server_key)?;
     let encrypted_patterns = encrypt_risk_patterns(&patterns, &public_key)?;
@@ -1160,6 +1231,7 @@ fn compare_database(
 
 fn process_levenshtein(
     req: ProcessRequest,
+    pattern: RiskPattern,
     keys: SessionKeys,
 ) -> Result<ProcessLevenshteinResponse, ApiError> {
     let _timer = FunctionTimer::start("process_levenshtein");
@@ -1167,7 +1239,8 @@ fn process_levenshtein(
         req.encrypted_sequence.as_deref(),
         req.encrypted_bases.as_deref(),
     )?;
-    let pattern = parse_pattern(SERVER_RISK_PATTERN).map_err(bad_request)?;
+    enforce_sequence_limit(enc_seq.len(), MAX_LEVENSHTEIN_SEQUENCE_LEN, "Levenshtein")?;
+    let pattern = parse_pattern(&pattern.sequence).map_err(bad_request)?;
     let server_key = decode_server_key(&keys.server_key)?;
 
     let distance = with_server_key(server_key, move || {
@@ -1191,6 +1264,7 @@ fn compare_database_levenshtein(
         req.encrypted_sequence.as_deref(),
         req.encrypted_bases.as_deref(),
     )?;
+    enforce_sequence_limit(enc_input.len(), MAX_LEVENSHTEIN_SEQUENCE_LEN, "Levenshtein")?;
     let public_key = decode_public_key(&keys.public_key)?;
     let server_key = decode_server_key(&keys.server_key)?;
     let encrypted_patterns = encrypt_risk_patterns(&patterns, &public_key)?;
@@ -1241,6 +1315,17 @@ pub async fn patterns_handler() -> Result<axum::Json<PatternsResponse>, ApiError
     Ok(axum::Json(PatternsResponse { patterns }))
 }
 
+pub async fn create_pattern_handler(
+    axum::Json(req): axum::Json<CreateRiskPatternRequest>,
+) -> Result<axum::Json<CreateRiskPatternResponse>, ApiError> {
+    let _timer = FunctionTimer::start("create_pattern_handler");
+    let job = enqueue_processing_job(req.session_id.as_deref(), "Pattern Insert").await?;
+    job.wait_turn().await?;
+    let pattern = create_risk_pattern(req.sequence).await?;
+    drop(job);
+    Ok(axum::Json(CreateRiskPatternResponse { pattern }))
+}
+
 pub async fn encrypt_handler(
     axum::Json(req): axum::Json<EncryptRequest>,
 ) -> Result<axum::Json<EncryptResponse>, ApiError> {
@@ -1270,9 +1355,10 @@ pub async fn process_handler(
         req.server_key.as_deref(),
     )
     .await?;
+    let pattern = load_single_risk_pattern(req.pattern_id).await?;
     let response = tokio::task::spawn_blocking(move || {
         let _job = job;
-        process_hamming(req, keys)
+        process_hamming(req, pattern, keys)
     })
     .await
     .map_err(join_error)??;
@@ -1292,6 +1378,9 @@ pub async fn compare_database_handler(
     )
     .await?;
     let patterns = load_risk_patterns(req.pattern_id).await?;
+    if patterns.is_empty() {
+        return Err(bad_request("No risk patterns found for selection"));
+    }
     let response = tokio::task::spawn_blocking(move || {
         let _job = job;
         compare_database(req, patterns, keys)
@@ -1313,9 +1402,10 @@ pub async fn process_levenshtein_handler(
         req.server_key.as_deref(),
     )
     .await?;
+    let pattern = load_single_risk_pattern(req.pattern_id).await?;
     let response = tokio::task::spawn_blocking(move || {
         let _job = job;
-        process_levenshtein(req, keys)
+        process_levenshtein(req, pattern, keys)
     })
     .await
     .map_err(join_error)??;
@@ -1335,6 +1425,9 @@ pub async fn compare_database_levenshtein_handler(
     )
     .await?;
     let patterns = load_risk_patterns(req.pattern_id).await?;
+    if patterns.is_empty() {
+        return Err(bad_request("No risk patterns found for selection"));
+    }
     let response = tokio::task::spawn_blocking(move || {
         let _job = job;
         compare_database_levenshtein(req, patterns, keys)

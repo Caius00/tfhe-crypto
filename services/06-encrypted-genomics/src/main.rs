@@ -53,6 +53,12 @@ async fn main() {
             }),
         )
         .api_route(
+            "/patterns",
+            post_with(functions::create_pattern_handler, |op| {
+                op.description("Create a cleartext risk pattern for database comparisons")
+            }),
+        )
+        .api_route(
             "/encrypt",
             post_with(functions::encrypt_handler, |op| {
                 op.description("Encrypt a server-known DNA sequence with the client's public key")
