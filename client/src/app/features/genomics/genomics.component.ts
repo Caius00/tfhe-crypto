@@ -254,11 +254,11 @@ export class GenomicsComponent implements OnInit, OnDestroy {
 
       if (showMessage) {
         this.infoMessage.set(
-          `${response.sessions.length} aktive Sessions geladen in ${this.elapsedMs(started)} ms.`,
+          `${response.sessions.length} active sessions loaded in ${this.elapsedMs(started)} ms.`,
         );
       }
     } catch (error) {
-      this.errorMessage.set(`Sessions konnten nicht geladen werden: ${this.errorText(error)}`);
+      this.errorMessage.set(`Sessions couldnt be loaded: ${this.errorText(error)}`);
     }
   }
 
@@ -301,11 +301,11 @@ export class GenomicsComponent implements OnInit, OnDestroy {
 
       if (showMessage) {
         this.infoMessage.set(
-          `${response.patterns.length} Risikomuster aus der Datenbank geladen in ${this.elapsedMs(started)} ms.`,
+          `${response.patterns.length} Loaded risk pattern in: ${this.elapsedMs(started)} ms.`,
         );
       }
     } catch (error) {
-      this.errorMessage.set(`Risikomuster konnten nicht geladen werden: ${this.errorText(error)}`);
+      this.errorMessage.set(`Risk pattern could not be loaded: ${this.errorText(error)}`);
     }
   }
 
@@ -321,18 +321,18 @@ export class GenomicsComponent implements OnInit, OnDestroy {
 
       if (showMessage) {
         this.infoMessage.set(
-          `${response.sessions.length} Session-Listen geladen in ${this.elapsedMs(started)} ms.`,
+          `${response.sessions.length} Session list loaded in; ${this.elapsedMs(started)} ms.`,
         );
       }
     } catch (error) {
-      this.errorMessage.set(`Sessionsequenzen konnten nicht geladen werden: ${this.errorText(error)}`);
+      this.errorMessage.set(`Session sequences loaded in: ${this.errorText(error)}`);
     }
   }
 
   async addRiskPattern(): Promise<void> {
     const session = this.activeSession();
     if (!session) {
-      this.setError('Bitte zuerst eine Session erstellen oder beitreten.');
+      this.setError('Create or join Session before acting');
       return;
     }
 
@@ -357,7 +357,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
       this.selectedPatternId.set(String(response.pattern.id));
       this.status.set('ready');
       this.infoMessage.set(
-        `Risikomuster ${response.pattern.sequence} gespeichert in ${this.elapsedMs(started)} ms.`,
+        `Risk pattern ${response.pattern.sequence} saved in ${this.elapsedMs(started)} ms.`,
       );
       void this.loadFifoStatus();
     } catch (error) {
@@ -398,12 +398,12 @@ export class GenomicsComponent implements OnInit, OnDestroy {
 
       this.status.set('ready');
       this.infoMessage.set(
-        `Session erstellt. Der Client-Key bleibt lokal. Dauer: ${this.elapsedMs(started)} ms.`,
+        `Session created. Please keep private key private. Creation time: ${this.elapsedMs(started)} ms.`,
       );
       void this.loadSessions();
       void this.loadSessionSequenceGroups();
     } catch (error) {
-      this.setError(`Fehler beim Erstellen der Session: ${this.errorText(error)}`);
+      this.setError(`Error during session creation: ${this.errorText(error)}`);
     }
   }
 
@@ -430,7 +430,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
     this.clearSequenceOutput();
     this.syncSelectedSequenceSession(this.sessionSequenceGroups());
     this.infoMessage.set(
-      `Session beigetreten. Nur der Public-Key ist verfuegbar. Dauer: ${this.elapsedMs(started)} ms.`,
+      `Joined session. Public key retrieved. ${this.elapsedMs(started)} ms.`,
     );
   }
 
@@ -451,14 +451,14 @@ export class GenomicsComponent implements OnInit, OnDestroy {
     this.clearMessages();
     this.clearKeyOutput();
     this.clearSequenceOutput();
-    this.infoMessage.set(`Session verlassen in ${this.elapsedMs(started)} ms.`);
+    this.infoMessage.set(`Left session in ${this.elapsedMs(started)} ms.`);
     void this.loadSessions();
   }
 
   async encryptSequenceLocal(showMessage = true): Promise<void> {
     const publicKeyB64 = this.currentPublicKeyB64();
     if (!publicKeyB64) {
-      this.setError('Bitte zuerst eine Session erstellen oder beitreten.');
+      this.setError('Create or join session before acting');
       return;
     }
 
@@ -481,7 +481,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
 
       if (showMessage) {
         this.infoMessage.set(
-          `${encoded.length} Basen lokal verschluesselt in ${this.elapsedMs(started)} ms.`,
+          `${encoded.length} Bases encrypted locally in ${this.elapsedMs(started)} ms.`,
         );
       }
     } catch (error) {
@@ -492,7 +492,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
   async storeSessionSequence(): Promise<void> {
     const session = this.activeSession();
     if (!session) {
-      this.setError('Bitte zuerst eine Session erstellen oder beitreten.');
+      this.setError('Create or join session before acting');
       return;
     }
     if (!this.comparisonSequenceWithinLimit(MAX_HAMMING_SEQUENCE_LENGTH, 'Sessionsequenz')) return;
@@ -530,7 +530,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
     try {
       const group = this.selectedSessionSequenceGroup();
       if (!group) {
-        this.setError('Bitte zuerst eine SessionID mit gespeicherten Sequenzen auswaehlen.');
+        this.setError('Chose a session ID');
         return;
       }
       if (!this.comparisonSequenceWithinLimit(MAX_HAMMING_SEQUENCE_LENGTH, 'Hamming')) return;
@@ -584,7 +584,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
       this.showResultPanel.set(false);
       this.status.set('result');
       this.infoMessage.set(
-        `${response.compared_sequences} Sessionsequenzen verglichen${canDecrypt ? ' und lokal entschluesselt' : ''} in ${this.elapsedMs(started)} ms.`,
+        `${response.compared_sequences} Session sequences compared${canDecrypt ? ' and locally decrypted' : ''} in ${this.elapsedMs(started)} ms.`,
       );
     } catch (error) {
       this.setError(this.errorText(error));
@@ -595,7 +595,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
     try {
       const group = this.selectedSessionSequenceGroup();
       if (!group) {
-        this.setError('Bitte zuerst eine SessionID mit gespeicherten Sequenzen auswaehlen.');
+        this.setError('Choose sessionID');
         return;
       }
       if (!this.comparisonSequenceWithinLimit(MAX_LEVENSHTEIN_SEQUENCE_LENGTH, 'Levenshtein')) return;
@@ -649,7 +649,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
       this.showResultPanel.set(false);
       this.status.set('result');
       this.infoMessage.set(
-        `${response.compared_sequences} Sessionsequenzen verglichen${canDecrypt ? ' und lokal entschluesselt' : ''} in ${this.elapsedMs(started)} ms.`,
+        `${response.compared_sequences} Compare session sequences${canDecrypt ? ' and decrypt' : ''} in ${this.elapsedMs(started)} ms.`,
       );
     } catch (error) {
       this.setError(this.errorText(error));
@@ -691,7 +691,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
       this.showResultPanel.set(false);
       this.status.set('result');
       this.infoMessage.set(
-        `${response.windows} Hamming-Fenster berechnet${this.canDecryptResults() ? ' und lokal entschluesselt' : ''} in ${this.elapsedMs(started)} ms. Result oeffnet die Anzeige.`,
+        `${response.windows} Hamming window calculated${this.canDecryptResults() ? ' and locally decrypted' : ''} in ${this.elapsedMs(started)} ms. Result oeffnet die Anzeige.`,
       );
     } catch (error) {
       this.setError(this.errorText(error));
@@ -783,7 +783,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
       this.showResultPanel.set(false);
       this.status.set('result');
       this.infoMessage.set(
-        `${response.compared_sequences} Datenbanksequenzen verglichen${this.canDecryptResults() ? ' und lokal entschluesselt' : ''} in ${this.elapsedMs(started)} ms.`,
+        `${response.compared_sequences} Compare DB-Sequences${this.canDecryptResults() ? ' and decrypt locally' : ''} in ${this.elapsedMs(started)} ms.`,
       );
     } catch (error) {
       this.setError(this.errorText(error));
@@ -833,7 +833,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
       this.showResultPanel.set(false);
       this.status.set('result');
       this.infoMessage.set(
-        `${response.compared_sequences} Levenshtein-Vergleiche berechnet${this.canDecryptResults() ? ' und lokal entschluesselt' : ''} in ${this.elapsedMs(started)} ms.`,
+        `${response.compared_sequences} Levenshtein calculated${this.canDecryptResults() ? ' and decrypted locally' : ''} in ${this.elapsedMs(started)} ms.`,
       );
     } catch (error) {
       this.setError(this.errorText(error));
@@ -877,7 +877,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
     this.clearMessages();
     if (this.keyOutputItems().length > 0) {
       this.clearKeyOutput();
-      this.infoMessage.set(`Keys geschlossen in ${this.elapsedMs(started)} ms.`);
+      this.infoMessage.set(`Keys closed in ${this.elapsedMs(started)} ms.`);
       return;
     }
 
@@ -908,9 +908,9 @@ export class GenomicsComponent implements OnInit, OnDestroy {
     if (!this.encryptedSequenceReady() || this.encryptedSequenceItems.length === 0) return;
 
     this.clearMessages();
-    this.sequenceOutputTitle.set('Encrypted DNA-Sequenz');
+    this.sequenceOutputTitle.set('Encrypted dna seqiemce');
     this.sequenceOutputValue.set(this.encryptedSequenceItems.join('\n'));
-    this.infoMessage.set(`Verschluesselte Sequenz angezeigt in ${this.elapsedMs(started)} ms.`);
+    this.infoMessage.set(`Show encrypted sequences ${this.elapsedMs(started)} ms.`);
   }
 
   showResult(): void {
@@ -919,7 +919,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
 
     this.clearMessages();
     this.showResultPanel.set(true);
-    this.infoMessage.set(`Result angezeigt in ${this.elapsedMs(started)} ms.`);
+    this.infoMessage.set(`Result shown in ${this.elapsedMs(started)} ms.`);
   }
 
   entryHasMatch(entry: DatabaseResult): boolean {
@@ -936,10 +936,10 @@ export class GenomicsComponent implements OnInit, OnDestroy {
 
   databaseResultTitle(): string {
     if (this.resultKind() === 'session-hamming' || this.resultKind() === 'session-levenshtein') {
-      return 'Sessionsequenz-Ergebnisse';
+      return 'Sessionsequence results';
     }
 
-    return 'Datenbank-Ergebnisse';
+    return 'Database results';
   }
 
   private async computeBody(
@@ -948,7 +948,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
   ): Promise<Record<string, number | string | string[] | undefined> | null> {
     const session = this.activeSession();
     if (!session) {
-      this.setError('Bitte zuerst eine Session erstellen oder beitreten.');
+      this.setError('Create or join session before acting');
       return null;
     }
     if (!this.comparisonSequenceWithinLimit(maxLength, operation)) return null;
@@ -969,7 +969,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
   ): Promise<Record<string, number | string | string[] | undefined> | null> {
     const session = this.activeSession();
     if (!session) {
-      this.setError('Bitte zuerst eine Session erstellen oder beitreten.');
+      this.setError('Create or join session before acting');
       return null;
     }
     if (!this.comparisonSequenceWithinLimit(maxLength, operation)) return null;
