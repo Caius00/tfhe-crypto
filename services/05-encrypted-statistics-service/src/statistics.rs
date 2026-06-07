@@ -282,8 +282,9 @@ mod tests {
             }
 
             for bitmask in 0u32..(1u32 << element_count) {
-                let mut values: Vec<u8> =
-                    (0..element_count).map(|bit| ((bitmask >> bit) & 1) as u8).collect();
+                let mut values: Vec<u8> = (0..element_count)
+                    .map(|bit| ((bitmask >> bit) & 1) as u8)
+                    .collect();
 
                 for round in &rounds {
                     let updates: Vec<(usize, usize, u8, u8)> = round
@@ -344,8 +345,7 @@ mod tests {
             let expected_median_index = (element_count - 1) / 2;
             let sorted: Vec<usize> = (0..element_count).collect();
             assert_eq!(
-                sorted[expected_median_index],
-                expected_median_index,
+                sorted[expected_median_index], expected_median_index,
                 "Median-Index-Formel falsch für n={element_count}"
             );
         }
