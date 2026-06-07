@@ -109,7 +109,7 @@ async fn test_empty_list() {
 }
 
 /// Ungültige Bitbreite → 400
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_invalid_bit_width() {
     let (_, server_key) = get_shared_test_key_pair();
     let payload = serde_json::json!({

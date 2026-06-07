@@ -678,11 +678,16 @@ dependencies = [
 name = "encrypted-statistics-service"
 version = "0.1.21"
 dependencies = [
+ "aide",
  "axum 0.8.9",
  "base64",
  "bincode",
  "health",
+ "metrics-exporter",
+ "observability",
+ "openapi-docs",
  "rayon",
+ "schemars",
  "serde",
  "serde_json",
  "serial_test",

@@ -5,7 +5,9 @@ mod statistics;
 mod statistics_tests;
 
 use crate::statistics::DivideByElementCount;
-use axum::{http::StatusCode, routing::post, Json, Router};
+use aide::axum::{routing::post_with, ApiRouter};
+use axum::{http::StatusCode, Json, Router};
+use schemars::JsonSchema;
 use base64::{engine::general_purpose, Engine as _};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::ops::Add;
@@ -13,7 +15,7 @@ use tfhe::prelude::{CastInto, FheOrd, IfThenElse};
 use tfhe::{CompressedServerKey, FheBool, FheInt16, FheInt32, FheInt64, FheInt8};
 
 /// Anfrage des Clients an den Statistics-Service.
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, JsonSchema)]
 struct StatisticsRequest {
     /// Jedes Element ist ein Base64-kodiertes, bincode-serialisiertes FHE-Integer.
     /// Der konkrete Typ richtet sich nach `bit_width`.
@@ -28,7 +30,7 @@ struct StatisticsRequest {
 /// Antwort des Servers an den Client.
 /// sum/average haben den nächstbreiteren Typ als die Eingabe (Overflow-Schutz).
 /// Alle Felder sind Base64-kodierte, bincode-serialisierte FHE-Ciphertexte.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, JsonSchema)]
 struct StatisticsResponse {
     /// FHE-Integer mit doppelter Eingabe-Bitbreite (z.B. Int8-Eingabe → Int16-Summe)
     sum: String,
@@ -220,19 +222,45 @@ async fn compute_statistics(
 }
 
 pub(crate) fn create_app() -> Router {
-    Router::new()
-        .route("/", post(compute_statistics))
-        .merge(health::router(env!("CARGO_PKG_VERSION")))
-        // Großes Limit nötig, weil FHE-Ciphertexte sehr groß sind (~1 MB pro Wert)
-        .layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024 * 1024))
+    let (metrics_layer, metrics_router) = metrics_exporter::setup();
+
+    let api_router = ApiRouter::new().api_route(
+        "/",
+        post_with(compute_statistics, |op| {
+            op.description(
+                "Compute sum, count, min, max, average and median homomorphically \
+                 on an encrypted integer list. Bit width (8/16/32) is chosen by the \
+                 client based on the value range.",
+            )
+            .response::<200, Json<StatisticsResponse>>()
+        }),
+    );
+
+    openapi_docs::attach(
+        api_router,
+        "Encrypted Statistics Service",
+        "Homomorphic statistics service: computes sum, count, min, max, average and median \
+         on an encrypted integer list — the server never sees the values.",
+        env!("CARGO_PKG_VERSION"),
+    )
+    .merge(health::router(env!("CARGO_PKG_VERSION")))
+    .merge(metrics_router)
+    // Großes Limit nötig, weil FHE-Ciphertexte sehr groß sind (~1 MB pro Wert)
+    .layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024 * 1024))
+    .layer(metrics_layer)
+    .layer(observability::http_trace_layer())
 }
 
 #[tokio::main]
 async fn main() {
+    observability::init("encrypted-statistics-service", env!("CARGO_PKG_VERSION"));
+
     let listening_address = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));
     let tcp_listener = tokio::net::TcpListener::bind(listening_address)
         .await
         .unwrap();
     println!("Statistics Service läuft auf http://{}", listening_address);
     axum::serve(tcp_listener, create_app()).await.unwrap();
+
+    observability::shutdown();
 }
