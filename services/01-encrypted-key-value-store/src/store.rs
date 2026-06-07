@@ -105,13 +105,13 @@ impl AppState {
 
         let (is_match, last_found_value) = keys
             .into_iter()
-            .zip(values.into_iter())
+            .zip(values)
             .filter_map(|(k, v_opt)| {
                 let v = v_opt?;
 
                 let (sid, found_key) = Self::parse_db_key(&k).ok()?;
                 if sid != session_id {
-                    return None;
+                    None
                 } else {
                     Some((
                         found_key.eq(key.clone()),
@@ -214,6 +214,11 @@ impl AppState {
         let key = CompressedCustomFheAsciiString::new(key_bytes.to_vec());
 
         Ok((session_id, key.decompress()))
+    }
+}
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

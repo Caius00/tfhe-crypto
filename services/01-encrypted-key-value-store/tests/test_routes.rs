@@ -2,8 +2,6 @@ use axum::extract::DefaultBodyLimit;
 use axum::routing::{delete, get, post};
 use axum::Router;
 use axum_test::TestServer;
-use base64::engine::general_purpose;
-use base64::Engine;
 use encrypted_key_value_store::custom_fhe_ascii_string::{
     CompressedCustomFheAsciiString, CustomFheAsciiString,
 };

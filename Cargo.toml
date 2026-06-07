@@ -25,7 +25,7 @@ openapi-docs = { path = "shared/openapi-docs" }
 tokio = { version = "1.52.2", features = ["full"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
-tfhe = { version = "1.6.1", features = ["boolean", "shortint", "integer"] }
+tfhe = { version = "1.6.1", features = ["software-prng", "boolean", "shortint", "integer"] }
 aide = { version = "0.15", features = ["axum", "axum-json", "macros", "swagger"] }
 schemars = "0.9"
 

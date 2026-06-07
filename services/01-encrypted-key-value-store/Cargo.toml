@@ -6,18 +6,24 @@ publish = false
 description = "Encrypted Key-Value Store"
 
 [dependencies]
-redis = { version = "0.25", features = ["tokio-comp"] } # TODO() update redis version
-tfhe = { workspace = true, features = ["software-prng", "strings"] }
 axum.workspace = true
 health.workspace = true
-tokio.workspace = true
+metrics-exporter.workspace = true
+observability.workspace = true
+openapi-docs.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tfhe.workspace = true
+aide.workspace = true
+schemars.workspace = true
+
+redis = { version = "0.25", features = ["tokio-comp"] } # TODO() update redis version
 bincode = "1.3.3"
 rayon = "1.12.0"
 dotenvy = "0.15.7"
 axum-test = "20.1.0"
 uuid = { version = "1.23.1", features = ["v4"] }
+tokio = "1.52.3"
 
 [dev-dependencies]
 serial_test = "3.5.0"
