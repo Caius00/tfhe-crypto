@@ -2,4 +2,5 @@
 .idea
 client/.angular/
 client/node_modules/
+services/01-encrypted-key-value-store/.env
 graphify-out/
