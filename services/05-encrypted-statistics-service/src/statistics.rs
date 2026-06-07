@@ -33,6 +33,8 @@ impl DivideByElementCount for FheInt64 {
 ///
 /// Der Rückgabetyp `WiderOutputType` ist breiter als der Eingabetyp `InputType`
 /// (z.B. FheInt16 → FheInt32), um Overflow zu vermeiden.
+///
+/// Zeitkomplexität: O(log n) Tiefe (paralleles Reduce-Baum), O(n) Additionen gesamt.
 pub fn sum<InputType, WiderOutputType>(encrypted_list: &[InputType]) -> WiderOutputType
 where
     InputType: Clone + CastInto<WiderOutputType> + Sync,
@@ -47,6 +49,8 @@ where
 
 /// Gibt die Anzahl der Elemente zurück.
 /// Die Listenlänge ist kein Geheimnis — der Server kennt sie bereits aus dem Request.
+///
+/// Zeitkomplexität: O(1).
 pub fn count<T>(encrypted_list: &[T]) -> usize {
     encrypted_list.len()
 }
@@ -54,6 +58,8 @@ pub fn count<T>(encrypted_list: &[T]) -> usize {
 /// Berechnet das Minimum der Liste homomorph.
 /// Der Server wertet den Vergleich nie im Klartext aus — `if_then_else` auf `FheBool`
 /// wählt das Ergebnis homomorph aus, ohne den tatsächlichen Wert zu kennen.
+///
+/// Zeitkomplexität: O(log n) Tiefe (paralleles Reduce), O(n) Vergleiche gesamt.
 pub fn min<T>(encrypted_list: &[T]) -> T
 where
     T: Clone + FheOrd + Sync + Send,
@@ -72,6 +78,8 @@ where
 
 /// Berechnet das Maximum der Liste homomorph.
 /// Siehe `min` für Details zur homomorphen Vergleichsstrategie.
+///
+/// Zeitkomplexität: O(log n) Tiefe (paralleles Reduce), O(n) Vergleiche gesamt.
 pub fn max<T>(encrypted_list: &[T]) -> T
 where
     T: Clone + FheOrd + Sync + Send,
@@ -90,6 +98,8 @@ where
 /// Berechnet den Durchschnitt homomorph (Truncation toward zero).
 /// Die Division erfolgt durch einen Klartextwert (die Listenlänge), was deutlich
 /// effizienter ist als eine vollständig homomorphe Division.
+///
+/// Zeitkomplexität: O(log n) Tiefe — identisch zu `sum`, plus O(1) für die Division.
 pub fn average<InputType, WiderOutputType>(encrypted_list: &[InputType]) -> WiderOutputType
 where
     InputType: Clone + CastInto<WiderOutputType> + Sync,
@@ -191,6 +201,9 @@ fn batcher_merge(
 
 /// Berechnet den Median mit **Batcher Odd-Even Mergesort** (Tiefe O(log²n) statt O(n)).
 /// Bei ungerader Länge: mittleres Element; bei gerader Länge: Lower Median.
+///
+/// Zeitkomplexität: O(log²n) sequentielle Runden (Batcher-Netzwerk-Tiefe),
+/// O(n log²n) Komparatoren gesamt; innerhalb jeder Runde parallel (rayon).
 pub fn median<T>(encrypted_list: &[T]) -> T
 where
     T: Clone + FheOrd + Sync + Send,
