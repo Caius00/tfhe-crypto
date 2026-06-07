@@ -203,24 +203,6 @@
 
     <section class="action-card">
       <div class="card-heading">
-        <h2>Risikomuster</h2>
-        <span>Serverseitig</span>
-      </div>
-      <div class="button-row">
-        <button type="button" class="primary-button" (click)="computeHamming()" [disabled]="!hasKeys() || isBusy() || fifoLocked() || !hasRiskPatterns()">
-          Hamming
-        </button>
-        <button type="button" class="primary-button" (click)="computeLevenshtein()" [disabled]="!hasKeys() || isBusy() || fifoLocked() || !hasRiskPatterns()">
-          Levenshtein
-        </button>
-        <button type="button" class="ghost-button" (click)="showResult()" [disabled]="!hasSingleResult() || isBusy()">
-          Result
-        </button>
-      </div>
-    </section>
-
-    <section class="action-card">
-      <div class="card-heading">
         <h2>Datenbankvergleich</h2>
         <span>{{ riskPatterns().length }} Patterns</span>
       </div>
@@ -259,7 +241,7 @@
         <button type="button" class="primary-button" (click)="compareDatabaseLevenshtein()" [disabled]="!hasKeys() || isBusy() || !hasRiskPatterns() || fifoLocked()">
           Levenshtein DB
         </button>
-        <button type="button" class="ghost-button" (click)="showResult()" [disabled]="!hasDatabaseResult() || isBusy()">
+        <button type="button" class="ghost-button" (click)="showResult()" [disabled]="!hasRiskDatabaseResult() || isBusy()">
           Result
         </button>
       </div>
@@ -267,18 +249,39 @@
 
     <section class="action-card">
       <div class="card-heading">
-        <h2>Server-Sequenz</h2>
-        <span>Public-Key Encrypt</span>
+        <h2>Sessionsequenzen</h2>
+        <span>{{ sessionSequenceGroups().length }} Sessions</span>
       </div>
-      <textarea
-        rows="4"
-        [ngModel]="serverSequenceInput()"
-        (ngModelChange)="serverSequenceInput.set($event)"
-        spellcheck="false"
-      ></textarea>
-      <button type="button" class="primary-button" (click)="encryptServerSequence()" [disabled]="!hasKeys() || isBusy() || fifoLocked()">
-        Am Server verschluesseln
-      </button>
+      <div class="button-row">
+        <button type="button" class="primary-button" (click)="storeSessionSequence()" [disabled]="!hasKeys() || isBusy() || fifoLocked()">
+          Sequenz speichern
+        </button>
+      </div>
+      <label class="field-label" for="session-sequence-select">SessionID</label>
+      <select
+        id="session-sequence-select"
+        [ngModel]="selectedSequenceSessionId()"
+        (ngModelChange)="selectedSequenceSessionId.set($event)"
+        [disabled]="isBusy() || !hasSessionSequenceGroups()"
+      >
+        @for (group of sessionSequenceGroups(); track group.session_id) {
+          <option [value]="group.session_id">{{ group.session_id }} ({{ group.sequence_count }})</option>
+        }
+      </select>
+      <div class="db-action-grid">
+        <button type="button" class="primary-button" (click)="compareSessionSequencesHamming()" [disabled]="!hasKeys() || isBusy() || !hasSessionSequenceGroups() || fifoLocked()">
+          Hamming
+        </button>
+        <button type="button" class="ghost-button" (click)="loadSessionSequenceGroups(true)" [disabled]="isBusy()">
+          Refresh
+        </button>
+        <button type="button" class="primary-button" (click)="compareSessionSequencesLevenshtein()" [disabled]="!hasKeys() || isBusy() || !hasSessionSequenceGroups() || fifoLocked()">
+          Levenshtein
+        </button>
+        <button type="button" class="ghost-button" (click)="showResult()" [disabled]="!hasSessionSequenceResult() || isBusy()">
+          Result
+        </button>
+      </div>
     </section>
   </div>
 
@@ -318,9 +321,9 @@
         </div>
       }
 
-      @if (resultKind() === 'db-hamming' || resultKind() === 'db-levenshtein') {
+      @if (resultKind() === 'db-hamming' || resultKind() === 'db-levenshtein' || resultKind() === 'session-hamming' || resultKind() === 'session-levenshtein') {
         <div class="result-heading">
-          <h2>Datenbank-Ergebnisse</h2>
+          <h2>{{ databaseResultTitle() }}</h2>
           <span>{{ databaseResults().length }} Trefferlisten</span>
         </div>
         <div class="db-match-summary" [class.match]="databaseMatchCount() > 0" [class.no-match]="databaseMatchCount() === 0">
@@ -340,7 +343,7 @@
               <div class="result-list compact">
                 @for (distance of entry.distances; track $index) {
                   <div class="result-row" [class.match-window]="distance === 0" [class.no-match-window]="distance > 0">
-                    <span>{{ resultKind() === 'db-hamming' ? 'Window ' + $index : 'Distanz' }}</span>
+                    <span>{{ resultKind() === 'db-hamming' || resultKind() === 'session-hamming' ? 'Window ' + $index : 'Distanz' }}</span>
                     <strong>{{ distance }}</strong>
                   </div>
                 }

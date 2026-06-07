@@ -167,6 +167,12 @@ struct EncryptedRiskPattern {
     encrypted_bases: Vec<FheUint8>,
 }
 
+#[derive(Clone)]
+struct StoredSessionSequence {
+    info: SessionSequenceInfo,
+    encrypted_bases: Vec<String>,
+}
+
 struct FunctionTimer {
     function_name: &'static str,
     started: Instant,
@@ -297,6 +303,18 @@ pub async fn initialize_database() -> Result<(), ApiError> {
                 active BOOLEAN NOT NULL DEFAULT TRUE,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now()
             );
+
+            CREATE TABLE IF NOT EXISTS sessionsequences (
+                id SERIAL PRIMARY KEY,
+                session_id TEXT NOT NULL REFERENCES genomics_sessions(id) ON DELETE CASCADE,
+                public_key TEXT NOT NULL,
+                encrypted_bases TEXT NOT NULL,
+                original_length INTEGER NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            );
+
+            CREATE INDEX IF NOT EXISTS sessionsequences_session_id_idx
+            ON sessionsequences (session_id);
             ",
         )
         .await
@@ -473,6 +491,116 @@ async fn create_risk_pattern(sequence: String) -> Result<RiskPattern, ApiError> 
         id: row.get("id"),
         sequence: row.get("sequence"),
     })
+}
+
+async fn list_session_sequence_groups() -> Result<Vec<SessionSequenceGroup>, ApiError> {
+    let _timer = FunctionTimer::start("list_session_sequence_groups");
+    initialize_database().await?;
+    let client = connect_database().await?;
+
+    let rows = client
+        .query(
+            "SELECT session_id, MAX(public_key) AS public_key, COUNT(*)::BIGINT AS sequence_count, \
+             MAX(created_at)::TEXT AS latest_created_at \
+             FROM sessionsequences \
+             GROUP BY session_id \
+             ORDER BY MAX(created_at) DESC",
+            &[],
+        )
+        .await
+        .map_err(|e| internal_error(format!("Failed to list session sequences: {e}")))?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| SessionSequenceGroup {
+            session_id: row.get("session_id"),
+            public_key: row.get("public_key"),
+            sequence_count: row.get("sequence_count"),
+            latest_created_at: row.get("latest_created_at"),
+        })
+        .collect())
+}
+
+async fn store_session_sequence(
+    session_id: String,
+    encrypted_bases: Vec<String>,
+) -> Result<SessionSequenceInfo, ApiError> {
+    let _timer = FunctionTimer::start("store_session_sequence");
+    if encrypted_bases.is_empty() {
+        return Err(bad_request("Encrypted sequence must not be empty"));
+    }
+    enforce_sequence_limit(
+        encrypted_bases.len(),
+        MAX_HAMMING_SEQUENCE_LEN,
+        "Session sequence",
+    )?;
+
+    initialize_database().await?;
+    let client = connect_database().await?;
+    let keys = load_session_keys(&session_id).await?;
+    let encoded = serde_json::to_string(&encrypted_bases)
+        .map_err(|e| internal_error(format!("Failed to serialize session sequence: {e}")))?;
+    let original_length = encrypted_bases.len() as i32;
+
+    let row = client
+        .query_one(
+            "INSERT INTO sessionsequences \
+             (session_id, public_key, encrypted_bases, original_length) \
+             VALUES ($1, $2, $3, $4) \
+             RETURNING id, session_id, original_length, created_at::TEXT AS created_at",
+            &[&session_id, &keys.public_key, &encoded, &original_length],
+        )
+        .await
+        .map_err(|e| internal_error(format!("Failed to store session sequence: {e}")))?;
+
+    Ok(SessionSequenceInfo {
+        id: row.get("id"),
+        session_id: row.get("session_id"),
+        original_length: row.get::<_, i32>("original_length") as usize,
+        created_at: row.get("created_at"),
+    })
+}
+
+async fn load_session_sequences(session_id: &str) -> Result<Vec<StoredSessionSequence>, ApiError> {
+    let _timer = FunctionTimer::start("load_session_sequences");
+    initialize_database().await?;
+    let client = connect_database().await?;
+    let rows = client
+        .query(
+            "SELECT id, session_id, encrypted_bases, original_length, created_at::TEXT AS created_at \
+             FROM sessionsequences \
+             WHERE session_id = $1 \
+             ORDER BY created_at DESC, id DESC",
+            &[&session_id],
+        )
+        .await
+        .map_err(|e| internal_error(format!("Failed to load session sequences: {e}")))?;
+
+    let sequences = rows
+        .into_iter()
+        .map(|row| {
+            let encrypted_json: String = row.get("encrypted_bases");
+            let encrypted_bases: Vec<String> =
+                serde_json::from_str(&encrypted_json).map_err(|e| {
+                    internal_error(format!("Failed to deserialize session sequence: {e}"))
+                })?;
+            Ok(StoredSessionSequence {
+                info: SessionSequenceInfo {
+                    id: row.get("id"),
+                    session_id: row.get("session_id"),
+                    original_length: row.get::<_, i32>("original_length") as usize,
+                    created_at: row.get("created_at"),
+                },
+                encrypted_bases,
+            })
+        })
+        .collect::<Result<Vec<_>, ApiError>>()?;
+
+    if sequences.is_empty() {
+        return Err(bad_request("No session sequences found for selection"));
+    }
+
+    Ok(sequences)
 }
 
 fn normalize_dna_sequence(sequence: &str) -> Result<String, ApiError> {
@@ -1079,6 +1207,38 @@ pub struct CreateRiskPatternResponse {
     pub pattern: RiskPattern,
 }
 
+#[derive(Clone, Debug, Serialize, JsonSchema)]
+pub struct SessionSequenceGroup {
+    pub session_id: String,
+    pub public_key: String,
+    pub sequence_count: i64,
+    pub latest_created_at: String,
+}
+
+#[derive(Clone, Debug, Serialize, JsonSchema)]
+pub struct SessionSequenceInfo {
+    pub id: i32,
+    pub session_id: String,
+    pub original_length: usize,
+    pub created_at: String,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct SessionSequencesResponse {
+    pub sessions: Vec<SessionSequenceGroup>,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema)]
+pub struct StoreSessionSequenceRequest {
+    pub session_id: String,
+    pub encrypted_bases: Vec<String>,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct StoreSessionSequenceResponse {
+    pub sequence: SessionSequenceInfo,
+}
+
 #[derive(Serialize, JsonSchema)]
 pub struct SessionsResponse {
     pub sessions: Vec<GenomicsSession>,
@@ -1146,6 +1306,22 @@ pub struct CompareDatabaseLevenshteinResponse {
     pub encrypted_result_items: Vec<Vec<String>>,
     pub compared_sequences: usize,
     pub patterns: Vec<RiskPattern>,
+}
+
+#[derive(Deserialize, Serialize, JsonSchema)]
+pub struct CompareSessionSequencesRequest {
+    pub session_id: String,
+    #[serde(default)]
+    pub encrypted_sequence: Option<String>,
+    #[serde(default)]
+    pub encrypted_bases: Option<Vec<String>>,
+}
+
+#[derive(Serialize, JsonSchema)]
+pub struct CompareSessionSequencesResponse {
+    pub encrypted_result_items: Vec<Vec<String>>,
+    pub compared_sequences: usize,
+    pub sequences: Vec<SessionSequenceInfo>,
 }
 
 fn encrypt_sequence(
@@ -1289,6 +1465,102 @@ fn compare_database_levenshtein(
     })
 }
 
+fn compare_session_sequences_hamming(
+    req: CompareSessionSequencesRequest,
+    sequences: Vec<StoredSessionSequence>,
+    keys: SessionKeys,
+) -> Result<CompareSessionSequencesResponse, ApiError> {
+    let _timer = FunctionTimer::start("compare_session_sequences_hamming");
+    let enc_input = deserialize_encrypted_sequence(
+        req.encrypted_sequence.as_deref(),
+        req.encrypted_bases.as_deref(),
+    )?;
+    enforce_sequence_limit(enc_input.len(), MAX_HAMMING_SEQUENCE_LEN, "Hamming")?;
+    let server_key = decode_server_key(&keys.server_key)?;
+    let response_sequences: Vec<SessionSequenceInfo> = sequences
+        .iter()
+        .map(|sequence| sequence.info.clone())
+        .collect();
+    let encrypted_sequences = sequences
+        .iter()
+        .map(|sequence| {
+            let encrypted = deserialize_encrypted_sequence(None, Some(&sequence.encrypted_bases))?;
+            enforce_sequence_limit(encrypted.len(), MAX_HAMMING_SEQUENCE_LEN, "Hamming")?;
+            Ok(encrypted)
+        })
+        .collect::<Result<Vec<_>, ApiError>>()?;
+
+    let results = with_server_key(server_key, move || {
+        encrypted_sequences
+            .par_iter()
+            .map(|stored_sequence| {
+                if enc_input.len() >= stored_sequence.len() {
+                    homomorphic_sliding_window_encrypted(&enc_input, stored_sequence)
+                } else {
+                    homomorphic_sliding_window_encrypted(stored_sequence, &enc_input)
+                }
+            })
+            .collect::<Result<Vec<_>, ApiError>>()
+    })?;
+
+    let encrypted_result_items: Vec<Vec<String>> = results
+        .par_iter()
+        .map(|distances| serialize_fhe_items(distances))
+        .collect::<Result<_, _>>()?;
+
+    Ok(CompareSessionSequencesResponse {
+        encrypted_result_items,
+        compared_sequences: response_sequences.len(),
+        sequences: response_sequences,
+    })
+}
+
+fn compare_session_sequences_levenshtein(
+    req: CompareSessionSequencesRequest,
+    sequences: Vec<StoredSessionSequence>,
+    keys: SessionKeys,
+) -> Result<CompareSessionSequencesResponse, ApiError> {
+    let _timer = FunctionTimer::start("compare_session_sequences_levenshtein");
+    let enc_input = deserialize_encrypted_sequence(
+        req.encrypted_sequence.as_deref(),
+        req.encrypted_bases.as_deref(),
+    )?;
+    enforce_sequence_limit(enc_input.len(), MAX_LEVENSHTEIN_SEQUENCE_LEN, "Levenshtein")?;
+    let server_key = decode_server_key(&keys.server_key)?;
+    let response_sequences: Vec<SessionSequenceInfo> = sequences
+        .iter()
+        .map(|sequence| sequence.info.clone())
+        .collect();
+    let encrypted_sequences = sequences
+        .iter()
+        .map(|sequence| {
+            let encrypted = deserialize_encrypted_sequence(None, Some(&sequence.encrypted_bases))?;
+            enforce_sequence_limit(encrypted.len(), MAX_LEVENSHTEIN_SEQUENCE_LEN, "Levenshtein")?;
+            Ok(encrypted)
+        })
+        .collect::<Result<Vec<_>, ApiError>>()?;
+
+    let results = with_server_key(server_key, move || {
+        encrypted_sequences
+            .par_iter()
+            .map(|stored_sequence| {
+                homomorphic_levenshtein_distance_encrypted(&enc_input, stored_sequence)
+            })
+            .collect::<Result<Vec<_>, ApiError>>()
+    })?;
+
+    let encrypted_result_items: Vec<Vec<String>> = results
+        .par_iter()
+        .map(|distance| serialize_fhe_items(&[distance.clone()]))
+        .collect::<Result<_, _>>()?;
+
+    Ok(CompareSessionSequencesResponse {
+        encrypted_result_items,
+        compared_sequences: response_sequences.len(),
+        sequences: response_sequences,
+    })
+}
+
 // API Handler
 pub async fn fifo_status_handler() -> Result<axum::Json<FifoStatusResponse>, ApiError> {
     let _timer = FunctionTimer::start("fifo_status_handler");
@@ -1324,6 +1596,24 @@ pub async fn create_pattern_handler(
     let pattern = create_risk_pattern(req.sequence).await?;
     drop(job);
     Ok(axum::Json(CreateRiskPatternResponse { pattern }))
+}
+
+pub async fn session_sequences_handler() -> Result<axum::Json<SessionSequencesResponse>, ApiError> {
+    let _timer = FunctionTimer::start("session_sequences_handler");
+    let sessions = list_session_sequence_groups().await?;
+    Ok(axum::Json(SessionSequencesResponse { sessions }))
+}
+
+pub async fn store_session_sequence_handler(
+    axum::Json(req): axum::Json<StoreSessionSequenceRequest>,
+) -> Result<axum::Json<StoreSessionSequenceResponse>, ApiError> {
+    let _timer = FunctionTimer::start("store_session_sequence_handler");
+    let job =
+        enqueue_processing_job(Some(req.session_id.as_str()), "Session Sequence Insert").await?;
+    job.wait_turn().await?;
+    let sequence = store_session_sequence(req.session_id, req.encrypted_bases).await?;
+    drop(job);
+    Ok(axum::Json(StoreSessionSequenceResponse { sequence }))
 }
 
 pub async fn encrypt_handler(
@@ -1431,6 +1721,40 @@ pub async fn compare_database_levenshtein_handler(
     let response = tokio::task::spawn_blocking(move || {
         let _job = job;
         compare_database_levenshtein(req, patterns, keys)
+    })
+    .await
+    .map_err(join_error)??;
+    Ok(axum::Json(response))
+}
+
+pub async fn compare_session_sequences_hamming_handler(
+    axum::Json(req): axum::Json<CompareSessionSequencesRequest>,
+) -> Result<axum::Json<CompareSessionSequencesResponse>, ApiError> {
+    let _timer = FunctionTimer::start("compare_session_sequences_hamming_handler");
+    let job = enqueue_processing_job(Some(req.session_id.as_str()), "Session Hamming").await?;
+    job.wait_turn().await?;
+    let keys = load_session_keys(&req.session_id).await?;
+    let sequences = load_session_sequences(&req.session_id).await?;
+    let response = tokio::task::spawn_blocking(move || {
+        let _job = job;
+        compare_session_sequences_hamming(req, sequences, keys)
+    })
+    .await
+    .map_err(join_error)??;
+    Ok(axum::Json(response))
+}
+
+pub async fn compare_session_sequences_levenshtein_handler(
+    axum::Json(req): axum::Json<CompareSessionSequencesRequest>,
+) -> Result<axum::Json<CompareSessionSequencesResponse>, ApiError> {
+    let _timer = FunctionTimer::start("compare_session_sequences_levenshtein_handler");
+    let job = enqueue_processing_job(Some(req.session_id.as_str()), "Session Levenshtein").await?;
+    job.wait_turn().await?;
+    let keys = load_session_keys(&req.session_id).await?;
+    let sequences = load_session_sequences(&req.session_id).await?;
+    let response = tokio::task::spawn_blocking(move || {
+        let _job = job;
+        compare_session_sequences_levenshtein(req, sequences, keys)
     })
     .await
     .map_err(join_error)??;

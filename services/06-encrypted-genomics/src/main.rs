@@ -59,6 +59,37 @@ async fn main() {
             }),
         )
         .api_route(
+            "/sessionsequences",
+            get_with(functions::session_sequences_handler, |op| {
+                op.description("List sessions with encrypted stored DNA sequences")
+            }),
+        )
+        .api_route(
+            "/sessionsequences",
+            post_with(functions::store_session_sequence_handler, |op| {
+                op.description("Store a public-key encrypted DNA sequence for a genomics session")
+            }),
+        )
+        .api_route(
+            "/sessionsequences/hamming",
+            post_with(functions::compare_session_sequences_hamming_handler, |op| {
+                op.description(
+                    "Compare encrypted DNA against stored session sequences with Hamming",
+                )
+            }),
+        )
+        .api_route(
+            "/sessionsequences/levenshtein",
+            post_with(
+                functions::compare_session_sequences_levenshtein_handler,
+                |op| {
+                    op.description(
+                        "Compare encrypted DNA against stored session sequences with Levenshtein",
+                    )
+                },
+            ),
+        )
+        .api_route(
             "/encrypt",
             post_with(functions::encrypt_handler, |op| {
                 op.description("Encrypt a server-known DNA sequence with the client's public key")

@@ -6,18 +6,22 @@ import { KeyPair } from '../../core/crypto/key-pair.model';
 import { TfheService } from '../../core/crypto/tfhe.service';
 
 type GenomicsStatus = 'idle' | 'generating' | 'ready' | 'encrypting' | 'processing' | 'result' | 'error';
-type ResultKind = 'none' | 'hamming' | 'levenshtein' | 'db-hamming' | 'db-levenshtein' | 'encrypted';
+type ResultKind =
+  | 'none'
+  | 'hamming'
+  | 'levenshtein'
+  | 'db-hamming'
+  | 'db-levenshtein'
+  | 'session-hamming'
+  | 'session-levenshtein'
+  | 'encrypted';
 type ResultScope = 'none' | 'single' | 'database';
+type EncryptedResultScope = 'none' | 'single' | 'database' | 'session';
 type SessionRole = 'creator' | 'participant';
 
 interface KeyMaterial {
   keyPair: KeyPair;
   serverKeyB64: string;
-}
-
-interface EncryptResponse {
-  encrypted_bases: string[];
-  original_length: number;
 }
 
 interface GenomicsSession {
@@ -68,6 +72,34 @@ interface CreateRiskPatternResponse {
   pattern: RiskPattern;
 }
 
+interface SessionSequenceGroup {
+  session_id: string;
+  public_key: string;
+  sequence_count: number;
+  latest_created_at: string;
+}
+
+interface SessionSequencesResponse {
+  sessions: SessionSequenceGroup[];
+}
+
+interface SessionSequenceInfo {
+  id: number;
+  session_id: string;
+  original_length: number;
+  created_at: string;
+}
+
+interface StoreSessionSequenceResponse {
+  sequence: SessionSequenceInfo;
+}
+
+interface CompareSessionSequencesResponse {
+  encrypted_result_items: string[][];
+  compared_sequences: number;
+  sequences: SessionSequenceInfo[];
+}
+
 interface RiskPattern {
   id: number;
   sequence: string;
@@ -114,10 +146,11 @@ export class GenomicsComponent implements OnInit, OnDestroy {
   status = signal<GenomicsStatus>('idle');
   resultKind = signal<ResultKind>('none');
   sequenceInput = signal('ATCGATCGAAAA');
-  serverSequenceInput = signal('GGTTAC');
   newPatternInput = signal('');
   selectedPatternId = signal('all');
+  selectedSequenceSessionId = signal('');
   riskPatterns = signal<RiskPattern[]>([]);
+  sessionSequenceGroups = signal<SessionSequenceGroup[]>([]);
   encryptedLength = signal(0);
   hammingResults = signal<WindowResult[]>([]);
   levenshteinResult = signal<number | null>(null);
@@ -134,6 +167,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
   activeSession = signal<GenomicsSession | null>(null);
   sessionRole = signal<SessionRole | null>(null);
   fifoStatus = signal<FifoStatusResponse>(EMPTY_FIFO_STATUS);
+  encryptedResultScope = signal<EncryptedResultScope>('none');
 
   private keyReady = signal(false);
   private encryptedSequenceReady = signal(false);
@@ -147,9 +181,28 @@ export class GenomicsComponent implements OnInit, OnDestroy {
   hasSingleResult = computed(() => this.resultScope() === 'single');
   hasHammingMatch = computed(() => this.hammingResults().some((item) => item.distance === 0));
   hasRiskPatterns = computed(() => this.riskPatterns().length > 0);
+  hasSessionSequenceGroups = computed(() => this.sessionSequenceGroups().length > 0);
   hasDatabaseResult = computed(() => this.resultScope() === 'database');
+  hasRiskDatabaseResult = computed(
+    () =>
+      this.resultKind() === 'db-hamming' ||
+      this.resultKind() === 'db-levenshtein' ||
+      (this.resultKind() === 'encrypted' && this.encryptedResultScope() === 'database'),
+  );
+  hasSessionSequenceResult = computed(
+    () =>
+      this.resultKind() === 'session-hamming' ||
+      this.resultKind() === 'session-levenshtein' ||
+      (this.resultKind() === 'encrypted' && this.encryptedResultScope() === 'session'),
+  );
   fifoLocked = computed(() => this.fifoStatus().locked);
   hasNewPatternInput = computed(() => this.normalizeDna(this.newPatternInput()).length > 0);
+  selectedSessionSequenceGroup = computed(
+    () =>
+      this.sessionSequenceGroups().find(
+        (group) => group.session_id === this.selectedSequenceSessionId(),
+      ) ?? null,
+  );
   databaseMatchCount = computed(
     () => this.databaseResults().filter((entry) => this.entryHasMatch(entry)).length,
   );
@@ -178,6 +231,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     void this.loadSessions();
     void this.loadRiskPatterns();
+    void this.loadSessionSequenceGroups();
     void this.loadFifoStatus();
     this.fifoPollId = setInterval(() => void this.loadFifoStatus(), 1500);
   }
@@ -255,6 +309,26 @@ export class GenomicsComponent implements OnInit, OnDestroy {
     }
   }
 
+  async loadSessionSequenceGroups(showMessage = false): Promise<void> {
+    const started = this.nowMs();
+
+    try {
+      const response = await firstValueFrom(
+        this.http.get<SessionSequencesResponse>(`${API_BASE}/sessionsequences`),
+      );
+      this.sessionSequenceGroups.set(response.sessions);
+      this.syncSelectedSequenceSession(response.sessions);
+
+      if (showMessage) {
+        this.infoMessage.set(
+          `${response.sessions.length} Session-Listen geladen in ${this.elapsedMs(started)} ms.`,
+        );
+      }
+    } catch (error) {
+      this.errorMessage.set(`Sessionsequenzen konnten nicht geladen werden: ${this.errorText(error)}`);
+    }
+  }
+
   async addRiskPattern(): Promise<void> {
     const session = this.activeSession();
     if (!session) {
@@ -327,6 +401,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
         `Session erstellt. Der Client-Key bleibt lokal. Dauer: ${this.elapsedMs(started)} ms.`,
       );
       void this.loadSessions();
+      void this.loadSessionSequenceGroups();
     } catch (error) {
       this.setError(`Fehler beim Erstellen der Session: ${this.errorText(error)}`);
     }
@@ -353,6 +428,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
     this.clearMessages();
     this.clearKeyOutput();
     this.clearSequenceOutput();
+    this.syncSelectedSequenceSession(this.sessionSequenceGroups());
     this.infoMessage.set(
       `Session beigetreten. Nur der Public-Key ist verfuegbar. Dauer: ${this.elapsedMs(started)} ms.`,
     );
@@ -413,38 +489,167 @@ export class GenomicsComponent implements OnInit, OnDestroy {
     }
   }
 
-  async encryptServerSequence(): Promise<void> {
+  async storeSessionSequence(): Promise<void> {
     const session = this.activeSession();
     if (!session) {
       this.setError('Bitte zuerst eine Session erstellen oder beitreten.');
       return;
     }
+    if (!this.comparisonSequenceWithinLimit(MAX_HAMMING_SEQUENCE_LENGTH, 'Sessionsequenz')) return;
 
     try {
-      const cleanSequence = this.normalizeDna(this.serverSequenceInput());
-      this.encodeDna(cleanSequence);
-      this.status.set('encrypting');
+      this.status.set('processing');
       this.clearResults();
       this.clearMessages();
       await this.renderPause();
       const started = this.nowMs();
+      const ready = await this.ensureEncryptedSequence();
+      if (!ready) return;
+      this.status.set('processing');
 
       const response = await firstValueFrom(
-        this.http.post<EncryptResponse>(`${API_BASE}/encrypt`, {
-          sequence: cleanSequence,
+        this.http.post<StoreSessionSequenceResponse>(`${API_BASE}/sessionsequences`, {
           session_id: session.id,
+          encrypted_bases: this.encryptedSequenceItems,
         }),
       );
 
-      this.encryptedSequenceItems = response.encrypted_bases;
-      this.encryptedSource = cleanSequence;
-      this.encryptedLength.set(response.original_length);
-      this.encryptedSequenceReady.set(true);
-      this.clearSequenceOutput();
-      this.sequenceInput.set(cleanSequence);
+      await this.loadSessionSequenceGroups(false);
+      this.selectedSequenceSessionId.set(session.id);
       this.status.set('ready');
       this.infoMessage.set(
-        `${response.original_length} serverseitig mit Public-Key verschluesselt in ${this.elapsedMs(started)} ms.`,
+        `Sessionsequenz #${response.sequence.id} gespeichert in ${this.elapsedMs(started)} ms.`,
+      );
+      void this.loadFifoStatus();
+    } catch (error) {
+      this.setError(this.errorText(error));
+    }
+  }
+
+  async compareSessionSequencesHamming(): Promise<void> {
+    try {
+      const group = this.selectedSessionSequenceGroup();
+      if (!group) {
+        this.setError('Bitte zuerst eine SessionID mit gespeicherten Sequenzen auswaehlen.');
+        return;
+      }
+      if (!this.comparisonSequenceWithinLimit(MAX_HAMMING_SEQUENCE_LENGTH, 'Hamming')) return;
+
+      this.status.set('processing');
+      this.clearResults();
+      this.clearMessages();
+      await this.renderPause();
+      const started = this.nowMs();
+      const encrypted = await this.encryptCurrentSequenceForPublicKey(
+        group.public_key,
+        MAX_HAMMING_SEQUENCE_LENGTH,
+        'Hamming',
+      );
+      if (!encrypted) return;
+
+      const response = await firstValueFrom(
+        this.http.post<CompareSessionSequencesResponse>(`${API_BASE}/sessionsequences/hamming`, {
+          session_id: group.session_id,
+          encrypted_bases: encrypted,
+        }),
+      );
+
+      const canDecrypt = this.canDecryptSessionResults(group);
+      if (canDecrypt) {
+        this.databaseResults.set(
+          response.encrypted_result_items.map((items, index) => {
+            const distances = this.decryptItems(items);
+            const sequence = response.sequences[index];
+            return {
+              label: sequence ? `Session ${sequence.session_id} #${sequence.id}` : `Sequenz ${index + 1}`,
+              distances,
+              bestDistance: distances.length ? Math.min(...distances) : null,
+            };
+          }),
+        );
+        this.resultKind.set('session-hamming');
+      } else {
+        this.setEncryptedResult(
+          'Encrypted Session-Hamming-Ergebnisse',
+          response.encrypted_result_items.map((items, index) => ({
+            label: response.sequences[index]
+              ? `Session ${response.sequences[index].session_id} #${response.sequences[index].id}`
+              : `Sequenz ${index + 1}`,
+            value: items.join('\n'),
+          })),
+          'session',
+        );
+      }
+      this.resultScope.set('database');
+      this.showResultPanel.set(false);
+      this.status.set('result');
+      this.infoMessage.set(
+        `${response.compared_sequences} Sessionsequenzen verglichen${canDecrypt ? ' und lokal entschluesselt' : ''} in ${this.elapsedMs(started)} ms.`,
+      );
+    } catch (error) {
+      this.setError(this.errorText(error));
+    }
+  }
+
+  async compareSessionSequencesLevenshtein(): Promise<void> {
+    try {
+      const group = this.selectedSessionSequenceGroup();
+      if (!group) {
+        this.setError('Bitte zuerst eine SessionID mit gespeicherten Sequenzen auswaehlen.');
+        return;
+      }
+      if (!this.comparisonSequenceWithinLimit(MAX_LEVENSHTEIN_SEQUENCE_LENGTH, 'Levenshtein')) return;
+
+      this.status.set('processing');
+      this.clearResults();
+      this.clearMessages();
+      await this.renderPause();
+      const started = this.nowMs();
+      const encrypted = await this.encryptCurrentSequenceForPublicKey(
+        group.public_key,
+        MAX_LEVENSHTEIN_SEQUENCE_LENGTH,
+        'Levenshtein',
+      );
+      if (!encrypted) return;
+
+      const response = await firstValueFrom(
+        this.http.post<CompareSessionSequencesResponse>(`${API_BASE}/sessionsequences/levenshtein`, {
+          session_id: group.session_id,
+          encrypted_bases: encrypted,
+        }),
+      );
+
+      const canDecrypt = this.canDecryptSessionResults(group);
+      if (canDecrypt) {
+        this.databaseResults.set(
+          response.encrypted_result_items.map((items, index) => {
+            const distances = this.decryptItems(items);
+            const sequence = response.sequences[index];
+            return {
+              label: sequence ? `Session ${sequence.session_id} #${sequence.id}` : `Sequenz ${index + 1}`,
+              distances,
+              bestDistance: distances[0] ?? null,
+            };
+          }),
+        );
+        this.resultKind.set('session-levenshtein');
+      } else {
+        this.setEncryptedResult(
+          'Encrypted Session-Levenshtein-Ergebnisse',
+          response.encrypted_result_items.map((items, index) => ({
+            label: response.sequences[index]
+              ? `Session ${response.sequences[index].session_id} #${response.sequences[index].id}`
+              : `Sequenz ${index + 1}`,
+            value: items.join('\n'),
+          })),
+          'session',
+        );
+      }
+      this.resultScope.set('database');
+      this.showResultPanel.set(false);
+      this.status.set('result');
+      this.infoMessage.set(
+        `${response.compared_sequences} Sessionsequenzen verglichen${canDecrypt ? ' und lokal entschluesselt' : ''} in ${this.elapsedMs(started)} ms.`,
       );
     } catch (error) {
       this.setError(this.errorText(error));
@@ -471,12 +676,16 @@ export class GenomicsComponent implements OnInit, OnDestroy {
         this.hammingResults.set(distances.map((distance, index) => ({ index, distance })));
         this.resultKind.set('hamming');
       } else {
-        this.setEncryptedResult('Hamming-Ergebnis', [
-          {
-            label: 'Encrypted Hamming-Distanzen',
-            value: response.encrypted_distance_items.join('\n'),
-          },
-        ]);
+        this.setEncryptedResult(
+          'Hamming-Ergebnis',
+          [
+            {
+              label: 'Encrypted Hamming-Distanzen',
+              value: response.encrypted_distance_items.join('\n'),
+            },
+          ],
+          'single',
+        );
       }
       this.resultScope.set('single');
       this.showResultPanel.set(false);
@@ -509,12 +718,16 @@ export class GenomicsComponent implements OnInit, OnDestroy {
         this.levenshteinResult.set(distance ?? null);
         this.resultKind.set('levenshtein');
       } else {
-        this.setEncryptedResult('Levenshtein-Ergebnis', [
-          {
-            label: 'Encrypted Levenshtein-Distanz',
-            value: response.encrypted_distance_items.join('\n'),
-          },
-        ]);
+        this.setEncryptedResult(
+          'Levenshtein-Ergebnis',
+          [
+            {
+              label: 'Encrypted Levenshtein-Distanz',
+              value: response.encrypted_distance_items.join('\n'),
+            },
+          ],
+          'single',
+        );
       }
       this.resultScope.set('single');
       this.showResultPanel.set(false);
@@ -563,6 +776,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
             label: response.patterns[index]?.sequence ?? `DB-Sequenz ${index + 1}`,
             value: items.join('\n'),
           })),
+          'database',
         );
       }
       this.resultScope.set('database');
@@ -612,6 +826,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
             label: response.patterns[index]?.sequence ?? `DB-Sequenz ${index + 1}`,
             value: items.join('\n'),
           })),
+          'database',
         );
       }
       this.resultScope.set('database');
@@ -719,6 +934,14 @@ export class GenomicsComponent implements OnInit, OnDestroy {
     return this.activeSession()?.id === job.session_id;
   }
 
+  databaseResultTitle(): string {
+    if (this.resultKind() === 'session-hamming' || this.resultKind() === 'session-levenshtein') {
+      return 'Sessionsequenz-Ergebnisse';
+    }
+
+    return 'Datenbank-Ergebnisse';
+  }
+
   private async computeBody(
     maxLength: number,
     operation: string,
@@ -771,6 +994,28 @@ export class GenomicsComponent implements OnInit, OnDestroy {
     }
 
     return true;
+  }
+
+  private syncSelectedSequenceSession(groups: SessionSequenceGroup[]): void {
+    const current = this.selectedSequenceSessionId();
+    if (current && groups.some((group) => group.session_id === current)) return;
+
+    const activeId = this.activeSession()?.id;
+    const activeGroup = groups.find((group) => group.session_id === activeId);
+    this.selectedSequenceSessionId.set(activeGroup?.session_id ?? groups[0]?.session_id ?? '');
+  }
+
+  private async encryptCurrentSequenceForPublicKey(
+    publicKeyB64: string,
+    maxLength: number,
+    operation: string,
+  ): Promise<string[] | null> {
+    const cleanSequence = this.normalizeDna(this.sequenceInput());
+    if (!this.comparisonSequenceWithinLimit(maxLength, operation)) return null;
+    const encoded = this.encodeDna(cleanSequence);
+
+    await this.tfhe.ensureInitialized();
+    return this.tfhe.encryptUint8sCompact(publicKeyB64, encoded);
   }
 
   private async ensureEncryptedSequence(): Promise<boolean> {
@@ -828,9 +1073,21 @@ export class GenomicsComponent implements OnInit, OnDestroy {
     return this.keyReady() && this.keyPair !== null;
   }
 
-  private setEncryptedResult(title: string, items: KeyOutput[]): void {
+  private canDecryptSessionResults(group: SessionSequenceGroup): boolean {
+    if (!this.canDecryptResults()) return false;
+
+    const localPublicKey = this.currentPublicKeyB64();
+    return localPublicKey === group.public_key;
+  }
+
+  private setEncryptedResult(
+    title: string,
+    items: KeyOutput[],
+    scope: EncryptedResultScope = 'none',
+  ): void {
     this.encryptedResultTitle.set(title);
     this.encryptedResultItems.set(items);
+    this.encryptedResultScope.set(scope);
     this.resultKind.set('encrypted');
   }
 
@@ -876,6 +1133,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
     this.databaseResults.set([]);
     this.encryptedResultTitle.set('');
     this.encryptedResultItems.set([]);
+    this.encryptedResultScope.set('none');
     this.resultKind.set('none');
     this.resultScope.set('none');
     this.showResultPanel.set(false);
