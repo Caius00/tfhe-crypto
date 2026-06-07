@@ -1,6 +1,5 @@
 use rayon::iter::{IndexedParallelIterator, ParallelIterator};
 use rayon::prelude::ParallelSlice;
-use std::array;
 use std::ops::{BitAnd, BitOr};
 use tfhe::prelude::{
     CastFrom, CastInto, FheEq, FheTrivialEncrypt, IfThenElse, OverflowingAdd, OverflowingSub,
@@ -8,30 +7,28 @@ use tfhe::prelude::{
 use tfhe::{set_server_key, FheBool, FheUint16, FheUint8, ServerKey};
 
 #[allow(clippy::upper_case_acronyms)]
-pub struct CPU<const SIZE: usize> {
+pub struct CPU {
     pub a: FheUint8,
     pub b: FheUint8,
     pub carry: FheBool,
     pub pc: FheUint8,
-    pub memory: [FheUint8; SIZE],
+    pub memory: Vec<FheUint8>,
 }
 
-pub fn make_cpu<const SIZE: usize>() -> CPU<SIZE> {
+pub fn make_cpu(size: usize) -> CPU {
     let zero_enc = FheUint8::encrypt_trivial(0u8);
     let false_enc = FheBool::encrypt_trivial(false);
-
-    let fill_zeroes = |_: usize| -> FheUint8 { zero_enc.clone() };
 
     CPU {
         a: zero_enc.clone(),
         b: zero_enc.clone(),
         carry: false_enc.clone(),
         pc: zero_enc.clone(),
-        memory: array::from_fn(fill_zeroes),
+        memory: vec![zero_enc; size],
     }
 }
 
-impl<const SIZE: usize> CPU<SIZE> {
+impl CPU {
     // specify needed additional instructions?
 
     pub fn execute_program(&mut self, cycles: usize, sk: &ServerKey) {
@@ -48,14 +45,7 @@ impl<const SIZE: usize> CPU<SIZE> {
     }
 
     fn fetch(&self, sk: &ServerKey) -> (FheUint8, FheUint8) {
-        if SIZE == 0 {
-            return (
-                FheUint8::encrypt_trivial(0u8),
-                FheUint8::encrypt_trivial(0u8),
-            );
-        }
-
-        let pc_plus_1 = (&self.pc + 1u8) % (SIZE as u8);
+        let pc_plus_1 = &self.pc + 1u8 % self.memory.len() as u8;
 
         let mut chunk_results = None;
         let chunk_size = 16;
@@ -351,11 +341,7 @@ impl<const SIZE: usize> CPU<SIZE> {
         next_b = is_swp.cmux(&self.a, &next_b);
         next_b = is_mul.cmux(&res_mul_lower, &next_b);
         let mut next_pc;
-        if SIZE == 0 {
-            next_pc = FheUint8::encrypt_trivial(0u8);
-        } else {
-            next_pc = (&self.pc + 2u8) % (SIZE as u8);
-        }
+        next_pc = (&self.pc + 2u8) % (self.memory.len() as u8);
 
         next_pc = trigger_branch.cmux(branch_target, &next_pc);
 
@@ -401,9 +387,9 @@ impl<const SIZE: usize> CPU<SIZE> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::cpu::{make_cpu, CPU};
     use tfhe::prelude::{FheDecrypt, FheTrivialEncrypt};
-    use tfhe::{set_server_key, ConfigBuilder};
+    use tfhe::{set_server_key, ConfigBuilder, FheUint8};
 
     #[test]
     fn add() {
@@ -417,7 +403,7 @@ mod tests {
         let operand1 = FheUint8::encrypt_trivial(13u8);
         let operand2 = FheUint8::encrypt_trivial(18u8);
 
-        let mut cpu: CPU<0> = make_cpu();
+        let mut cpu: CPU = make_cpu(1);
 
         let a_dec: u8 = cpu.a.decrypt(&ck);
         let pc_dec: u8 = cpu.pc.decrypt(&ck);
@@ -440,7 +426,7 @@ mod tests {
         let c_dec: bool = cpu.carry.decrypt(&ck);
 
         assert_eq!(a_dec, 31, "13 + 18 = 31");
-        assert_eq!(pc_dec, 0, "pc 0 because SIZE is 0");
+        assert_eq!(pc_dec, 0, "pc 0 because SIZE is 1");
         assert_eq!(b_dec, 18, "unchanged");
         assert!(!c_dec, "no carry");
 
@@ -469,7 +455,7 @@ mod tests {
         let mem_c = FheUint8::encrypt_trivial(13u8);
         let mem_d = FheUint8::encrypt_trivial(0xBFu8);
 
-        let mut cpu: CPU<16> = make_cpu();
+        let mut cpu: CPU = make_cpu(16);
 
         cpu.memory[0] = mem_a;
         cpu.memory[1] = mem_b;
@@ -478,43 +464,61 @@ mod tests {
 
         let (opc, opr) = cpu.fetch(&sk);
 
-        assert_eq!(18u8, opc.decrypt(&ck));
-        assert_eq!(9u8, opr.decrypt(&ck));
+        let a: u8 = opc.decrypt(&ck);
+        let b: u8 = opr.decrypt(&ck);
+
+        assert_eq!(18u8, a);
+        assert_eq!(9u8, b);
 
         cpu.pc = FheUint8::encrypt_trivial(1u8);
 
         let (opc, opr) = cpu.fetch(&sk);
 
-        assert_eq!(9u8, opc.decrypt(&ck));
-        assert_eq!(13u8, opr.decrypt(&ck));
+        let a: u8 = opc.decrypt(&ck);
+        let b: u8 = opr.decrypt(&ck);
+
+        assert_eq!(9u8, a);
+        assert_eq!(13u8, b);
 
         cpu.pc = FheUint8::encrypt_trivial(2u8);
 
         let (opc, opr) = cpu.fetch(&sk);
 
-        assert_eq!(13u8, opc.decrypt(&ck));
-        assert_eq!(0u8, opr.decrypt(&ck));
+        let a: u8 = opc.decrypt(&ck);
+        let b: u8 = opr.decrypt(&ck);
+
+        assert_eq!(13u8, a);
+        assert_eq!(0u8, b);
 
         cpu.pc = FheUint8::encrypt_trivial(3u8);
 
         let (opc, opr) = cpu.fetch(&sk);
 
-        assert_eq!(0u8, opc.decrypt(&ck));
-        assert_eq!(0u8, opr.decrypt(&ck));
+        let a: u8 = opc.decrypt(&ck);
+        let b: u8 = opr.decrypt(&ck);
+
+        assert_eq!(0u8, a);
+        assert_eq!(0u8, b);
 
         cpu.pc = FheUint8::encrypt_trivial(4u8);
 
         let (opc, opr) = cpu.fetch(&sk);
 
-        assert_eq!(0u8, opc.decrypt(&ck));
-        assert_eq!(0u8, opr.decrypt(&ck));
+        let a: u8 = opc.decrypt(&ck);
+        let b: u8 = opr.decrypt(&ck);
+
+        assert_eq!(0u8, a);
+        assert_eq!(0u8, b);
 
         cpu.pc = FheUint8::encrypt_trivial(15u8);
 
         let (opc, opr) = cpu.fetch(&sk);
 
-        assert_eq!(0xBFu8, opc.decrypt(&ck));
-        assert_eq!(18u8, opr.decrypt(&ck));
+        let a: u8 = opc.decrypt(&ck);
+        let b: u8 = opr.decrypt(&ck);
+
+        assert_eq!(0xBFu8, a);
+        assert_eq!(18u8, b);
     }
 
     #[test]
@@ -523,7 +527,7 @@ mod tests {
         let (ck, sk) = tfhe::generate_keys(config);
         set_server_key(sk.clone());
 
-        let mut cpu: CPU<16> = make_cpu();
+        let mut cpu: CPU = make_cpu(16);
 
         let a_dec: u8 = cpu.a.decrypt(&ck);
         let pc_dec: u8 = cpu.pc.decrypt(&ck);
@@ -567,7 +571,7 @@ mod tests {
         let (ck, sk) = tfhe::generate_keys(config);
         set_server_key(sk.clone());
 
-        let mut cpu: CPU<16> = make_cpu();
+        let mut cpu: CPU = make_cpu(16);
 
         cpu.memory[0] = FheUint8::encrypt_trivial(0x02u8); // LDA immediate
         cpu.memory[1] = FheUint8::encrypt_trivial(0x05u8); // data
@@ -588,8 +592,10 @@ mod tests {
 
         cpu.execute_program(8, &sk);
 
-        assert_eq!(0u8, cpu.pc.decrypt(&ck));
-        assert_eq!(120u8, cpu.b.decrypt(&ck));
+        let a: u8 = cpu.pc.decrypt(&ck);
+        let b: u8 = cpu.b.decrypt(&ck);
+        assert_eq!(0u8, a);
+        assert_eq!(120u8, b);
     }
 
     #[test]
@@ -598,7 +604,7 @@ mod tests {
         let (ck, sk) = tfhe::generate_keys(config);
         set_server_key(sk.clone());
 
-        let mut cpu: CPU<16> = make_cpu();
+        let mut cpu: CPU = make_cpu(16);
         cpu.memory[0] = FheUint8::encrypt_trivial(0x02u8); // LDA immediate
         cpu.memory[1] = FheUint8::encrypt_trivial(0x05u8); // data
         cpu.memory[2] = FheUint8::encrypt_trivial(0x04u8); // SWP
@@ -618,75 +624,126 @@ mod tests {
 
         cpu.execute_program(1, &sk);
 
-        assert_eq!(2u8, cpu.pc.decrypt(&ck));
-        assert_eq!(5u8, cpu.a.decrypt(&ck));
-        assert_eq!(0u8, cpu.b.decrypt(&ck));
+        let a: u8 = cpu.pc.decrypt(&ck);
+        let b: u8 = cpu.a.decrypt(&ck);
+        let c: u8 = cpu.b.decrypt(&ck);
+
+        assert_eq!(2u8, a);
+        assert_eq!(5u8, b);
+        assert_eq!(0u8, c);
 
         cpu.execute_program(1, &sk);
 
-        assert_eq!(4u8, cpu.pc.decrypt(&ck));
-        assert_eq!(0u8, cpu.a.decrypt(&ck));
-        assert_eq!(5u8, cpu.b.decrypt(&ck));
+        let a: u8 = cpu.pc.decrypt(&ck);
+        let b: u8 = cpu.a.decrypt(&ck);
+        let c: u8 = cpu.b.decrypt(&ck);
+
+        assert_eq!(4u8, a);
+        assert_eq!(0u8, b);
+        assert_eq!(5u8, c);
 
         cpu.execute_program(1, &sk);
 
-        assert_eq!(6u8, cpu.pc.decrypt(&ck));
-        assert_eq!(5u8, cpu.a.decrypt(&ck));
-        assert_eq!(5u8, cpu.b.decrypt(&ck));
+        let a: u8 = cpu.pc.decrypt(&ck);
+        let b: u8 = cpu.a.decrypt(&ck);
+        let c: u8 = cpu.b.decrypt(&ck);
+
+        assert_eq!(6u8, a);
+        assert_eq!(5u8, b);
+        assert_eq!(5u8, c);
 
         cpu.execute_program(1, &sk);
 
-        assert_eq!(8u8, cpu.pc.decrypt(&ck));
-        assert_eq!(4u8, cpu.a.decrypt(&ck));
-        assert_eq!(5u8, cpu.b.decrypt(&ck));
+        let a: u8 = a;
+        let b: u8 = b;
+        let c: u8 = c;
+
+        assert_eq!(8u8, a);
+        assert_eq!(4u8, b);
+        assert_eq!(5u8, c);
 
         cpu.execute_program(1, &sk);
 
-        assert_eq!(10u8, cpu.pc.decrypt(&ck));
-        assert_eq!(4u8, cpu.a.decrypt(&ck));
-        assert_eq!(5u8, cpu.b.decrypt(&ck));
-        assert_eq!(4u8, cpu.memory[0].decrypt(&ck));
+        let a: u8 = cpu.pc.decrypt(&ck);
+        let b: u8 = cpu.a.decrypt(&ck);
+        let c: u8 = cpu.b.decrypt(&ck);
+        let d: u8 = cpu.memory[0].decrypt(&ck);
+
+        assert_eq!(10u8, a);
+        assert_eq!(4u8, b);
+        assert_eq!(5u8, c);
+        assert_eq!(4u8, d);
 
         cpu.execute_program(1, &sk);
 
-        assert_eq!(12u8, cpu.pc.decrypt(&ck));
-        assert_eq!(0u8, cpu.a.decrypt(&ck));
-        assert_eq!(20u8, cpu.b.decrypt(&ck));
-        assert_eq!(4u8, cpu.memory[0].decrypt(&ck));
+        let a: u8 = a;
+        let b: u8 = b;
+        let c: u8 = c;
+        let d: u8 = cpu.memory[0].decrypt(&ck);
+
+        assert_eq!(12u8, a);
+        assert_eq!(0u8, b);
+        assert_eq!(20u8, c);
+        assert_eq!(4u8, d);
 
         cpu.execute_program(1, &sk);
 
-        assert_eq!(14u8, cpu.pc.decrypt(&ck));
-        assert_eq!(4u8, cpu.a.decrypt(&ck));
-        assert_eq!(20u8, cpu.b.decrypt(&ck));
-        assert_eq!(4u8, cpu.memory[0].decrypt(&ck));
+        let a: u8 = a;
+        let b: u8 = b;
+        let c: u8 = c;
+        let d: u8 = cpu.memory[0].decrypt(&ck);
+
+        assert_eq!(14u8, a);
+        assert_eq!(4u8, b);
+        assert_eq!(20u8, c);
+        assert_eq!(4u8, d);
 
         cpu.execute_program(1, &sk);
 
-        assert_eq!(8u8, cpu.pc.decrypt(&ck));
-        assert_eq!(3u8, cpu.a.decrypt(&ck));
-        assert_eq!(20u8, cpu.b.decrypt(&ck));
-        assert_eq!(4u8, cpu.memory[0].decrypt(&ck));
+        let a: u8 = cpu.pc.decrypt(&ck);
+        let b: u8 = cpu.a.decrypt(&ck);
+        let c: u8 = cpu.b.decrypt(&ck);
+        let d: u8 = cpu.memory[0].decrypt(&ck);
+
+        assert_eq!(8u8, a);
+        assert_eq!(3u8, b);
+        assert_eq!(20u8, c);
+        assert_eq!(4u8, d);
 
         cpu.execute_program(1, &sk);
 
-        assert_eq!(10u8, cpu.pc.decrypt(&ck));
-        assert_eq!(3u8, cpu.a.decrypt(&ck));
-        assert_eq!(20u8, cpu.b.decrypt(&ck));
-        assert_eq!(3u8, cpu.memory[0].decrypt(&ck));
+        let a: u8 = cpu.pc.decrypt(&ck);
+        let b: u8 = cpu.a.decrypt(&ck);
+        let c: u8 = cpu.b.decrypt(&ck);
+        let d: u8 = cpu.memory[0].decrypt(&ck);
+
+        assert_eq!(10u8, a);
+        assert_eq!(3u8, b);
+        assert_eq!(20u8, c);
+        assert_eq!(3u8, d);
 
         cpu.execute_program(1, &sk);
 
-        assert_eq!(12u8, cpu.pc.decrypt(&ck));
-        assert_eq!(0u8, cpu.a.decrypt(&ck));
-        assert_eq!(60u8, cpu.b.decrypt(&ck));
-        assert_eq!(3u8, cpu.memory[0].decrypt(&ck));
+        let a: u8 = a;
+        let b: u8 = b;
+        let c: u8 = c;
+        let d: u8 = cpu.memory[0].decrypt(&ck);
+
+        assert_eq!(12u8, a);
+        assert_eq!(0u8, b);
+        assert_eq!(60u8, c);
+        assert_eq!(3u8, d);
 
         cpu.execute_program(4, &sk);
 
-        assert_eq!(12u8, cpu.pc.decrypt(&ck));
-        assert_eq!(0u8, cpu.a.decrypt(&ck));
-        assert_eq!(120u8, cpu.b.decrypt(&ck));
-        assert_eq!(2u8, cpu.memory[0].decrypt(&ck));
+        let a: u8 = cpu.pc.decrypt(&ck);
+        let b: u8 = cpu.a.decrypt(&ck);
+        let c: u8 = cpu.b.decrypt(&ck);
+        let d: u8 = cpu.memory[0].decrypt(&ck);
+
+        assert_eq!(12u8, a);
+        assert_eq!(0u8, b);
+        assert_eq!(120u8, c);
+        assert_eq!(2u8, d);
     }
 }
