@@ -1,3 +1,3 @@
-pub mod cpu;
+mod cpu;
 
 fn main() {}
