@@ -92,7 +92,6 @@ impl From<&SerializedCustomFheAsciiString> for CustomFheAsciiString {
     }
 }
 
-// TODO() finds out if threading is faster or nah
 impl FheEq for CustomFheAsciiString {
     fn eq(&self, other: Self) -> FheBool {
         if self.string.len() != other.string.len() {
@@ -123,7 +122,6 @@ impl FheDecrypt<String> for CustomFheAsciiString {
 }
 
 impl IfThenElse<CustomFheAsciiString> for FheBool {
-    // TODO() find out if threading is faster or nah
     fn if_then_else(&self, ct_then: &CustomFheAsciiString, ct_else: &CustomFheAsciiString) -> CustomFheAsciiString {
         assert_eq!(ct_then.string.len(), ct_else.string.len(), "Key length mismatch");
 
@@ -134,5 +132,74 @@ impl IfThenElse<CustomFheAsciiString> for FheBool {
             .collect::<Vec<FheUint8>>();
 
         CustomFheAsciiString { string: constructed_key }
+    }
+}
+
+#[cfg(test)]
+mod test_custom_fhe_ascii_string {
+    use tfhe::{set_server_key, CompressedServerKey};
+    use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
+    use super::*;
+
+    #[test]
+    fn eq() {
+        let parameters = MetaParametersFinder::new(
+            Constraint::LessThanOrEqual(Log2PFail(-128.0)),
+            Backend::Cpu
+        )
+            .with_compression(true)
+            .find()
+            .expect("Could not find suitable parameters");
+
+        let client_key = ClientKey::generate(parameters);
+        let compressed_server_key = CompressedServerKey::new(&client_key);
+        set_server_key(compressed_server_key.decompress());
+
+        let str_a = "Hello World!";
+        let str_b = "Hello Earth!";
+
+        let enc_a = CustomFheAsciiString::new(str_a, &client_key);
+        let enc_a_2 = CustomFheAsciiString::new(str_a, &client_key);
+        let enc_b = CustomFheAsciiString::new(str_b, &client_key);
+
+        let enc_eq = enc_a.eq(enc_a_2);
+        let enc_ne = enc_a.eq(enc_b);
+
+        assert!(enc_eq.decrypt(&client_key));
+        assert!(!enc_ne.decrypt(&client_key));
+    }
+
+    #[test]
+    fn compress_decompress() {
+        let parameters = MetaParametersFinder::new(
+            Constraint::LessThanOrEqual(Log2PFail(-128.0)),
+            Backend::Cpu
+        )
+            .with_compression(true)
+            .find()
+            .expect("Could not find suitable parameters");
+
+        let client_key = ClientKey::generate(parameters);
+        let compressed_server_key = CompressedServerKey::new(&client_key);
+        set_server_key(compressed_server_key.decompress());
+
+        let str_a = "Hello World!";
+        let str_b = "Hello Earth!";
+
+        let enc_a = CustomFheAsciiString::new(str_a, &client_key);
+        let enc_b = CustomFheAsciiString::new(str_b, &client_key);
+
+        let comp_decomp_a = enc_a.compress().decompress();
+        let comp_decomp_b = enc_b.compress().decompress();
+
+        let dec_a = enc_a.decrypt(&client_key);
+        let dec_b = enc_b.decrypt(&client_key);
+        let dec_comp_decomp_a = comp_decomp_a.decrypt(&client_key);
+        let dec_comp_decomp_b = comp_decomp_b.decrypt(&client_key);
+
+        assert_eq!(dec_a, dec_comp_decomp_a);
+        assert_eq!(dec_b, dec_comp_decomp_b);
+        assert_ne!(dec_a, dec_comp_decomp_b);
+        assert_ne!(dec_b, dec_comp_decomp_a);
     }
 }

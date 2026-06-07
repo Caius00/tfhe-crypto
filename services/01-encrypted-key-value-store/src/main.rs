@@ -17,7 +17,12 @@ async fn main() {
         AppState::new()
     );
 
-    let app = Router::new() // TODO() change to aide::axum::routing::ApiRouter
+    // TODO() set fixed length for keys/ values
+    // TODO() check if works
+    // TODO() use threadpool and add parallelisation (does it work?)
+    // TODO() change from u8 to bigger number to store more with less overhead
+
+    let app = Router::new()
         .route("/session", post(create_session_route))
         .route("/entry", post(put_route)) // TODO() better naming for put_route (not http put, but key-value put meant)
         .route("/entry", get(get_route))

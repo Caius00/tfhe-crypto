@@ -1,10 +1,9 @@
+use std::thread;
 use axum::extract::{State};
 use axum::Json;
-use base64::Engine;
-use base64::engine::general_purpose;
 use tfhe::{set_server_key, CompressedServerKey};
 use uuid::Uuid;
-use crate::custom_fhe_ascii_string::{CompressedCustomFheAsciiString, CustomFheAsciiString};
+use crate::custom_fhe_ascii_string::{CompressedCustomFheAsciiString};
 use crate::models::{AppError, CreateSessionRequest, DeleteRequest, ExistsRequest, GetRequest, MessageResponse, PutRequest, ValueResponse};
 use crate::store::SharedState;
 
@@ -18,9 +17,7 @@ pub async fn create_session_route(
     State(state): State<SharedState>,
     body: Json<CreateSessionRequest>,
 ) -> Result<Json<MessageResponse>, AppError> {
-    // TODO() remove base64 encoding
-    let decoded_server_key = general_purpose::STANDARD.decode(&body.server_key).unwrap();
-    let compressed_server_key: CompressedServerKey = bincode::deserialize(&decoded_server_key).unwrap();
+    let compressed_server_key: CompressedServerKey = bincode::deserialize(&body.server_key).unwrap();
     let server_key = compressed_server_key.decompress();
 
     let session_id = Uuid::new_v4().to_string();
@@ -36,12 +33,15 @@ pub async fn put_route (
     State(state): State<SharedState>,
     Json(body): Json<PutRequest>
 ) -> Result<(), AppError> {
+    set_route_server_key(&state, &body.session_id).await;
+    println!("Set Server key for thread: {:?}", thread::current().id());
+
     let parsed_key = CompressedCustomFheAsciiString::new(body.key);
     let parsed_value = CompressedCustomFheAsciiString::new(body.value);
 
     let decompressed_key = parsed_key.decompress();
     let decompressed_value = parsed_value.decompress();
-    state.put(&decompressed_key, &decompressed_value).await;
+    state.put(&decompressed_key, &decompressed_value, &body.session_id).await?;
 
     Ok(())
 }
@@ -55,7 +55,7 @@ pub async fn get_route (
     let compressed_key = CompressedCustomFheAsciiString::new(body.key);
     let decompressed_key = compressed_key.decompress();
 
-    let (value, found_value) = state.get(&decompressed_key).await.unwrap();
+    let (value, found_value) = state.get(&decompressed_key, &body.session_id).await?;
 
     Ok(Json(ValueResponse {
         value: value.compress().string
@@ -67,11 +67,12 @@ pub async fn exists_route (
     Json(body): Json<ExistsRequest>
 ) -> Result<Json<ValueResponse>, AppError> {
     set_route_server_key(&state, &body.session_id).await;
+    println!("Set Server key for thread: {:?}", thread::current().id());
 
     let compressed_key = CompressedCustomFheAsciiString::new(body.key);
     let decompressed_key = compressed_key.decompress();
 
-    let exists = state.exists(&decompressed_key).await.unwrap();
+    let exists = state.exists(&decompressed_key, &body.session_id).await?;
     let compressed = exists.compress();
     let serialized = bincode::serialize(&compressed).unwrap();
 
@@ -87,7 +88,7 @@ pub async fn delete_route (
     set_route_server_key(&state, &body.session_id).await;
     let parsed_key = CompressedCustomFheAsciiString::new(body.key).decompress();
 
-    state.delete(&parsed_key).await.unwrap();
+    state.delete(&parsed_key, &body.session_id).await?;
 
     Ok(())
 }

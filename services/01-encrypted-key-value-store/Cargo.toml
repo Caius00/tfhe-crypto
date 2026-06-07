@@ -6,7 +6,7 @@ publish = false
 description = "Encrypted Key-Value Store"
 
 [dependencies]
-redis = { version = "0.25", features = ["tokio-comp"] }
+redis = { version = "0.25", features = ["tokio-comp"] } # TODO() update redis version
 tfhe = { workspace = true, features = ["software-prng", "strings"] }
 axum.workspace = true
 health.workspace = true
@@ -18,7 +18,6 @@ rayon = "1.12.0"
 dotenvy = "0.15.7"
 axum-test = "20.1.0"
 uuid = { version = "1.23.1", features = ["v4"] }
-base64 = "0.22.1"
 
 [dev-dependencies]
 serial_test = "3.5.0"

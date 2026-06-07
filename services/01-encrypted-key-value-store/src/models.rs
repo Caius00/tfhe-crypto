@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 pub struct PutRequest {
     pub key: Vec<u8>,
     pub value: Vec<u8>,
+    pub session_id: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -36,7 +37,7 @@ pub struct MessageResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateSessionRequest {
-    pub server_key: String,
+    pub server_key: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -45,6 +46,7 @@ pub enum AppError {
     Json(serde_json::Error),
     NotFound(String),
     Unauthorized,
+    InternalError(String),
 }
 
 impl From<redis::RedisError> for AppError {
@@ -77,7 +79,11 @@ impl axum::response::IntoResponse for AppError {
             ),
             AppError::Unauthorized => (
                 axum::http::StatusCode::UNAUTHORIZED,
-                "Missing or invalid user ID".into(),
+                "Missing or invalid session ID".into(),
+            ),
+            AppError::InternalError(e) => (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Internal Server Error: {}", e),
             ),
         };
 
