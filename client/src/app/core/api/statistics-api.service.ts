@@ -17,6 +17,7 @@ export interface StatisticsResult {
   max: string;
   average: string;
   median: string;
+  bit_width: 8 | 16 | 32;
 }
 
 /**

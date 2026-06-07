@@ -42,6 +42,8 @@ struct StatisticsResponse {
     average: String,
     /// Gleicher Typ wie die Eingabe (Lower Median bei gerader Länge)
     median: String,
+    /// Tatsächlich verwendete Bitbreite: 8, 16 oder 32.
+    bit_width: u8,
 }
 
 /// Deserialisiert eine Liste von Base64-kodierten FHE-Ciphertexten in den konkreten Typ T.
@@ -83,6 +85,7 @@ fn compute_statistics_typed<InputType, WiderOutputType>(
     encrypted_input_list: Vec<InputType>,
     fhe_engine: fhe::FheEngine,
     element_count: u64,
+    bit_width: u8,
 ) -> Result<Json<StatisticsResponse>, (StatusCode, String)>
 where
     InputType: Clone + FheOrd + CastInto<WiderOutputType> + Sync + Send + Serialize,
@@ -115,6 +118,7 @@ where
         max: to_base64(&encrypted_max)?,
         average: to_base64(&encrypted_average)?,
         median: to_base64(&encrypted_median)?,
+        bit_width,
     }))
 }
 
@@ -182,6 +186,7 @@ async fn compute_statistics(
                 encrypted_input_list,
                 fhe_engine,
                 element_count,
+                8,
             )
         }
         16 => {
@@ -191,6 +196,7 @@ async fn compute_statistics(
                 encrypted_input_list,
                 fhe_engine,
                 element_count,
+                16,
             )
         }
         32 => {
@@ -200,6 +206,7 @@ async fn compute_statistics(
                 encrypted_input_list,
                 fhe_engine,
                 element_count,
+                32,
             )
         }
         unsupported_bit_width => Err((

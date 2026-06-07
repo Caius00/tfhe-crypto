@@ -15,6 +15,7 @@ export interface StatisticsResult {
   max: number;
   average: number;
   median: number;
+  bitWidth: 8 | 16 | 32;
 }
 
 /**
@@ -200,32 +201,35 @@ export class StatisticsComponent {
     switch (bitWidth) {
       case 8:
         return {
-          sum:     this.tfheService.decryptInt16(fromBase64(encryptedResponse.sum),     clientKey),
-          count:   encryptedResponse.count,
-          min:     this.tfheService.decryptInt8( fromBase64(encryptedResponse.min),     clientKey),
-          max:     this.tfheService.decryptInt8( fromBase64(encryptedResponse.max),     clientKey),
-          average: this.tfheService.decryptInt16(fromBase64(encryptedResponse.average), clientKey),
-          median:  this.tfheService.decryptInt8( fromBase64(encryptedResponse.median),  clientKey),
+          sum:      this.tfheService.decryptInt16(fromBase64(encryptedResponse.sum),     clientKey),
+          count:    encryptedResponse.count,
+          min:      this.tfheService.decryptInt8( fromBase64(encryptedResponse.min),     clientKey),
+          max:      this.tfheService.decryptInt8( fromBase64(encryptedResponse.max),     clientKey),
+          average:  this.tfheService.decryptInt16(fromBase64(encryptedResponse.average), clientKey),
+          median:   this.tfheService.decryptInt8( fromBase64(encryptedResponse.median),  clientKey),
+          bitWidth: encryptedResponse.bit_width,
         };
       case 16:
         return {
-          sum:     this.tfheService.decryptInt32(fromBase64(encryptedResponse.sum),     clientKey),
-          count:   encryptedResponse.count,
-          min:     this.tfheService.decryptInt16(fromBase64(encryptedResponse.min),     clientKey),
-          max:     this.tfheService.decryptInt16(fromBase64(encryptedResponse.max),     clientKey),
-          average: this.tfheService.decryptInt32(fromBase64(encryptedResponse.average), clientKey),
-          median:  this.tfheService.decryptInt16(fromBase64(encryptedResponse.median),  clientKey),
+          sum:      this.tfheService.decryptInt32(fromBase64(encryptedResponse.sum),     clientKey),
+          count:    encryptedResponse.count,
+          min:      this.tfheService.decryptInt16(fromBase64(encryptedResponse.min),     clientKey),
+          max:      this.tfheService.decryptInt16(fromBase64(encryptedResponse.max),     clientKey),
+          average:  this.tfheService.decryptInt32(fromBase64(encryptedResponse.average), clientKey),
+          median:   this.tfheService.decryptInt16(fromBase64(encryptedResponse.median),  clientKey),
+          bitWidth: encryptedResponse.bit_width,
         };
       case 32:
         return {
           // Int64 dekryptiert als bigint; Number()-Cast hier sicher:
           // Selbst 1.000 × i32::MAX ≈ 2 Billionen liegt weit unter Number.MAX_SAFE_INTEGER (2^53 ≈ 9 Billiarden).
-          sum:     Number(this.tfheService.decryptInt64(fromBase64(encryptedResponse.sum),     clientKey)),
-          count:   encryptedResponse.count,
-          min:     this.tfheService.decryptInt32(fromBase64(encryptedResponse.min),     clientKey),
-          max:     this.tfheService.decryptInt32(fromBase64(encryptedResponse.max),     clientKey),
-          average: Number(this.tfheService.decryptInt64(fromBase64(encryptedResponse.average), clientKey)),
-          median:  this.tfheService.decryptInt32(fromBase64(encryptedResponse.median),  clientKey),
+          sum:      Number(this.tfheService.decryptInt64(fromBase64(encryptedResponse.sum),     clientKey)),
+          count:    encryptedResponse.count,
+          min:      this.tfheService.decryptInt32(fromBase64(encryptedResponse.min),     clientKey),
+          max:      this.tfheService.decryptInt32(fromBase64(encryptedResponse.max),     clientKey),
+          average:  Number(this.tfheService.decryptInt64(fromBase64(encryptedResponse.average), clientKey)),
+          median:   this.tfheService.decryptInt32(fromBase64(encryptedResponse.median),  clientKey),
+          bitWidth: encryptedResponse.bit_width,
         };
     }
   }
