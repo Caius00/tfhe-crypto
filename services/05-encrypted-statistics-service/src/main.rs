@@ -1,3 +1,23 @@
+//! # Encrypted Statistics Service
+//!
+//! Berechnet Summe, Anzahl, Min, Max, Durchschnitt und Median über eine verschlüsselte
+//! Ganzzahlen-Liste, ohne die Werte jemals im Klartext zu sehen. Client und Server tauschen
+//! ausschließlich FHE-Ciphertexte aus (Base64/bincode-kodiert); der Server dekomprimiert den
+//! mitgelieferten ServerKey, führt alle Berechnungen homomorph durch und gibt verschlüsselte
+//! Ergebnisse zurück. Ablauf, Threat-Model und Performance-Messungen: `spec.md`.
+//!
+//! ## Typen-Mapping je nach `bit_width`
+//!
+//! | bit_width | Eingabe  | Summe / Durchschnitt |
+//! |-----------|----------|----------------------|
+//! | 8         | FheInt8  | FheInt16             |
+//! | 16        | FheInt16 | FheInt32             |
+//! | 32        | FheInt32 | FheInt64             |
+//!
+//! Summe und Durchschnitt verwenden den nächstbreiteren Typ um Overflow zu verhindern.
+//! `count` ist der einzige Klartextwert in der Response — die Listenlänge ist dem
+//! Server durch die Array-Länge im Request ohnehin bekannt.
+
 mod fhe;
 mod statistics;
 
@@ -124,6 +144,8 @@ where
     }))
 }
 
+/// Serialisiert einen FHE-Ciphertext via bincode und kodiert ihn als Base64-String
+/// für den JSON-Response. Gegenstück zu `deserialize_encrypted_list` auf der Eingabeseite.
 fn to_base64<T: Serialize>(value: &T) -> Result<String, (StatusCode, String)> {
     bincode::serialize(value)
         .map(|serialized_bytes| general_purpose::STANDARD.encode(serialized_bytes))
@@ -221,6 +243,10 @@ async fn compute_statistics(
     }
 }
 
+/// Baut den vollständigen Axum-Router zusammen:
+/// API-Route (`POST /`), OpenAPI-Docs (`/docs`, `/openapi.json`),
+/// Health-Endpunkte (`/healthz`, `/readyz`, `/version`),
+/// Prometheus-Metriken (`/metrics`) und HTTP-Tracing-Layer.
 pub(crate) fn create_app() -> Router {
     let (metrics_layer, metrics_router) = metrics_exporter::setup();
 

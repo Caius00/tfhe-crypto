@@ -11,33 +11,25 @@ UC5 berechnet statistische Kennzahlen (Summe, Anzahl, Minimum, Maximum, Durchsch
 
 **Session-Lebenszyklus:**
 
-```
-Client                                      Server
-  │                                            │
-  │ 1. TFHE-Schlüsselpaar generieren            │
-  │    (ClientKey + CompressedServerKey)        │
-  │                                            │
-  │ 2. Optimale Bitbreite ermitteln             │
-  │    (min/max → Int8 / Int16 / Int32)         │
-  │                                            │
-  │ 3. Jeden Wert mit ClientKey verschlüsseln   │
-  │    → bincode-serialisiert, Base64-kodiert   │
-  │                                            │
-  │──── POST / {encrypted_list, server_key, ───▶│
-  │            bit_width}                       │
-  │                                            │
-  │                    4. ServerKey dekomprimieren + auf
-  │                       rayon-ThreadPool installieren
-  │                                            │
-  │                    5. Homomorphe Berechnung:
-  │                       sum, count, min, max,
-  │                       average, median (Batcher-Sort)
-  │                                            │
-  │◀─── {sum, count, min, max, average, ───────│
-  │      median, bit_width}                     │
-  │                                            │
-  │ 6. Jeden Ciphertext mit ClientKey           │
-  │    entschlüsseln → Klartext-Ergebnis        │
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant S as Server
+
+    Note over C: 1. Schlüsselpaar generieren (ClientKey + ServerKey)
+    Note over C: 2. Bitbreite wählen: min/max → Int8 / Int16 / Int32
+    Note over C: 3. Werte verschlüsseln → bincode → Base64
+
+    C->>+S: POST / { encrypted_list, server_key, bit_width }
+
+    Note over S: 4. ServerKey dekomprimieren → FheEngine (rayon ThreadPool)
+    Note over S: 5. Ciphertexte deserialisieren: Base64 → bincode → FheIntN
+    Note over S: 6. Statistiken berechnen: sum, count, min, max, average, median
+    Note over S: 7. Ergebnisse serialisieren: FheIntN → bincode → Base64
+
+    S-->>-C: { sum, count, min, max, average, median, bit_width }
+
+    Note over C: 8. Ergebnisse mit ClientKey entschlüsseln → Klartext
 ```
 
 ---

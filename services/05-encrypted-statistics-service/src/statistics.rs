@@ -57,7 +57,7 @@ pub fn count<T>(encrypted_list: &[T]) -> usize {
 
 /// Berechnet das Minimum der Liste homomorph.
 /// Der Server wertet den Vergleich nie im Klartext aus — `if_then_else` auf `FheBool`
-/// wählt das Ergebnis homomorph aus, ohne den tatsächlichen Wert zu kennen.
+/// wählt das Ergebnis homomorph aus.
 ///
 /// Zeitkomplexität: O(log n) Tiefe (paralleles Reduce), O(n) Vergleiche gesamt.
 pub fn min<T>(encrypted_list: &[T]) -> T
@@ -152,6 +152,9 @@ fn batcher_network(element_count: usize) -> Vec<Vec<(usize, usize)>> {
     rounds
 }
 
+/// Sortierschritt des Batcher-Netzwerks: teilt `[low, high)` in zwei Hälften,
+/// sortiert jede Hälfte rekursiv und führt sie mit `batcher_merge` zusammen.
+/// Aufgerufen ausschließlich von `batcher_network`.
 fn batcher_sort(
     low: usize,
     high: usize,
@@ -173,6 +176,10 @@ fn batcher_sort(
     )
 }
 
+/// Merge-Schritt des Batcher Odd-Even-Merge: führt zwei sortierte Subsequenzen
+/// durch ein Netz von Komparatoren zusammen. `step` verdoppelt sich pro Rekursionsstufe
+/// und steuert, welche Elemente jeweils verglichen werden (even / odd interleaving).
+/// Aufgerufen von `batcher_sort`.
 fn batcher_merge(
     low: usize,
     high: usize,
