@@ -1,0 +1,53 @@
+:host {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  flex-direction: column;
+
+  .editor-container {
+    display: flex;
+    position: relative;
+    border: 1px solid lightgray;
+    border-radius: 4px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 14px;
+    line-height: 1.5;
+    height: 300px;
+    background-color: white;
+    overflow: hidden;
+
+    .line-numbers {
+      width: 45px;
+      text-align: right;
+      padding: 10px 8px 10px 0;
+      background-color: white;
+      color: lightgray;
+      border-right: 1px solid black;
+      flex-direction: column;
+      overflow: hidden;
+      user-select: none;
+
+      .line-number {
+        height: 21px;
+        width: 100%;
+        color: #333;
+      }
+    }
+
+    textarea {
+      overscroll-behavior: none;
+      flex: 1;
+      border: none;
+      outline: none;
+      padding: 10px;
+      margin: 0;
+      resize: none;
+      font-family: inherit;
+      font-size: inherit;
+      line-height: inherit;
+      white-space: pre;
+      overflow-wrap: normal;
+      overflow-x: auto;
+    }
+  }
+}

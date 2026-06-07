@@ -34,11 +34,13 @@ impl CPU {
     pub fn execute_program(&mut self, cycles: usize, sk: &ServerKey) {
         let mut i = 0usize;
         loop {
+            println!("{}", i);
             if i >= cycles {
                 break;
             }
 
             let (op, or) = self.fetch(sk);
+            println!("fetch done");
             self.execute_cycle(&op, &or, sk);
             i += 1;
         }
@@ -140,6 +142,8 @@ impl CPU {
         let is_xor = opcode.eq(0x1Eu8);
         let is_dec = opcode.eq(0x1Fu8);
         let is_inc = opcode.eq(0x20u8);
+
+        println!("decode done");
 
         let one_u8 = &FheUint8::encrypt_trivial(1u8);
         let zero_u8 = &FheUint8::encrypt_trivial(0u8);
@@ -257,6 +261,7 @@ impl CPU {
                 },
             )
             .expect("");
+        println!("arithmetic done");
 
         let bit_7 = (&self.a & msb_enc).ne(0u8);
         let bit_0 = (&self.a & one_u8).ne(0u8);
@@ -296,6 +301,7 @@ impl CPU {
             let matches_idx = operand.eq(idx as u8);
             loaded_mem_val = matches_idx.cmux(cell, &loaded_mem_val);
         }
+        println!("memory done");
 
         let a_is_zero = self.a.eq(0u8);
 
@@ -336,6 +342,7 @@ impl CPU {
         next_a = is_xor.cmux(&res_xor, &next_a);
         next_a = is_dec.cmux(&res_dec, &next_a);
         next_a = is_inc.cmux(&res_inc, &next_a);
+        println!("a cmux done");
 
         let mut next_b = self.b.clone();
         next_b = is_swp.cmux(&self.a, &next_b);

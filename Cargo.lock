@@ -1019,12 +1019,15 @@ name = "encrypted-program-execution"
 version = "0.1.21"
 dependencies = [
  "axum 0.8.9",
+ "base64",
  "bincode",
  "rayon",
  "serde",
+ "serde_json",
  "tfhe",
  "tokio",
  "tower 0.5.3",
+ "tower-http",
 ]
 
 [[package]]

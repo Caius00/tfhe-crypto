@@ -1,89 +1,124 @@
-use crate::cpu::*;
-use axum::body::Bytes;
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
-use axum::routing::post;
-use axum::Router;
+use crate::cpu::make_cpu;
+use axum::{
+    extract::DefaultBodyLimit, http::StatusCode, response::IntoResponse, routing::post, Json,
+    Router,
+};
+use base64::{engine::general_purpose::STANDARD, Engine};
+use bincode::{deserialize, serialize, Options};
 use serde::{Deserialize, Serialize};
-use tfhe::{set_server_key, FheBool, FheUint8, ServerKey};
+use tfhe::{set_server_key, CompressedServerKey, FheBool, FheUint8};
+use tower_http::cors::{Any, CorsLayer};
 
 mod cpu;
 
 #[derive(Deserialize, Serialize)]
 struct ExecReq {
-    server_key: ServerKey,
+    server_key: String,
     cycles: usize,
-    a: FheUint8,
-    b: FheUint8,
-    pc: FheUint8,
-    carry: FheBool,
-    memory: Vec<FheUint8>,
+    a: String,
+    b: String,
+    pc: String,
+    carry: String,
+    memory: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize)]
 struct ExecResp {
-    a: FheUint8,
-    b: FheUint8,
-    pc: FheUint8,
-    carry: FheBool,
-    memory: Vec<FheUint8>,
+    a: String,
+    b: String,
+    pc: String,
+    carry: String,
+    memory: Vec<String>,
 }
 
 #[tokio::main]
 async fn main() {
-    let app = Router::new().route("/execute", post(handle_compute));
+    let app = Router::new()
+        .route("/execute", post(handle_compute))
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods(Any)
+                .allow_headers(Any),
+        )
+        .layer(DefaultBodyLimit::disable());
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn handle_compute(body_bytes: Bytes) -> impl IntoResponse {
-    let request_data: ExecReq = match bincode::deserialize(&body_bytes) {
-        Ok(data) => data,
-        Err(_) => return (StatusCode::BAD_REQUEST, "loser").into_response(),
-    };
+pub fn dd(s: &str) -> Vec<u8> {
+    STANDARD.decode(s).expect("")
+}
 
-    if request_data.memory.is_empty() {
+pub(crate) fn ddsk(encoded: &str) -> CompressedServerKey {
+    let bytes = STANDARD.decode(encoded).expect("");
+
+    deserialize(&bytes).expect("")
+}
+
+pub fn ee<T: serde::Serialize>(value: &T) -> String {
+    let raw_bytes = serialize(value).unwrap();
+    STANDARD.encode(raw_bytes)
+}
+
+async fn handle_compute(Json(req): Json<ExecReq>) -> impl IntoResponse {
+    println!("start");
+    if req.memory.is_empty() {
         return (StatusCode::BAD_REQUEST, "idiot").into_response();
     }
 
-    let mut cpu = make_cpu(request_data.memory.len());
+    let sk = ddsk(&req.server_key).decompress();
 
-    cpu.a = request_data.a;
-    cpu.b = request_data.b;
-    cpu.pc = request_data.pc;
-    cpu.carry = request_data.carry;
-    cpu.memory = request_data.memory;
+    println!("got sk!");
 
-    let sk = request_data.server_key;
     set_server_key(sk.clone());
 
-    cpu.execute_program(request_data.cycles, &sk);
+    let fhe_a: FheUint8 = deserialize(&dd(&req.a)).unwrap();
+    let fhe_b: FheUint8 = deserialize(&dd(&req.b)).unwrap();
+    let fhe_pc: FheUint8 = deserialize(&dd(&req.pc)).unwrap();
+    let fhe_carry: FheBool = deserialize(&dd(&req.carry)).unwrap();
 
-    match bincode::serialize(&ExecResp {
-        a: cpu.a,
-        b: cpu.b,
-        pc: cpu.pc,
-        carry: cpu.carry,
-        memory: cpu.memory,
-    }) {
-        Ok(binary_bytes) => {
-            use axum::response::IntoResponse;
-            ([("content-type", "application/octet-stream")], binary_bytes).into_response()
-        }
-        Err(_) => {
-            use axum::http::StatusCode;
-            (StatusCode::INTERNAL_SERVER_ERROR, "fuck you").into_response()
-        }
+    println!("got registers");
+
+    let mut fhe_memory: Vec<FheUint8> = Vec::with_capacity(req.memory.len());
+    for cell_b64 in &req.memory {
+        let cell_bytes = dd(cell_b64);
+        fhe_memory.push(deserialize(&cell_bytes).unwrap());
     }
+
+    println!("got ram");
+
+    let mut cpu = make_cpu(fhe_memory.len());
+    cpu.a = fhe_a;
+    cpu.b = fhe_b;
+    cpu.pc = fhe_pc;
+    cpu.carry = fhe_carry;
+    cpu.memory = fhe_memory;
+
+    println!("got cpu, start exec");
+    println!("{}", cpu.memory.len());
+    cpu.execute_program(req.cycles, &sk);
+
+    let resp = ExecResp {
+        a: ee(&cpu.a),
+        b: ee(&cpu.b),
+        pc: ee(&cpu.pc),
+        carry: ee(&cpu.carry),
+        memory: cpu.memory.iter().map(ee).collect(),
+    };
+
+    Json(resp).into_response()
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use axum::body::Body;
     use axum::extract::DefaultBodyLimit;
-    use axum::http::Request;
+    use axum::http::{Request, StatusCode};
+    use axum::routing::post;
     use tfhe::prelude::{FheDecrypt, FheTrivialEncrypt};
     use tfhe::ConfigBuilder;
     use tower::util::ServiceExt;
@@ -94,44 +129,45 @@ mod tests {
         let (ck, sk) = tfhe::generate_keys(config);
         set_server_key(sk.clone());
 
-        let mut mem = vec![FheUint8::encrypt_trivial(0u8); 16];
+        let mut mem = vec![ee(&FheUint8::encrypt_trivial(0u8)); 16];
 
-        mem[0] = FheUint8::encrypt_trivial(0x02u8); // LDA immediate
-        mem[1] = FheUint8::encrypt_trivial(0x05u8); // data
-        mem[2] = FheUint8::encrypt_trivial(0x04u8); // SWP
-        mem[3] = FheUint8::encrypt_trivial(0x00u8); // ignored
-        mem[4] = FheUint8::encrypt_trivial(0x09u8); // ADD
-        mem[5] = FheUint8::encrypt_trivial(0x00u8); // ignored
-        mem[6] = FheUint8::encrypt_trivial(0x1Fu8); // DEC
-        mem[7] = FheUint8::encrypt_trivial(0x00u8); // ignored
-        mem[8] = FheUint8::encrypt_trivial(0x03u8); // LDR
-        mem[9] = FheUint8::encrypt_trivial(0x00u8); // ADR
-        mem[10] = FheUint8::encrypt_trivial(0x11u8); // MUL
-        mem[11] = FheUint8::encrypt_trivial(0x00u8); // ignored
-        mem[12] = FheUint8::encrypt_trivial(0x01u8); // LDA
-        mem[13] = FheUint8::encrypt_trivial(0x00u8); // Address
-        mem[14] = FheUint8::encrypt_trivial(0x08u8); // DJNZ
-        mem[15] = FheUint8::encrypt_trivial(0x08u8); // Address
+        mem[0] = ee(&FheUint8::encrypt_trivial(0x02u8)); // LDA immediate
+        mem[1] = ee(&FheUint8::encrypt_trivial(0x05u8)); // data
+        mem[2] = ee(&FheUint8::encrypt_trivial(0x04u8)); // SWP
+        mem[3] = ee(&FheUint8::encrypt_trivial(0x00u8)); // ignored
+        mem[4] = ee(&FheUint8::encrypt_trivial(0x09u8)); // ADD
+        mem[5] = ee(&FheUint8::encrypt_trivial(0x00u8)); // ignored
+        mem[6] = ee(&FheUint8::encrypt_trivial(0x1Fu8)); // DEC
+        mem[7] = ee(&FheUint8::encrypt_trivial(0x00u8)); // ignored
+        mem[8] = ee(&FheUint8::encrypt_trivial(0x03u8)); // LDR
+        mem[9] = ee(&FheUint8::encrypt_trivial(0x00u8)); // ADR
+        mem[10] = ee(&FheUint8::encrypt_trivial(0x11u8)); // MUL
+        mem[11] = ee(&FheUint8::encrypt_trivial(0x00u8)); // ignored
+        mem[12] = ee(&FheUint8::encrypt_trivial(0x01u8)); // LDA
+        mem[13] = ee(&FheUint8::encrypt_trivial(0x00u8)); // Address
+        mem[14] = ee(&FheUint8::encrypt_trivial(0x08u8)); // DJNZ
+        mem[15] = ee(&FheUint8::encrypt_trivial(0x08u8)); // Address
 
         let pl = ExecReq {
-            server_key: sk,
+            server_key: ee(&CompressedServerKey::new(&ck)),
             cycles: 14,
-            a: FheUint8::encrypt_trivial(0u8),
-            b: FheUint8::encrypt_trivial(0u8),
-            pc: FheUint8::encrypt_trivial(0u8),
-            carry: FheBool::encrypt_trivial(false),
+            a: ee(&FheUint8::encrypt_trivial(0u8)),
+            b: ee(&FheUint8::encrypt_trivial(0u8)),
+            pc: ee(&FheUint8::encrypt_trivial(0u8)),
+            carry: ee(&FheBool::encrypt_trivial(false)),
             memory: mem,
         };
-        let serialized = bincode::serialize(&pl).expect("");
+
+        let serialized = serde_json::to_vec(&pl).expect("");
 
         let app = Router::new()
-            .route("/compute", post(handle_compute))
+            .route("/execute", post(handle_compute))
             .layer(DefaultBodyLimit::disable());
 
         let req = Request::builder()
             .method("POST")
-            .uri("/compute")
-            .header("content-type", "application/octet-stream")
+            .uri("/execute")
+            .header("content-type", "application/json")
             .body(Body::from(serialized))
             .unwrap();
 
@@ -143,12 +179,22 @@ mod tests {
             .await
             .expect("");
 
-        let rpl: ExecResp = bincode::deserialize(&bytes).expect("");
+        let rpl: ExecResp = serde_json::from_slice(&bytes).expect("");
 
-        let a: u8 = rpl.pc.decrypt(&ck);
-        let b: u8 = rpl.a.decrypt(&ck);
-        let c: u8 = rpl.b.decrypt(&ck);
-        let d: u8 = rpl.memory[0].decrypt(&ck);
+        let bytes_pc = dd(&rpl.pc);
+        let bytes_a = dd(&rpl.a);
+        let bytes_b = dd(&rpl.b);
+        let bytes_mem_0 = dd(&rpl.memory[0]);
+
+        let fhe_pc: FheUint8 = deserialize(&bytes_pc).unwrap();
+        let fhe_a: FheUint8 = deserialize(&bytes_a).unwrap();
+        let fhe_b: FheUint8 = deserialize(&bytes_b).unwrap();
+        let fhe_mem_0: FheUint8 = deserialize(&bytes_mem_0).unwrap();
+
+        let a: u8 = fhe_pc.decrypt(&ck);
+        let b: u8 = fhe_a.decrypt(&ck);
+        let c: u8 = fhe_b.decrypt(&ck);
+        let d: u8 = fhe_mem_0.decrypt(&ck);
 
         assert_eq!(12u8, a);
         assert_eq!(0u8, b);

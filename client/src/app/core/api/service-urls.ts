@@ -61,6 +61,6 @@ export const SERVICE_URLS = {
   programExecution: {
     localBase: LOCAL_BASE,
     remoteBase: REMOTE_BASE,
-    path: '/program-execution',
+    path: '/execute',
   },
 } satisfies Record<string, ServiceConfig>;

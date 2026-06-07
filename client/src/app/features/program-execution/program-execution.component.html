@@ -1,1 +1,36 @@
-<h1>09 – Encrypted Program Execution</h1>
+<h1>Meddl Loide</h1>
+
+<div class="editor-container">
+    <div #lineCounter class="line-numbers">
+        @for (line of lines; track line) {
+            <div class="line-number">
+                ${{ line * 2 }}
+            </div>
+        }
+    </div>
+
+    <textarea
+        #textarea
+        [value]="programme"
+        (input)="onTextChange(textarea.value)"
+        (scroll)="onScroll()"
+        placeholder=""
+        [spellcheck]="false">
+  </textarea>
+</div>
+
+<span>RAM size: {{ lineCount * 2 }}B</span>
+
+<div class="registers">
+    <app-input label="Acc value (hex)" [(value)]="a"></app-input>
+    <app-input label="B value (hex)" [(value)]="b"></app-input>
+    <app-input label="PC value (hex)" [(value)]="c"></app-input>
+    <app-checkbox label="carry" [(checked)]="carry"></app-checkbox>
+</div>
+<app-input label="cycles to execute:" [(value)]="cycles"></app-input>
+
+
+<app-button (clicked)="assemble()"></app-button>
+@if (displayMessage) {
+    {{ message }}
+}
