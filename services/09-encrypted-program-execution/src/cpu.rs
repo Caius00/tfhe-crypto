@@ -7,6 +7,7 @@ use tfhe::prelude::{
 };
 use tfhe::{set_server_key, FheBool, FheUint16, FheUint8, ServerKey};
 
+#[allow(clippy::upper_case_acronyms)]
 pub struct CPU<const SIZE: usize> {
     pub a: FheUint8,
     pub b: FheUint8,
