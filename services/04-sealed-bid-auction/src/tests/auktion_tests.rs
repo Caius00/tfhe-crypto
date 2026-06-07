@@ -172,25 +172,20 @@ async fn test_local_direct_crypto_flow() {
     clear_bids();
     let (client_key, sk_b64) = get_tfhe_setup();
 
-    
     let klartext_wert = 1337u32;
     let enc_wert = FheUint32::encrypt(klartext_wert, client_key);
 
-   
     let amt_bytes = bincode::serialize(&enc_wert).unwrap();
     let amt_b64 = general_purpose::STANDARD.encode(&amt_bytes);
 
-   
     let mock_request = axum::Json(crate::auction::types::BidRequest {
         bidder_name: "KryptoExperte".to_string(),
         encrypted_amount: amt_b64,
         server_key: sk_b64.clone(),
     });
 
-
     let ergebnis = auction::gebot_empfangen(mock_request).await;
 
-   
     assert!(
         ergebnis.is_ok(),
         "Mensch! Das Backend hat das echte TFHE-Kryptogramm mit einem Fehler abgewiesen!"

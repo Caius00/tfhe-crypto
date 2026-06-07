@@ -36,9 +36,8 @@ async fn main() {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    
     let app = openapi_docs::attach(
-     api_router(),
+        api_router(),
         "04 - Sealed-Bid Auction",
         "Homomorphic sealed-bid auction service: Submitting encrypted bids and \
          evaluating the winner server-side without revealing the actual amounts.",
@@ -48,7 +47,6 @@ async fn main() {
     .layer(DefaultBodyLimit::max(2 * 1024 * 1024 * 1024)) // Für die großen TFHE-Keys
     .layer(cors);
 
-  
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));
 
     let listener = match tokio::net::TcpListener::bind(addr).await {
@@ -61,6 +59,5 @@ async fn main() {
 
     println!("\n🚀 Auktions-Backend läuft lokal auf http://127.0.0.1:8080");
 
-    
     axum::serve(listener, app).await.unwrap();
 }
