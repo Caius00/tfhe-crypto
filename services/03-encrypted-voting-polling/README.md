@@ -1,6 +1,6 @@
 # 🗳️ 03 · Encrypted Voting & Polling
 
-![version](https://img.shields.io/badge/version-0.1.27-blue)
+![version](https://img.shields.io/badge/version-0.1.29-blue)
 
 Homomorphes Voting/Polling: der Ersteller kontrolliert die Session, Teilnehmer
 müssen freigegeben werden, Stimmen werden serverseitig **ohne Entschlüsselung**

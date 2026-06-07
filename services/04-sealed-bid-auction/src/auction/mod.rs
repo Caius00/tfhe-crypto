@@ -41,18 +41,14 @@ pub async fn gebot_empfangen(axum::Json(req): axum::Json<BidRequest>) -> ApiResu
             )
         })?;
 
-    let enc_amount: tfhe::FheUint32 = match bincode::deserialize(&bid_bytes) {
-        Ok(fhe_type) => fhe_type,
-        Err(e) => {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                format!(
-                    "Failed to deserialize Encrypted Amount into TFHE type: {}",
-                    e
-                ),
-            ))?;
-        }
-    };
+    // 4. Gebot deserialisieren
+    let enc_amount: tfhe::FheUint32 = bincode::deserialize(&bid_bytes).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("Failed to deserialize Encrypted Amount: {}", e),
+        )
+    })?;
+
     // 5. Gebot zusammen mit den sk_bytes sichern!
     let neues_gebot = Bid {
         bidder_name: req.bidder_name,

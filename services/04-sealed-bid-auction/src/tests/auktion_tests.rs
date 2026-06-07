@@ -76,7 +76,7 @@ async fn get_json(app: &Router, uri: &str) -> (StatusCode, Value) {
     (status, json)
 }
 
-// ── TEST 1: Erfolgreicher Auktions-Durchlauf (Verschlüsseln -> Senden -> Auswerten) ──
+// TEST 1: Erfolgreicher Auktions-Durchlauf (Verschlüsseln -> Senden -> Auswerten)
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[serial]
@@ -126,13 +126,13 @@ async fn test_auction_successful_flow() {
     let ergebnis: bool = ist_b_groesser.decrypt(client_key);
 
     assert!(
-        ergebnis, "Mathematischer FHE-Check fehlgeschlagen: Gebot B (750) muss als größer als Gebot A (500) evaluiert werden!"
-    );
+            ergebnis,"Mathematischer FHE-Check fehlgeschlagen: Gebot B (750) muss als größer als Gebot A (500) evaluiert werden!"
+        );
 
     println!("✅ test: Vollständiger FHE-Auktionsdurchlauf inklusive Entschlüsselung erfolgreich!");
 }
 
-// ── TEST 2: Fehlerfall - Auswertung ohne Gebote ──
+// TEST 2: Fehlerfall - Auswertung ohne Gebote
 
 #[tokio::test]
 async fn test_error_evaluation_empty_list() {
@@ -145,7 +145,7 @@ async fn test_error_evaluation_empty_list() {
     println!("✅ test: Leere Liste wird bei Auswertung korrekt blockiert!");
 }
 
-// ── TEST 3: Fehlerfall - Defektes Base64 Format ──
+// TEST 3: Fehlerfall - Defektes Base64 Format
 
 #[tokio::test]
 async fn test_error_invalid_base64_format() {
@@ -161,35 +161,5 @@ async fn test_error_invalid_base64_format() {
 
     let (status, _) = post_json(&app, "/gebot", malformed_payload).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    println!("✅ test: Falsches Base64-Format wird sicher abgefangen!");
-}
-
-// ── TEST 4: Lokale Verifikation des echten TFHE-Kryptoflusses (Manuelles Aufrufen) ──
-
-#[tokio::test]
-#[serial]
-async fn test_local_direct_crypto_flow() {
-    clear_bids();
-    let (client_key, sk_b64) = get_tfhe_setup();
-
-    let klartext_wert = 1337u32;
-    let enc_wert = FheUint32::encrypt(klartext_wert, client_key);
-
-    let amt_bytes = bincode::serialize(&enc_wert).unwrap();
-    let amt_b64 = general_purpose::STANDARD.encode(&amt_bytes);
-
-    let mock_request = axum::Json(crate::auction::types::BidRequest {
-        bidder_name: "KryptoExperte".to_string(),
-        encrypted_amount: amt_b64,
-        server_key: sk_b64.clone(),
-    });
-
-    let ergebnis = auction::gebot_empfangen(mock_request).await;
-
-    assert!(
-        ergebnis.is_ok(),
-        "Mensch! Das Backend hat das echte TFHE-Kryptogramm mit einem Fehler abgewiesen!"
-    );
-
-    println!("✅ test: Lokaler Krypto-Validierungstest war vollkommen erfolgreich!");
+    println!("✅test: Falsches Base64-Format wird sicher abgefangen!");
 }
