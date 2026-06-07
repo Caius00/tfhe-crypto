@@ -3,7 +3,6 @@ mod auction;
 #[path = "tests/auktion_tests.rs"]
 mod auktion_tests;
 
-
 use axum::extract::DefaultBodyLimit;
 use tower_http::cors::{Any, CorsLayer};
 
