@@ -45,7 +45,7 @@ impl CPU {
     }
 
     fn fetch(&self, sk: &ServerKey) -> (FheUint8, FheUint8) {
-        let pc_plus_1 = &self.pc + 1u8 % self.memory.len() as u8;
+        let pc_plus_1 = (&self.pc + 1u8) % self.memory.len() as u8;
 
         let mut chunk_results = None;
         let chunk_size = 16;
@@ -654,9 +654,9 @@ mod tests {
 
         cpu.execute_program(1, &sk);
 
-        let a: u8 = a;
-        let b: u8 = b;
-        let c: u8 = c;
+        let a: u8 = cpu.pc.decrypt(&ck);
+        let b: u8 = cpu.a.decrypt(&ck);
+        let c: u8 = cpu.b.decrypt(&ck);
 
         assert_eq!(8u8, a);
         assert_eq!(4u8, b);
@@ -676,9 +676,9 @@ mod tests {
 
         cpu.execute_program(1, &sk);
 
-        let a: u8 = a;
-        let b: u8 = b;
-        let c: u8 = c;
+        let a: u8 = cpu.pc.decrypt(&ck);
+        let b: u8 = cpu.a.decrypt(&ck);
+        let c: u8 = cpu.b.decrypt(&ck);
         let d: u8 = cpu.memory[0].decrypt(&ck);
 
         assert_eq!(12u8, a);
@@ -688,9 +688,9 @@ mod tests {
 
         cpu.execute_program(1, &sk);
 
-        let a: u8 = a;
-        let b: u8 = b;
-        let c: u8 = c;
+        let a: u8 = cpu.pc.decrypt(&ck);
+        let b: u8 = cpu.a.decrypt(&ck);
+        let c: u8 = cpu.b.decrypt(&ck);
         let d: u8 = cpu.memory[0].decrypt(&ck);
 
         assert_eq!(14u8, a);
@@ -724,9 +724,9 @@ mod tests {
 
         cpu.execute_program(1, &sk);
 
-        let a: u8 = a;
-        let b: u8 = b;
-        let c: u8 = c;
+        let a: u8 = cpu.pc.decrypt(&ck);
+        let b: u8 = cpu.a.decrypt(&ck);
+        let c: u8 = cpu.b.decrypt(&ck);
         let d: u8 = cpu.memory[0].decrypt(&ck);
 
         assert_eq!(12u8, a);

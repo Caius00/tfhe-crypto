@@ -8,3 +8,10 @@ description = "Encrypted Program Execution"
 [dependencies]
 tfhe = { workspace = true, features = ["software-prng"] }
 rayon = "1.11.0"
+axum.workspace = true
+tokio = { workspace = true, features = ["full"] }
+serde.workspace = true
+bincode = "1.3.3"
+
+[dev-dependencies]
+tower = "0.5"
