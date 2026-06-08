@@ -17,7 +17,7 @@ env:
 
 jobs:
   changes:
-    runs-on: bunto #ubuntu-latest
+    runs-on: self-hosted #ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
       any: ${{ steps.matrix.outputs.any }}
@@ -90,7 +90,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.any == 'true'
     name: "${{ matrix.nr }} ${{ matrix.service }}"
-    runs-on: bunto #ubuntu-latest
+    runs-on: self-hosted #ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -173,7 +173,7 @@ jobs:
   summary:
     needs: check
     if: always()
-    runs-on: bunto #ubuntu-latest
+    runs-on: self-hosted #ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
