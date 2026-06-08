@@ -1028,7 +1028,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-statistics-service"
-version = "0.1.23"
+version = "0.1.24"
 dependencies = [
  "aide",
  "axum 0.8.9",
