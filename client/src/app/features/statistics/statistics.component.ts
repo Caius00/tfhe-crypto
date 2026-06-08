@@ -2,9 +2,12 @@ import { Component, signal } from '@angular/core';
 import { TfheService } from '../../core/crypto/tfhe.service';
 import { StatisticsApiService } from '../../core/api/statistics-api.service';
 import { KeyPair } from '../../core/crypto/key-pair.model';
+import { AlertComponent } from '../../shared/components/alert/alert.component';
 import { ButtonComponent } from '../../shared/components/button/button.component';
+import { CardComponent } from '../../shared/components/card/card.component';
 import { InputComponent } from '../../shared/components/input/input.component';
-import { SpinnerComponent } from '../../shared/components/spinner/spinner.component';
+import { LoadingOverlayComponent } from '../../shared/components/loading-overlay/loading-overlay.component';
+import { PageHeaderComponent } from '../../shared/components/page-header/page-header.component';
 
 type WorkflowStep = 'init' | 'generating' | 'enter-list' | 'computing' | 'result' | 'error';
 
@@ -45,7 +48,7 @@ export function selectOptimalBitWidth(numbers: number[]): 8 | 16 | 32 {
  */
 @Component({
   selector: 'app-statistics',
-  imports: [ButtonComponent, InputComponent, SpinnerComponent],
+  imports: [AlertComponent, ButtonComponent, CardComponent, InputComponent, LoadingOverlayComponent, PageHeaderComponent],
   templateUrl: './statistics.component.html',
 })
 export class StatisticsComponent {
@@ -211,7 +214,7 @@ export class StatisticsComponent {
           max:      this.tfheService.decryptInt8( fromBase64(encryptedResponse.max),     clientKey),
           average:  this.tfheService.decryptInt16(fromBase64(encryptedResponse.average), clientKey),
           median:   this.tfheService.decryptInt8( fromBase64(encryptedResponse.median),  clientKey),
-          bitWidth: encryptedResponse.bit_width,
+          bitWidth: encryptedResponse.bit_width ?? bitWidth,
         };
       case 16:
         return {
@@ -221,7 +224,7 @@ export class StatisticsComponent {
           max:      this.tfheService.decryptInt16(fromBase64(encryptedResponse.max),     clientKey),
           average:  this.tfheService.decryptInt32(fromBase64(encryptedResponse.average), clientKey),
           median:   this.tfheService.decryptInt16(fromBase64(encryptedResponse.median),  clientKey),
-          bitWidth: encryptedResponse.bit_width,
+          bitWidth: encryptedResponse.bit_width ?? bitWidth,
         };
       case 32:
         return {
@@ -233,7 +236,7 @@ export class StatisticsComponent {
           max:      this.tfheService.decryptInt32(fromBase64(encryptedResponse.max),     clientKey),
           average:  Number(this.tfheService.decryptInt64(fromBase64(encryptedResponse.average), clientKey)),
           median:   this.tfheService.decryptInt32(fromBase64(encryptedResponse.median),  clientKey),
-          bitWidth: encryptedResponse.bit_width,
+          bitWidth: encryptedResponse.bit_width ?? bitWidth,
         };
     }
   }

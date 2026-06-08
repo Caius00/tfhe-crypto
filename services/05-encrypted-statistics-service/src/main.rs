@@ -112,7 +112,7 @@ fn compute_statistics_typed<InputType, WiderOutputType>(
 where
     InputType: Clone + FheOrd + CastInto<WiderOutputType> + Sync + Send + Serialize,
     WiderOutputType:
-        Add<WiderOutputType, Output = WiderOutputType> + DivideByElementCount + Send + Serialize,
+        Add<WiderOutputType, Output = WiderOutputType> + DivideByElementCount + Send + Serialize + Clone,
     FheBool: IfThenElse<InputType>,
 {
     let (encrypted_sum, encrypted_min, encrypted_max, encrypted_average, encrypted_median) =
@@ -121,7 +121,8 @@ where
                 let encrypted_sum: WiderOutputType = statistics::sum(&encrypted_input_list);
                 let encrypted_min: InputType = statistics::min(&encrypted_input_list);
                 let encrypted_max: InputType = statistics::max(&encrypted_input_list);
-                let encrypted_average: WiderOutputType = statistics::average(&encrypted_input_list);
+                let encrypted_average: WiderOutputType =
+                    statistics::average_from_sum(encrypted_sum.clone(), element_count as usize);
                 let encrypted_median: InputType = statistics::median(&encrypted_input_list);
                 (
                     encrypted_sum,

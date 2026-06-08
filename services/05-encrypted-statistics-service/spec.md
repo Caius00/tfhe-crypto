@@ -9,7 +9,7 @@
 
 UC5 berechnet statistische Kennzahlen (Summe, Anzahl, Minimum, Maximum, Durchschnitt, Median) über eine Ganzzahlen-Liste, ohne dass der Server die Eingabewerte oder Ergebnisse jemals im Klartext sieht. Alle Berechnungen laufen vollständig auf verschlüsselten Daten.
 
-**Ablauf eines Requests** (UC5 ist zustandslos — jeder Request ist in sich abgeschlossen):
+**Ablauf:**
 
 ```mermaid
 sequenceDiagram
@@ -129,7 +129,7 @@ Berechnet alle Statistiken für eine verschlüsselte Ganzzahlen-Liste.
 - **Request-Timing** ist bei bekannten n-Werten korrelierbar. Die Berechnungsdauer hängt von n und bit_width ab, nicht von den konkreten Werten — es gibt kein datenwertabhängiges Timing-Leak.
 - **Payload-Größe** ist deterministisch aus n und bit_width ableitbar (alle FHE-Ciphertexte haben bei gleichen TFHE-Parametern konstante Größe). Kein zusätzlicher Informationsgewinn.
 
-**Restvertrauen in den Server-Operator:**
+**Missbrauchspotenzial:**
 
 Der Server muss die Berechnungen korrekt ausführen. Ein böswilliger Server könnte:
 - Falsche verschlüsselte Ergebnisse zurückgeben (der Client kann das nicht verifizieren — kein ZKP).
@@ -159,7 +159,7 @@ Der Server kennt die statistischen Kennzahlen der Eingabewerte nicht — er bere
 | 16 | FheInt16 | FheInt32 | Gleiche Logik, nächste Ebene |
 | 32 | FheInt32 | FheInt64 | Int64 deckt alle realistischen Summen ab |
 
-**Auto-Bitbreiten-Wahl (Client-seitig):**
+**Auto-Bitbreiten-Wahl:**
 
 Der Client bestimmt anhand von `min` und `max` der Eingabe die kleinste ausreichende Bitbreite:
 - Int8 wenn min ≥ −128 und max ≤ 127
@@ -191,8 +191,7 @@ Kleinere Bitbreiten reduzieren die Berechnungszeit deutlich, da die TFHE-Kosten 
 
 ### Komplexität der eigenen Algorithmen
 
-Parameter: n = Anzahl der Eingabeelemente.
-Eine einzelne homomorphe Operation gilt als O(1)-Baustein.
+Parameter: n = Anzahl der Eingabeelemente. Jede einzelne FHE-Operation zählt als O(1).
 
 **sum:** Paralleles Reduce (rayon) auf n Elementen.
 - Tiefe: O(log n) sequentielle Schritte (binärer Reduktionsbaum)
@@ -242,7 +241,7 @@ Messbedingungen: lokaler Entwicklungs-PC (Windows/WSL2), Rust release build, 1 C
 
 ### Limitationen
 
-**Typsystem:** TFHE-rs unterstützt keine Float-Typen — alle Berechnungen sind auf i8/i16/i32 beschränkt. Der Durchschnitt ist eine ganzzahlige Truncation toward zero (`[1, 2]` → `1`, nicht `1,5`).
+**Typsystem:** TFHE-rs unterstützt keine Float-Typen — alle Berechnungen sind auf i8/i16/i32 beschränkt. Der Durchschnitt ist ganzzahlig — Nachkommastellen werden abgeschnitten (`[1, 2]` → `1`, nicht `1,5`).
 
 **Privacy-Einschränkungen:** Die Listenlänge ist aus dem Request direkt ablesbar; `bit_width` verrät zusätzlich die Größenordnung der Werte (`bit_width=8` → alle Werte in [-128, 127]). Beides lässt sich durch Padding bzw. uniforme Bitbreite abmildern — für diesen Use Case nicht umgesetzt, da der Mehraufwand die Performance deutlich verschlechtern würde.
 

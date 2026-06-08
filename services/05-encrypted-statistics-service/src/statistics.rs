@@ -47,13 +47,6 @@ where
         .expect("Liste darf nicht leer sein")
 }
 
-/// Gibt die Anzahl der Elemente zurück.
-/// Die Listenlänge ist kein Geheimnis — der Server kennt sie bereits aus dem Request.
-///
-/// Zeitkomplexität: O(1).
-pub fn count<T>(encrypted_list: &[T]) -> usize {
-    encrypted_list.len()
-}
 
 /// Berechnet das Minimum der Liste homomorph.
 /// Der Server wertet den Vergleich nie im Klartext aus — `if_then_else` auf `FheBool`
@@ -95,18 +88,15 @@ where
         .expect("Liste darf nicht leer sein")
 }
 
-/// Berechnet den Durchschnitt homomorph (Truncation toward zero).
-/// Die Division erfolgt durch einen Klartextwert (die Listenlänge), was deutlich
-/// effizienter ist als eine vollständig homomorphe Division.
-///
-/// Zeitkomplexität: O(log n) Tiefe — identisch zu `sum`, plus O(1) für die Division.
-pub fn average<InputType, WiderOutputType>(encrypted_list: &[InputType]) -> WiderOutputType
+/// Berechnet den Durchschnitt aus einer bereits berechneten Summe.
+/// Nutzen wenn die Summe ohnehin schon vorliegt — vermeidet doppelte Berechnung.
+pub fn average_from_sum<WiderOutputType>(
+    encrypted_sum: WiderOutputType,
+    element_count: usize,
+) -> WiderOutputType
 where
-    InputType: Clone + CastInto<WiderOutputType> + Sync,
-    WiderOutputType: Add<WiderOutputType, Output = WiderOutputType> + DivideByElementCount + Send,
+    WiderOutputType: DivideByElementCount,
 {
-    let encrypted_sum = sum(encrypted_list);
-    let element_count = count(encrypted_list);
     encrypted_sum.divide_by_element_count(element_count)
 }
 
