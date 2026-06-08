@@ -1,27 +1,42 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * spike_join.js – Spike Test (plötzlicher Teilnehmer-Ansturm)
+ * spike_join.js – Spike-Test für Join- und Polling-Verhalten
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Was wird getestet?
- *   Simuliert einen plötzlichen Ansturm vieler Teilnehmer die gleichzeitig
- *   einer Session beitreten – z.B. wenn ein Link geteilt wird und viele
- *   Nutzer gleichzeitig klicken.
+ *   Dieses Szenario simuliert einen plötzlichen Anstieg der Teilnehmeraktivität
+ *   innerhalb einer laufenden Session. Nach einer kurzen Baseline-Phase steigt
+ *   die Anzahl der virtuellen Nutzer (VUs) innerhalb von zwei Sekunden von
+ *   5 auf 500 an.
  *
- *   Im Gegensatz zu normal_flow.js gibt es hier KEINE schrittweise
- *   Erhöhung – die Last springt sofort von 0 auf Maximum.
+ *   Jede VU führt genau eine Join-Anfrage aus und geht anschließend in ein
+ *   kontinuierliches Polling des eigenen Teilnehmerstatus über. Dadurch wird
+ *   sowohl die Aufnahme neuer Teilnehmer als auch die Stabilität des Systems
+ *   unter anschließender Dauerlast untersucht.
  *
- *   Testet ob der Mutex-Lock auf AppState unter hoher Last zu Starvation
- *   führt und wie schnell sich das System nach dem Spike erholt.
+ *   Ziel des Tests ist es, die Leistungsfähigkeit der unverschlüsselten
+ *   Standard-Endpunkte unter hoher Parallelität zu bewerten und zu beobachten,
+ *   ob steigende Last zu erhöhten Antwortzeiten oder funktionalen Fehlern führt.
  *
  * Endpunkte:
- *   - POST /join   (Spike: 0 → 100 VUs sofort)
- *   - GET  /status (Folgelast: alle beigetretenen Teilnehmer pollen)
+ *   - POST /join
+ *       Jeder Teilnehmer tritt genau einmal der Session bei.
+ *
+ *   - GET /status
+ *       Nach dem Join fragt jeder Teilnehmer seinen Status in einem festen
+ *       Polling-Intervall von 200 ms ab.
+ *
+ * Lastprofil:
+ *   - 10 s:  5 VUs (Baseline)
+ *   -  2 s:  Anstieg von 5 auf 500 VUs (Spike)
+ *   - 30 s:  500 VUs (Dauerlast)
+ *   - 10 s:  Rückgang von 500 auf 5 VUs (Recovery)
+ *   - 20 s:  5 VUs (Nachlauf)
  *
  * Voraussetzungen:
- *   1. Backend läuft
- *   2. Offene (nicht finalisierte) Session existiert
- *   3. session_id bekannt
+ *   1. Das Backend läuft.
+ *   2. Eine offene (nicht finalisierte) Session existiert.
+ *   3. Die session_id ist bekannt.
  *
  * Ausführen (lokal):
  *   k6 run --env BASE_URL=http://localhost:8080 \
@@ -32,19 +47,27 @@
  * Ausführen (Remote):
  * k6 run --env BASE_URL=http://159.195.145.100/voting --env SESSION_ID=81aa96de-3b05-42e9-bab3-527a61239774 --out json=results/spike_join.json services/03-encrypted-voting-polling/load-tests/spike_join.js
  *
- * Mess-Setup:
- *   - Tool:      k6 v2.0.0
- *   - TFHE:      ConfigBuilder::default()
- *   - Datum:     <vor dem Test eintragen>
- *   - Server:    <lokal / Netcup>
- *   - CPU/RAM:   <Serverspecs eintragen>
- *
- * Erwartetes Verhalten:
- *   - Spike-Phase: p95 steigt kurz an (Mutex-Contention)
- *   - Recovery-Phase: p95 fällt wieder auf Baseline
- *   - Kritisch: Fehlerrate während Spike unter 1% halten
- * ═══════════════════════════════════════════════════════════════════════════════
- */
+ * * Mess-Setup:
+ *  *   - Tool:      k6
+ *  *   - TFHE:      ConfigBuilder::default()
+ *  *   - Datum:     <vor dem Test eintragen>
+ *  *   - Server:    <lokal / Netcup>
+ *  *   - CPU/RAM:   <Serverspezifikationen eintragen>
+ *  *
+ *  * Erwartetes Verhalten:
+ *  *   - Die Join- und Status-Endpunkte bleiben auch unter hoher Last stabil.
+ *  *   - Die Antwortzeiten steigen während der Spike- und Dauerlastphase nur
+ *  *     moderat an.
+ *  *   - Nach Reduktion der Last normalisieren sich die Antwortzeiten wieder.
+ *  *   - Es treten keine oder nur sehr wenige fehlgeschlagene Requests auf.
+ *  *
+ *  * Hinweis:
+ *  *   Da jede VU nach dem Join in eine Endlosschleife zum Status-Polling
+ *  *   übergeht, werden Iterationen nicht regulär abgeschlossen. Die von k6
+ *  *   ausgegebene Warnung über unterbrochene Iterationen ist daher erwartetes
+ *  *   Verhalten und kein Hinweis auf einen Fehler im Test.
+ *  * ═══════════════════════════════════════════════════════════════════════════════
+ *  */
 
 import http from 'k6/http';
 import { check, sleep, group } from 'k6';

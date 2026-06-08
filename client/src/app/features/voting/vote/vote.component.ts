@@ -220,11 +220,6 @@ export class VoteComponent implements OnInit {
 
     // 2) Eine einzige Krypto-Operation für ALLE Werte
     const encryptedFlat = this.tfhe.encryptUint32Compact(pk, flatValues);
-    // ────────────────────────────────────────────────────────────────────────
-    console.log('=== HIER SIND DEINE TFHE CHUNKS FÜR DEN LASTTEST ===');
-    console.log(JSON.stringify(encryptedFlat));
-    console.log("====================================================");
-    // ────────────────────────────────────────────────────────────────────────
 
     // 3) Zurück in die Form "ein Array pro Frage" splitten
     const result: string[][] = [];
