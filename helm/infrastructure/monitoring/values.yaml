@@ -1,0 +1,312 @@
+# =========================================================================
+# kube-prometheus-stack: Prometheus + Alertmanager + Grafana + Exporters
+# =========================================================================
+kube-prometheus-stack:
+
+  crds:
+    enabled: true
+
+  # Default-Alert-Rules raus – wir haben keinen Alertmanager und keine
+  # Routing-Konfiguration. Spart einige PrometheusRule-CRDs und reduziert
+  # Operator-Reconcile-Last.
+  defaultRules:
+    create: false
+
+  # Alertmanager komplett aus – du nutzt ihn nicht. Spart 1 Pod, 1 PVC,
+  # ein ServiceMonitor und ~20 zusätzliche Time-Series.
+  alertmanager:
+    enabled: false
+
+  # CoreDNS-Stats brauchen wir nicht – DNS läuft im k3s und ist nicht
+  # Teil deines Dashboards.
+  coreDns:
+    enabled: false
+
+  # --- Prometheus ---
+  prometheus:
+    prometheusSpec:
+      # Alle ServiceMonitors / PodMonitors / Rules / Probes im Cluster
+      # einsammeln, egal in welchem Namespace und ohne Helm-Label-Filter.
+      # → "scannt alle Pods" sobald sie einen Monitor mitliefern.
+      serviceMonitorSelectorNilUsesHelmValues: false
+      podMonitorSelectorNilUsesHelmValues: false
+      ruleSelectorNilUsesHelmValues: false
+      probeSelectorNilUsesHelmValues: false
+      serviceMonitorSelector: {}
+      podMonitorSelector: {}
+      ruleSelector: {}
+      probeSelector: {}
+      serviceMonitorNamespaceSelector: {}
+      podMonitorNamespaceSelector: {}
+      ruleNamespaceSelector: {}
+      probeNamespaceSelector: {}
+
+      # Discovery für Pods ohne ServiceMonitor: jeder Pod mit
+      # `prometheus.io/scrape: "true"` Annotation wird automatisch gescraped.
+      additionalScrapeConfigs:
+        - job_name: kubernetes-pods
+          scrape_interval: 30s
+          kubernetes_sd_configs:
+            - role: pod
+          relabel_configs:
+            - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+              action: keep
+              regex: "true"
+            - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+              action: replace
+              target_label: __metrics_path__
+              regex: (.+)
+            - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+              action: replace
+              regex: ([^:]+)(?::\d+)?;(\d+)
+              replacement: $1:$2
+              target_label: __address__
+            - action: labelmap
+              regex: __meta_kubernetes_pod_label_(.+)
+            - source_labels: [__meta_kubernetes_namespace]
+              action: replace
+              target_label: namespace
+            - source_labels: [__meta_kubernetes_pod_name]
+              action: replace
+              target_label: pod
+
+      retention: 15d
+      retentionSize: "18GB"
+
+      # Tempo schreibt Service-Graph + Span-Metriken via remote_write rein.
+      # Ohne diesen Receiver kann der Tempo Metrics-Generator nicht pushen,
+      # und die Service Map in Grafana bleibt leer.
+      # Zusätzlich nutzt der k6-Loadtest des Leaderboard-Services
+      # (services/08-encrypted-leaderboard/loadtest/k6/) denselben Receiver,
+      # um seine Client-seitigen Latenz-Metriken live nach Prometheus zu pushen
+      # — siehe Dashboard `leaderboard-perf`.
+      enableRemoteWriteReceiver: true
+
+      # Default-Scrape-Interval von 30s statt 15s halbiert die geschriebene
+      # Datenmenge bei für ein Dev-Cluster ausreichender Auflösung.
+      scrapeInterval: 30s
+      evaluationInterval: 30s
+
+      resources:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: "1"
+          memory: 2Gi
+
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: local-path
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 20Gi
+
+  # (Alertmanager-Block weiter oben mit `enabled: false` deaktiviert.)
+
+  # --- Grafana ---
+  grafana:
+    enabled: true
+
+    # Admin Login. Passwort vor Produktiv-Use per Secret/SealedSecret überschreiben.
+    adminPassword: "admin"
+
+    service:
+      type: ClusterIP
+      port: 80
+
+    # Reverse-Proxy Setup: Grafana hängt unter /grafana am Traefik-Gateway.
+    grafana.ini:
+      server:
+        root_url: "http://159.195.145.100/grafana/"
+        serve_from_sub_path: true
+      analytics:
+        check_for_updates: false
+        reporting_enabled: false
+
+    persistence:
+      enabled: true
+      type: pvc
+      storageClassName: local-path
+      accessModes: ["ReadWriteOnce"]
+      size: 5Gi
+
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+    # Default-Dashboards (alertmanager-overview, kubelet, apiserver, coredns,
+    # networking, persistent-volumes, statefulset, etc.) komplett aus –
+    # die meisten zeigen ohnehin ins Leere weil die Komponenten deaktiviert
+    # sind. Übrig bleibt nur das selbstgebaute "Service Overview" aus der
+    # ConfigMap mit Label `grafana_dashboard: "1"`.
+    defaultDashboardsEnabled: false
+    defaultDashboardsTimezone: Europe/Berlin
+
+    # Tempo als zusätzliche Datasource direkt registrieren – damit ist die
+    # Trace-Ansicht und Span-Lookup aus Logs/Metriken heraus sofort verfügbar.
+    additionalDataSources:
+      - name: Tempo
+        type: tempo
+        access: proxy
+        url: http://monitoring-tempo.monitoring.svc.cluster.local:3200
+        jsonData:
+          httpMethod: GET
+          tracesToMetrics:
+            datasourceUid: prometheus
+
+    sidecar:
+      dashboards:
+        enabled: true
+        # ConfigMaps mit Label `grafana_dashboard: "1"` aus allen Namespaces einlesen
+        searchNamespace: ALL
+        label: grafana_dashboard
+      datasources:
+        enabled: true
+        searchNamespace: ALL
+        label: grafana_datasource
+
+  # --- Komponenten ---
+  kubeStateMetrics:
+    enabled: true
+  nodeExporter:
+    enabled: true
+
+  prometheus-node-exporter:
+    resources:
+      requests:
+        cpu: 20m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+
+  kube-state-metrics:
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+  prometheusOperator:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 300m
+        memory: 384Mi
+
+  # k3s-Cluster: kube-controller-manager / kube-scheduler / kube-proxy / etcd
+  # laufen entweder im k3s-Binary oder gar nicht als separate Pods.
+  # Default-ServiceMonitors für diese Komponenten würden ins Leere zeigen → aus.
+  kubeControllerManager:
+    enabled: false
+  kubeScheduler:
+    enabled: false
+  kubeProxy:
+    enabled: false
+  kubeEtcd:
+    enabled: false
+
+  # API-Server-Metriken sind im Dashboard nicht referenziert und kosten
+  # ~5000 Time-Series. Bei Bedarf wieder aktivieren.
+  kubeApiServer:
+    enabled: false
+
+  # Kubelet liefert via cAdvisor pro Container ~70 Metriken. Wir brauchen
+  # nur CPU, Memory, Network und CPU-Throttling – der Rest wird beim Scrape
+  # via metricRelabelings weggekippt. Spart ~80% der Container-Metriken.
+  kubelet:
+    enabled: true
+    serviceMonitor:
+      cAdvisorMetricRelabelings:
+        - sourceLabels: [__name__]
+          regex: "container_cpu_usage_seconds_total|container_memory_working_set_bytes|container_network_receive_bytes_total|container_network_transmit_bytes_total|container_cpu_cfs_throttled_periods_total|container_cpu_cfs_periods_total"
+          action: keep
+      # Probes-Metriken (HTTP-Probe-Latenzen für jede Probe im Cluster)
+      # sind im Dashboard ungenutzt.
+      probesMetricRelabelings:
+        - sourceLabels: [__name__]
+          regex: ".*"
+          action: drop
+
+
+# =========================================================================
+# Tempo: Single-Binary für Traces
+# =========================================================================
+tempo:
+
+  tempo:
+    repository: grafana/tempo
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+
+    # OTLP HTTP + gRPC sowie Zipkin/Jaeger Receiver aktivieren.
+    # Services können Traces via OpenTelemetry SDK pushen.
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:4318
+          grpc:
+            endpoint: 0.0.0.0:4317
+      jaeger:
+        protocols:
+          thrift_http:
+            endpoint: 0.0.0.0:14268
+          grpc:
+            endpoint: 0.0.0.0:14250
+      zipkin:
+        endpoint: 0.0.0.0:9411
+
+    storage:
+      trace:
+        backend: local
+        local:
+          path: /var/tempo/traces
+        wal:
+          path: /var/tempo/wal
+
+    # Metrics-Generator baut aus den eingehenden Spans Service-Graph und
+    # Span-Metriken (Request-Rate, Fehler, Latenz pro Service-Edge) und
+    # schreibt sie via remote_write nach Prometheus. Daraus zeichnet Grafana
+    # die Service Map.
+    # Metrics-Generator nur für Span-Metriken (Rate/Latency/Errors pro
+    # Endpoint, direkt aus Spans). Service Graph ist deaktiviert, weil bei
+    # einem einzelnen Service ohne tracing-fähigen Caller keine sinnvollen
+    # Edges entstehen.
+    metricsGenerator:
+      enabled: true
+      remoteWriteUrl: "http://monitoring-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090/api/v1/write"
+
+    overrides:
+      defaults:
+        metrics_generator:
+          processors:
+            - span-metrics
+
+  persistence:
+    enabled: true
+    storageClassName: local-path
+    accessModes: ["ReadWriteOnce"]
+    size: 10Gi
+
+  # ServiceMonitor wird vom Prometheus-Operator gepickt → Tempo exportiert
+  # ebenfalls Metriken an Prometheus.
+  serviceMonitor:
+    enabled: true

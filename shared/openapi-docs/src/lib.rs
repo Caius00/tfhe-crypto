@@ -20,6 +20,7 @@ use axum::{http::header, routing::get, Extension, Router};
 /// Hängt `/docs` + `/openapi.json` an den Router und gibt einen fertigen
 /// `axum::Router` zurück. Das Spec wird einmal beim Startup serialisiert.
 ///
+///
 /// Aufrufer ist dafür verantwortlich, `with_state(...)` vorher zu setzen.
 pub fn attach(router: ApiRouter, title: &str, description: &str, version: &str) -> Router {
     let mut api = OpenApi {

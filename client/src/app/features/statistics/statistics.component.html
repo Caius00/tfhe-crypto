@@ -6,7 +6,7 @@
   </p>
 
   <!-- Step: init -->
-  @if (step() === 'init') {
+  @if (currentStep() === 'init') {
     <div class="card">
       <h2>Schritt 1: Schlüssel generieren</h2>
       <p class="hint">
@@ -18,7 +18,7 @@
   }
 
   <!-- Step: generating keys -->
-  @if (step() === 'generating') {
+  @if (currentStep() === 'generating') {
     <div class="card loading-card">
       <app-spinner />
       <div>
@@ -29,22 +29,25 @@
   }
 
   <!-- Step: enter list -->
-  @if (step() === 'enter-list') {
+  @if (currentStep() === 'enter-list') {
     <div class="card">
       <div class="status-badge success">Schlüssel bereit</div>
       <h2>Schritt 2: Zahlen eingeben</h2>
       <p class="hint">
-        Komma-getrennte Ganzzahlen eingeben (z.B. <code>-5, 3, -10, 7, 2</code>).
-        Die Werte werden mit dem Client-Key verschlüsselt und nur verschlüsselt
-        an den Server gesendet.
+        Komma-getrennte Ganzzahlen im Bereich <strong>−2.147.483.648 bis 2.147.483.647</strong>
+        (Int32). Die Bitbreite wird automatisch optimiert — kleine Werte (bis 127) laufen
+        als Int8, mittlere (bis 32.767) als Int16, große als Int32.
       </p>
       <app-input
         label="Zahlen (komma-getrennt)"
         type="text"
-        placeholder="z.B. -5000, 3200, -10800, 7500"
-        [value]="listInput()"
-        (valueChange)="listInput.set($event)"
+        placeholder="z.B. -5, 3, -10, 7, 2"
+        [value]="rawListInput()"
+        (valueChange)="rawListInput.set($event)"
       />
+      @if (validationError()) {
+        <p class="error-inline">{{ validationError() }}</p>
+      }
       <div class="actions">
         <app-button label="Statistiken berechnen" (clicked)="compute()" />
         <app-button label="Zurücksetzen" type="button" (clicked)="reset()" />
@@ -53,7 +56,7 @@
   }
 
   <!-- Step: computing -->
-  @if (step() === 'computing') {
+  @if (currentStep() === 'computing') {
     <div class="card loading-card">
       <app-spinner />
       <div>
@@ -67,38 +70,49 @@
   }
 
   <!-- Step: result -->
-  @if (step() === 'result' && result()) {
+  @if (currentStep() === 'result' && computationResult()) {
     <div class="card">
       <h2>Ergebnis</h2>
       <p class="hint">
         Der Server hat alle Statistiken verschlüsselt berechnet und zurückgegeben.
         Die Entschlüsselung erfolgte lokal mit dem Client-Key.
+        @if (computeDurationMs() !== null) {
+          Berechnungszeit: <strong>{{ (computeDurationMs()! / 1000).toFixed(1) }} s</strong>
+        }
       </p>
       <table class="result-table">
         <tbody>
           <tr>
+            <td class="label">Eingabe</td>
+            <td class="value">{{ displayedInputNumbers().join(', ') }}</td>
+          </tr>
+          <tr>
             <td class="label">Summe</td>
-            <td class="value">{{ result()!.sum }}</td>
+            <td class="value">{{ computationResult()!.sum }}</td>
           </tr>
           <tr>
             <td class="label">Anzahl</td>
-            <td class="value">{{ result()!.count }}</td>
+            <td class="value">{{ computationResult()!.count }}</td>
           </tr>
           <tr>
             <td class="label">Minimum</td>
-            <td class="value">{{ result()!.min }}</td>
+            <td class="value">{{ computationResult()!.min }}</td>
           </tr>
           <tr>
             <td class="label">Maximum</td>
-            <td class="value">{{ result()!.max }}</td>
+            <td class="value">{{ computationResult()!.max }}</td>
           </tr>
           <tr>
             <td class="label">Durchschnitt</td>
-            <td class="value">{{ result()!.average }}</td>
+            <td class="value">{{ computationResult()!.average }}</td>
           </tr>
           <tr>
             <td class="label">Median</td>
-            <td class="value">{{ result()!.median }}</td>
+            <td class="value">{{ computationResult()!.median }}</td>
+          </tr>
+          <tr>
+            <td class="label">Verwendete Bitbreite</td>
+            <td class="value">Int{{ computationResult()!.bitWidth }}</td>
           </tr>
         </tbody>
       </table>
@@ -110,10 +124,10 @@
   }
 
   <!-- Step: error -->
-  @if (step() === 'error') {
+  @if (currentStep() === 'error') {
     <div class="card error-card">
       <h2>Fehler</h2>
-      <p>{{ errorMessage() }}</p>
+      <p>{{ validationError() }}</p>
       <app-button label="Zurücksetzen" (clicked)="reset()" />
     </div>
   }

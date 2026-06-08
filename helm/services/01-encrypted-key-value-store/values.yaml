@@ -1,21 +1,27 @@
 namespace: 01-encrypted-key-value-store
-replicaCount: 1
+# Default 0: KEDA HTTP Add-on skaliert auf 0 wenn kein Traffic kommt und hoch
+# auf 1, sobald ein Request reinkommt (siehe templates/httpscaledobject.yaml).
+# ArgoCD ignoriert /spec/replicas, damit KEDA dort frei drücken kann.
+replicaCount: 0
 
 image:
   repository: ghcr.io/caius00/encrypted-key-value-store
-  tag: "0.1.13"
+  tag: "0.1.20"
   pullPolicy: IfNotPresent
 
 service:
   port: 8080
 
+# Mit max. 1 aktivem Service-Pod gleichzeitig darf der eine Pod fast den
+# ganzen Cluster (8 Cores / 16 GiB) nutzen. Headroom für k3s/Traefik/ArgoCD/Monitoring/KEDA:
+# ~2 Cores + 4–5 GiB. Requests bleiben niedrig, damit Scheduling problemlos klappt.
 resources:
   requests:
-    cpu: 500m
-    memory: 512Mi
+    cpu: 200m
+    memory: 256Mi
   limits:
-    cpu: "2"
-    memory: 1536Mi
+    cpu: "6"
+    memory: 10Gi
 
 route:
   path: /kv
@@ -23,6 +29,17 @@ route:
     name: traefik-gateway
     namespace: traefik
     sectionName: web
+
+# Öffentlicher TCP-Zugriff auf Redis via Gateway API (TCPRoute)
+redisRoute:
+  enabled: true
+  gateway:
+    name: traefik-gateway
+    namespace: traefik
+    sectionName: redis
+  backend:
+    service: ekv-redis-master
+    port: 6379
 
 redis:
   enabled: true

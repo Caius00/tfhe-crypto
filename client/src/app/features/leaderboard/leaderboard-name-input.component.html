@@ -1,0 +1,33 @@
+<div class="name-input">
+
+  <div class="ni-panel">
+    <div class="ni-panel-header">
+      <img src="/games/flappy-bird/images/bird/yellowbird-upflap.png" class="ni-icon" alt="" />
+      <div>
+        <h2 class="ni-title">DEIN NAME</h2>
+        <span class="ni-room">Raum {{ roomCode }}</span>
+      </div>
+    </div>
+
+    <p class="ni-hint">
+      Wie sollst du im Leaderboard heißen? Nur Buchstaben, max. 20 Zeichen.
+    </p>
+
+    <app-input
+      placeholder="z.B. Alice"
+      [value]="name()"
+      (valueChange)="name.set($event)"
+    />
+
+    @if (name().length > 0 && !isValid()) {
+      <span class="ni-error">Nur Buchstaben (A–Z, a–z), 1–20 Zeichen.</span>
+    }
+
+    <app-button
+      label="LOSGEHTS"
+      [disabled]="!isValid()"
+      (clicked)="onSubmit()"
+    />
+  </div>
+
+</div>

@@ -1,122 +1,292 @@
+//! # Encrypted Statistics Service
+//!
+//! Berechnet Summe, Anzahl, Min, Max, Durchschnitt und Median über eine verschlüsselte
+//! Ganzzahlen-Liste, ohne die Werte jemals im Klartext zu sehen. Client und Server tauschen
+//! ausschließlich FHE-Ciphertexte aus (Base64/bincode-kodiert); der Server dekomprimiert den
+//! mitgelieferten ServerKey, führt alle Berechnungen homomorph durch und gibt verschlüsselte
+//! Ergebnisse zurück. Ablauf, Threat-Model und Performance-Messungen: `spec.md`.
+//!
+//! ## Typen-Mapping je nach `bit_width`
+//!
+//! | bit_width | Eingabe  | Summe / Durchschnitt |
+//! |-----------|----------|----------------------|
+//! | 8         | FheInt8  | FheInt16             |
+//! | 16        | FheInt16 | FheInt32             |
+//! | 32        | FheInt32 | FheInt64             |
+//!
+//! Summe und Durchschnitt verwenden den nächstbreiteren Typ um Overflow zu verhindern.
+//! `count` ist der einzige Klartextwert in der Response — die Listenlänge ist dem
+//! Server durch die Array-Länge im Request ohnehin bekannt.
+
+mod fhe;
 mod statistics;
 
-use axum::{routing::post, Json, Router};
+#[cfg(test)]
+mod statistics_tests;
+
+use crate::statistics::DivideByElementCount;
+use aide::axum::{routing::post_with, ApiRouter};
+use axum::{http::StatusCode, Json, Router};
 use base64::{engine::general_purpose, Engine as _};
-use serde::{Deserialize, Serialize};
-use tfhe::prelude::CastInto;
-use tfhe::{CompressedServerKey, FheInt64};
+use schemars::JsonSchema;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::ops::Add;
+use tfhe::prelude::{CastInto, FheOrd, IfThenElse};
+use tfhe::{CompressedServerKey, FheBool, FheInt16, FheInt32, FheInt64, FheInt8};
 
 /// Anfrage des Clients an den Statistics-Service.
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, JsonSchema)]
 struct StatisticsRequest {
-    /// Jedes Element ist ein Base64-kodiertes, bincode-serialisiertes FheInt64.
+    /// Jedes Element ist ein Base64-kodiertes, bincode-serialisiertes FHE-Integer.
+    /// Der konkrete Typ richtet sich nach `bit_width`.
     encrypted_list: Vec<String>,
     /// Base64-kodierter, bincode-serialisierter CompressedServerKey.
     server_key: String,
+    /// Bitbreite der verschlüsselten Eingabewerte: 8, 16 oder 32.
+    /// Wird vom Client automatisch anhand des Wertebereichs der Eingabe gewählt.
+    bit_width: u8,
 }
 
 /// Antwort des Servers an den Client.
-/// Alle verschlüsselten Werte sind FheInt64, damit der Angular-WASM-Client
-/// sie mit decryptInt64 entschlüsseln kann. Summe und Durchschnitt werden
-/// intern als FheInt128 berechnet (kein Overflow) und dann auf FheInt64 gecastet.
-#[derive(Serialize)]
+/// sum/average haben den nächstbreiteren Typ als die Eingabe (Overflow-Schutz).
+/// Alle Felder sind Base64-kodierte, bincode-serialisierte FHE-Ciphertexte.
+#[derive(Serialize, Deserialize, JsonSchema)]
 struct StatisticsResponse {
-    /// Base64-kodiertes FheInt64 (Summe, intern als Int128 berechnet)
+    /// FHE-Integer mit doppelter Eingabe-Bitbreite (z.B. Int8-Eingabe → Int16-Summe)
     sum: String,
-    /// Klartextzahl – die Listenlänge ist kein Geheimnis
+    /// Klartextzahl — die Listenlänge ist dem Server bereits aus dem Request bekannt
     count: u64,
-    /// Base64-kodiertes FheInt64
+    /// Gleicher Typ wie die Eingabe
     min: String,
-    /// Base64-kodiertes FheInt64
+    /// Gleicher Typ wie die Eingabe
     max: String,
-    /// Base64-kodiertes FheInt64 (Durchschnitt, truncation toward zero)
+    /// FHE-Integer mit doppelter Eingabe-Bitbreite (Overflow-Schutz, siehe sum)
     average: String,
-    /// Base64-kodiertes FheInt64 (Lower Median)
+    /// Gleicher Typ wie die Eingabe (Lower Median bei gerader Länge)
     median: String,
+    /// Tatsächlich verwendete Bitbreite: 8, 16 oder 32.
+    bit_width: u8,
 }
 
-/// Hilfsfunktion: serialisiert einen beliebigen Wert zu Base64(bincode).
-fn to_base64<T: serde::Serialize>(val: &T) -> Result<String, String> {
-    bincode::serialize(val)
-        .map(|bytes| general_purpose::STANDARD.encode(bytes))
-        .map_err(|e| format!("Serialisierungsfehler: {}", e))
+/// Deserialisiert eine Liste von Base64-kodierten FHE-Ciphertexten in den konkreten Typ T.
+fn deserialize_encrypted_list<T: DeserializeOwned>(
+    base64_encoded_list: &[String],
+) -> Result<Vec<T>, (StatusCode, String)> {
+    base64_encoded_list
+        .iter()
+        .map(|base64_item| {
+            let raw_bytes =
+                general_purpose::STANDARD
+                    .decode(base64_item)
+                    .map_err(|decode_error| {
+                        (
+                            StatusCode::BAD_REQUEST,
+                            format!("Ungültiger Item-Base64: {}", decode_error),
+                        )
+                    })?;
+            bincode::deserialize(&raw_bytes).map_err(|deserialize_error| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    format!(
+                        "Fehler beim Deserialisieren des Ciphertexts: {}",
+                        deserialize_error
+                    ),
+                )
+            })
+        })
+        .collect()
+}
+
+/// Führt alle homomorphen Berechnungen für eine typisierte verschlüsselte Liste durch
+/// und verpackt die Ergebnisse in eine `StatisticsResponse`.
+///
+/// `InputType` ist der verschlüsselte Eingabetyp (z.B. FheInt16).
+/// `WiderOutputType` ist der breitere Typ für Summe und Durchschnitt (z.B. FheInt32),
+/// um Overflow bei der Addition vieler Werte zu verhindern.
+fn compute_statistics_typed<InputType, WiderOutputType>(
+    encrypted_input_list: Vec<InputType>,
+    fhe_engine: fhe::FheEngine,
+    element_count: u64,
+    bit_width: u8,
+) -> Result<Json<StatisticsResponse>, (StatusCode, String)>
+where
+    InputType: Clone + FheOrd + CastInto<WiderOutputType> + Sync + Send + Serialize,
+    WiderOutputType:
+        Add<WiderOutputType, Output = WiderOutputType> + DivideByElementCount + Send + Serialize,
+    FheBool: IfThenElse<InputType>,
+{
+    let (encrypted_sum, encrypted_min, encrypted_max, encrypted_average, encrypted_median) =
+        tokio::task::block_in_place(|| {
+            fhe_engine.install(|| {
+                let encrypted_sum: WiderOutputType = statistics::sum(&encrypted_input_list);
+                let encrypted_min: InputType = statistics::min(&encrypted_input_list);
+                let encrypted_max: InputType = statistics::max(&encrypted_input_list);
+                let encrypted_average: WiderOutputType = statistics::average(&encrypted_input_list);
+                let encrypted_median: InputType = statistics::median(&encrypted_input_list);
+                (
+                    encrypted_sum,
+                    encrypted_min,
+                    encrypted_max,
+                    encrypted_average,
+                    encrypted_median,
+                )
+            })
+        });
+
+    Ok(Json(StatisticsResponse {
+        sum: to_base64(&encrypted_sum)?,
+        count: element_count,
+        min: to_base64(&encrypted_min)?,
+        max: to_base64(&encrypted_max)?,
+        average: to_base64(&encrypted_average)?,
+        median: to_base64(&encrypted_median)?,
+        bit_width,
+    }))
+}
+
+/// Serialisiert einen FHE-Ciphertext via bincode und kodiert ihn als Base64-String
+/// für den JSON-Response. Gegenstück zu `deserialize_encrypted_list` auf der Eingabeseite.
+fn to_base64<T: Serialize>(value: &T) -> Result<String, (StatusCode, String)> {
+    bincode::serialize(value)
+        .map(|serialized_bytes| general_purpose::STANDARD.encode(serialized_bytes))
+        .map_err(|serialize_error| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Serialisierungsfehler: {}", serialize_error),
+            )
+        })
 }
 
 /// POST /
 /// Empfängt eine verschlüsselte Ganzzahlen-Liste und berechnet alle Statistiken homomorph.
+/// Die Bitbreite der Eingabe wird im Request-Feld `bit_width` angegeben (8, 16 oder 32).
 async fn compute_statistics(
-    Json(req): Json<StatisticsRequest>,
-) -> Result<Json<StatisticsResponse>, String> {
+    Json(request): Json<StatisticsRequest>,
+) -> Result<Json<StatisticsResponse>, (StatusCode, String)> {
     // 1. Server Key deserialisieren und dekomprimieren
-    let sk_bytes = general_purpose::STANDARD
-        .decode(&req.server_key)
-        .map_err(|e| format!("Ungültiger ServerKey Base64: {}", e))?;
+    let server_key_bytes = general_purpose::STANDARD
+        .decode(&request.server_key)
+        .map_err(|decode_error| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("Ungültiger ServerKey Base64: {}", decode_error),
+            )
+        })?;
 
-    let compressed: CompressedServerKey = bincode::deserialize(&sk_bytes)
-        .map_err(|e| format!("Fehler beim Deserialisieren des ServerKey: {}", e))?;
+    let compressed_server_key: CompressedServerKey = bincode::deserialize(&server_key_bytes)
+        .map_err(|deserialize_error| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "Fehler beim Deserialisieren des ServerKey: {}",
+                    deserialize_error
+                ),
+            )
+        })?;
 
-    let server_key = compressed.decompress();
+    let fhe_engine = tokio::task::block_in_place(|| {
+        fhe::FheEngine::from_server_key(compressed_server_key.decompress())
+    })
+    .map_err(|engine_error| (StatusCode::BAD_REQUEST, engine_error))?;
 
-    // 2. Verschlüsselte Liste deserialisieren
-    let enc_list: Vec<FheInt64> = req
-        .encrypted_list
-        .iter()
-        .map(|b64| {
-            let bytes = general_purpose::STANDARD
-                .decode(b64)
-                .map_err(|e| format!("Ungültiger Item-Base64: {}", e))?;
-            bincode::deserialize(&bytes)
-                .map_err(|e| format!("Fehler beim Deserialisieren von FheInt64: {}", e))
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-
-    if enc_list.is_empty() {
-        return Err("Die Liste darf nicht leer sein".to_string());
+    // 2. Leere Liste abfangen (vor der teuren Deserialisierung der Ciphertexte)
+    if request.encrypted_list.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Die Liste darf nicht leer sein".to_string(),
+        ));
     }
 
-    let count = enc_list.len() as u64;
+    let element_count = request.encrypted_list.len() as u64;
 
-    // 3. Homomorphe Berechnungen – blockierend, da CPU-intensiv.
-    //    block_in_place verhindert, dass der Tokio-Threadpool blockiert wird.
-    let (enc_sum, enc_min, enc_max, enc_avg, enc_median) = tokio::task::block_in_place(|| {
-        // Server Key auf dem Hauptthread und auf allen Rayon-Worker-Threads setzen,
-        // damit parallele FHE-Operationen in statistics.rs korrekt funktionieren.
-        rayon::broadcast(|_| tfhe::set_server_key(server_key.clone()));
-        tfhe::set_server_key(server_key);
+    // 3. Bitbreite auflösen und an die passende generische Implementierung delegieren.
+    //    Die Eingabewerte werden als InputType deserialisiert; Summe und Durchschnitt
+    //    laufen intern auf WiderOutputType um Overflow zu verhindern.
+    match request.bit_width {
+        8 => {
+            let encrypted_input_list =
+                deserialize_encrypted_list::<FheInt8>(&request.encrypted_list)?;
+            compute_statistics_typed::<FheInt8, FheInt16>(
+                encrypted_input_list,
+                fhe_engine,
+                element_count,
+                8,
+            )
+        }
+        16 => {
+            let encrypted_input_list =
+                deserialize_encrypted_list::<FheInt16>(&request.encrypted_list)?;
+            compute_statistics_typed::<FheInt16, FheInt32>(
+                encrypted_input_list,
+                fhe_engine,
+                element_count,
+                16,
+            )
+        }
+        32 => {
+            let encrypted_input_list =
+                deserialize_encrypted_list::<FheInt32>(&request.encrypted_list)?;
+            compute_statistics_typed::<FheInt32, FheInt64>(
+                encrypted_input_list,
+                fhe_engine,
+                element_count,
+                32,
+            )
+        }
+        unsupported_bit_width => Err((
+            StatusCode::BAD_REQUEST,
+            format!(
+                "Ungültige Bitbreite {}: muss 8, 16 oder 32 sein.",
+                unsupported_bit_width
+            ),
+        )),
+    }
+}
 
-        // Summe und Durchschnitt intern als Int128 (kein Overflow),
-        // dann auf Int64 casten für den WASM-kompatiblen Transport.
-        let s: FheInt64 = statistics::sum(&enc_list).cast_into();
-        let mn = statistics::min(&enc_list);
-        let mx = statistics::max(&enc_list);
-        let avg: FheInt64 = statistics::average(&enc_list).cast_into();
-        let med = statistics::median(&enc_list);
+/// Baut den vollständigen Axum-Router zusammen:
+/// API-Route (`POST /`), OpenAPI-Docs (`/docs`, `/openapi.json`),
+/// Health-Endpunkte (`/healthz`, `/readyz`, `/version`),
+/// Prometheus-Metriken (`/metrics`) und HTTP-Tracing-Layer.
+pub(crate) fn create_app() -> Router {
+    let (metrics_layer, metrics_router) = metrics_exporter::setup();
 
-        (s, mn, mx, avg, med)
-    });
+    let api_router = ApiRouter::new().api_route(
+        "/",
+        post_with(compute_statistics, |op| {
+            op.description(
+                "Compute sum, count, min, max, average and median homomorphically \
+                 on an encrypted integer list. Bit width (8/16/32) is chosen by the \
+                 client based on the value range.",
+            )
+            .response::<200, Json<StatisticsResponse>>()
+        }),
+    );
 
-    // 4. Ergebnisse serialisieren und zurücksenden
-    Ok(Json(StatisticsResponse {
-        sum: to_base64(&enc_sum)?,
-        count,
-        min: to_base64(&enc_min)?,
-        max: to_base64(&enc_max)?,
-        average: to_base64(&enc_avg)?,
-        median: to_base64(&enc_median)?,
-    }))
+    openapi_docs::attach(
+        api_router,
+        "Encrypted Statistics Service",
+        "Homomorphic statistics service: computes sum, count, min, max, average and median \
+         on an encrypted integer list — the server never sees the values.",
+        env!("CARGO_PKG_VERSION"),
+    )
+    .merge(health::router(env!("CARGO_PKG_VERSION")))
+    .merge(metrics_router)
+    // Großes Limit nötig, weil FHE-Ciphertexte sehr groß sind (~1 MB pro Wert)
+    .layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024 * 1024))
+    .layer(metrics_layer)
+    .layer(observability::http_trace_layer())
 }
 
 #[tokio::main]
 async fn main() {
-    let app = Router::new()
-        .route("/", post(compute_statistics))
-        .merge(health::router(env!("CARGO_PKG_VERSION")))
-        // Großes Limit nötig, weil FHE-Ciphertexte sehr groß sind (~1 MB pro Wert)
-        .layer(axum::extract::DefaultBodyLimit::max(2 * 1024 * 1024 * 1024));
+    observability::init("encrypted-statistics-service", env!("CARGO_PKG_VERSION"));
 
-    let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    let listening_address = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));
+    let tcp_listener = tokio::net::TcpListener::bind(listening_address)
+        .await
+        .unwrap();
+    println!("Statistics Service läuft auf http://{}", listening_address);
+    axum::serve(tcp_listener, create_app()).await.unwrap();
 
-    println!("Statistics Service läuft auf http://{}", addr);
-    axum::serve(listener, app).await.unwrap();
+    observability::shutdown();
 }

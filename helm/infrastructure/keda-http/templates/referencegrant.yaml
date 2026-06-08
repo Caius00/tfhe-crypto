@@ -1,0 +1,46 @@
+# ReferenceGrant erlaubt HTTPRoutes aus den Service-Namespaces, die in keda/
+# liegende Interceptor-Service als backendRef anzusprechen (Cross-Namespace).
+# Ohne diesen Grant blockiert Gateway API die Referenz aus Security-Gründen.
+#
+# Wir listen alle 9 Service-Namespaces einzeln auf — ReferenceGrant unterstützt
+# kein "*"-Wildcard, das ist by-design (jede Quelle muss explizit zugelassen sein).
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-services-to-interceptor
+  namespace: keda
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: 01-encrypted-key-value-store
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: 02-encrypted-age-verification
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: 03-encrypted-voting-polling
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: 04-sealed-bid-auction
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: 05-encrypted-statistics-service
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: 06-encrypted-genomics
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: 07-encrypted-image-processing
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: 08-encrypted-leaderboard
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: 09-encrypted-program-execution
+  to:
+    - group: ""
+      kind: Service
+      # KEDA HTTP Add-on installiert den Interceptor-Proxy mit diesem Namen.
+      # Falls sich das in einer zukünftigen Add-on-Version ändert, hier anpassen.
+      name: keda-add-ons-http-interceptor-proxy

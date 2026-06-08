@@ -1,0 +1,34 @@
+# KEDA HTTP Add-on (Interceptor + External Scaler)
+# Der Interceptor steht zwischen Traefik und den Service-Pods und ist für
+# das eigentliche Scale-from-Zero zuständig: er hält Requests fest, während
+# KEDA den Ziel-Pod hochfährt, und leitet erst weiter wenn der Pod bereit ist.
+keda-add-ons-http:
+  # Standardmäßig watcht das HTTP Add-on nur Objekte im eigenen Namespace —
+  # mit watchNamespace="" schauen wir cluster-weit, sodass HTTPScaledObjects
+  # aus den Service-Namespaces gefunden werden.
+  operator:
+    watchNamespace: ""
+
+  # Der Interceptor ist der Hot-Path für JEDEN Request an einen unserer Services,
+  # daher etwas großzügiger dimensioniert. Skaliert horizontal mit Traffic.
+  interceptor:
+    replicas:
+      min: 1
+      max: 2
+    resources:
+      limits:
+        cpu: 500m
+        memory: 256Mi
+      requests:
+        cpu: 100m
+        memory: 64Mi
+
+  # Externer Scaler stellt KEDA die Request-Metriken bereit.
+  externalScaler:
+    resources:
+      limits:
+        cpu: 500m
+        memory: 256Mi
+      requests:
+        cpu: 50m
+        memory: 32Mi

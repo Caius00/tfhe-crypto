@@ -1,6 +1,6 @@
 [package]
 name = "encrypted-genomics"
-version = "0.1.13"
+version = "0.1.21"
 edition = "2021"
 publish = false
 description = "Encrypted Genomics"

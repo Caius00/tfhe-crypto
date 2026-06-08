@@ -1,0 +1,13 @@
+apiVersion: v2
+name: monitoring
+description: Observability-Stack für tfhe-crypto (Prometheus, Grafana, Alertmanager, Tempo)
+type: application
+version: 0.1.0
+
+dependencies:
+  - name: kube-prometheus-stack
+    version: "86.0.0"
+    repository: https://prometheus-community.github.io/helm-charts
+  - name: tempo
+    version: "1.24.4"
+    repository: https://grafana.github.io/helm-charts

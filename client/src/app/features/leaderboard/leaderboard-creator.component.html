@@ -38,7 +38,7 @@
           </div>
           <div class="lb-info">
             <span class="lb-score">{{ entry.score }}</span>
-            <span class="lb-id">{{ entry.playerId }}</span>
+            <span class="lb-id">{{ entry.playerName }}</span>
           </div>
           <div class="lb-bar-track">
             <div class="lb-bar-fill" [style.width.%]="entries[0] ? (entry.score / entries[0].score) * 100 : 0"></div>

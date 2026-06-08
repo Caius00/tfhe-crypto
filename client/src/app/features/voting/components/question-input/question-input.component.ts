@@ -9,7 +9,6 @@ import { Question } from '../../voting.types';
 /**
  * Antwort-Wert für eine einzelne Frage.
  * Variante hängt vom Fragetyp ab:
- *   - bool:     boolean
  *   - single:   number   (Index der ausgewählten Option)
  *   - multiple: number[] (Indizes aller ausgewählten Optionen)
  *   - numeric:  number
@@ -49,25 +48,45 @@ export class QuestionInputComponent {
   /** Emittiert den neuen Antwortwert */
   @Output() valueChange = new EventEmitter<AnswerValue>();
 
-  // --- Bool ----------------------------------------------------------------
-
-  get boolValue(): boolean {
-    return this.value === true;
-  }
-
-  onBoolChange(checked: boolean): void {
-    this.valueChange.emit(checked);
-  }
+  numericError: string | null = null;
+  numericRaw = '';
+  numericValid: number | undefined = undefined;
 
   // --- Numeric -------------------------------------------------------------
 
   get numericValue(): string {
-    return typeof this.value === 'number' ? String(this.value) : '';
+    return this.numericRaw;
   }
 
   onNumericChange(raw: string): void {
+    this.numericRaw = raw;
+
+    if (raw.trim() === '') {
+      this.numericError = 'Bitte eine Zahl eingeben.';
+      this.numericValid = undefined;
+      this.valueChange.emit(undefined);
+      return;
+    }
+
     const n = Number(raw);
-    this.valueChange.emit(Number.isFinite(n) ? n : 0);
+
+    if (!Number.isFinite(n) || !Number.isInteger(n)) {
+      this.numericError = 'Bitte eine ganze Zahl eingeben.';
+      this.numericValid = undefined;
+      this.valueChange.emit(undefined);
+      return;
+    }
+
+    if (n < 0 || n > 255) {
+      this.numericError = 'Zahl muss zwischen 0 und 255 liegen.';
+      this.numericValid = undefined;
+      this.valueChange.emit(undefined);
+      return;
+    }
+
+    this.numericError = null;
+    this.numericValid = n;
+    this.valueChange.emit(n);
   }
 
   // --- Single Choice -------------------------------------------------------

@@ -1,0 +1,16 @@
+{{- if .Values.postgresRoute.enabled }}
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TCPRoute
+metadata:
+  name: {{ .Chart.Name }}-postgres
+  namespace: {{ .Values.namespace }}
+spec:
+  parentRefs:
+    - name: {{ .Values.postgresRoute.gateway.name }}
+      namespace: {{ .Values.postgresRoute.gateway.namespace }}
+      sectionName: {{ .Values.postgresRoute.gateway.sectionName }}
+  rules:
+    - backendRefs:
+        - name: {{ .Values.postgres.fullnameOverride }}
+          port: 5432
+{{- end }}

@@ -8,9 +8,16 @@
     @for (r of results; track $index; let i = $index) {
       <app-card variant="flat">
         <div class="result-block">
-          <p class="result-question">{{ questions[i]?.text || 'Frage ' + (i + 1) }}</p>
-
+          <div class="result-content" [class.collapsed]="isArray(r) && !isDecrypted && !isExpanded(i)" [class.no-collapse]="isDecrypted">
+          <p class="result-question">{{ questions[i]?.text || 'Frage ' + (i + 1) }}</p> 
           @if (isArray(r)) {
+            @if (!isDecrypted) {
+            <app-button
+              [label]="isExpanded(i) ? 'Weniger anzeigen' : 'Mehr anzeigen'"
+              variant="secondary"
+              size="sm"
+              (clicked)="toggleResult(i)" />
+            }
             <ul class="result-list">
               @for (line of r; track line) {
                 <li>{{ line }}</li>
@@ -19,6 +26,7 @@
           } @else {
             <p class="result-value">{{ r }}</p>
           }
+          </div>
         </div>
       </app-card>
     }

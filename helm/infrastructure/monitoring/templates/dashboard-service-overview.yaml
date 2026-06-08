@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-service-overview
+  namespace: monitoring
+  labels:
+    # Der Grafana-Sidecar pickt ConfigMaps mit diesem Label automatisch
+    # und importiert das Dashboard – siehe sidecar.dashboards.label in values.yaml.
+    grafana_dashboard: "1"
+data:
+  service-overview.json: |-
+{{ .Files.Get "dashboards/service-overview.json" | indent 4 }}

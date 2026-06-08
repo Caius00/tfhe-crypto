@@ -1,6 +1,6 @@
 [package]
 name = "encrypted-age-verification"
-version = "0.1.15"
+version = "0.1.23"
 edition = "2021"
 publish = false
 description = "Encrypted Age Verification"
