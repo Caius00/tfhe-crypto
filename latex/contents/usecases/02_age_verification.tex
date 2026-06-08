@@ -2,7 +2,28 @@
 \label{sub:encrypted_age_verification}
 
 \subsubsection*{Funktionsbeschreibung}
+Der Use Case Encrypted Age Verification löst das Problem, das Alter einer Person serverseitig zu prüfen, ohne dass der Server den tatsächlichen Alterswert jemals im Klartext zu Gesicht bekommt. Das Ergebnis der Prüfung (volljährig: ja/nein) wird ebenfalls verschlüsselt zurückgegeben - der Server kennt weder Eingabe noch Ausgabe.
 
+Das Alter wird bereits auf dem Client mit dem ClientKey verschlüsselt und ausschließlich in verschlüsselter Form an das Backend übertragen. Das Backend führt die Altersüberprüfung mittels Fully Homomorphic Encryption (TFHE) durch, ohne den zugrunde liegenden Alterswert entschlüsseln zu können. Die Entschlüsselung des Ergebnisses ist ausschließlich durch den Besitzer des ClientKeys möglich.
+
+\textbf{Akteure}
+\begin{itemize}
+    \item Client: Generiert das TFHE-Schlüsselpaar, verschlüsselt das Alter mit dem \verb|ClientKey|, sendet \verb|encrypted_age| und \verb|server_key| an den Server, empfängt das verschlüsselte Ergebnis und entschlüsselt es lokal. Der Client besitzt den \verb|ClientKey| und ist der einzige Akteur, der das Ergebnis entschlüsseln kann.
+    \item Backend (Server): Empfängt \verb|encrypted_age| und \verb|CompressedServerKey|, setzt den ServerKey, führt die homomorphe Altersüberprüfung (\verb|age_check|) durch und gibt das verschlüsselte Ergebnis (\verb|FheBool|) zurück. Der Server sieht zu keinem Zeitpunkt das Alter oder das Ergebnis im Klartext.
+\end{itemize}
+
+\textbf{Lebenszyklus einer Session}
+
+Da dieser Use Case vollständig zustandslos ist, gibt es keine persistente Session. Der gesamte Ablauf findet innerhalb eines einzelnen HTTP-Requests statt:
+\begin{enumerate}
+    \item Vorbereitung (Client): Client generiert \verb|ClientKey| und \verb|CompressedServerKey| lokal. Das Alter wird als \verb|FheInt8| mit dem \verb|ClientKey| verschlüsselt. Beide Werte werden bincode-serialisiert und base64-kodiert.
+    \item Request: Client sendet \verb|POST /| mit \verb|encrypted_age| und \verb|server_key| als JSON-Body.
+    \item Verarbeitung (Server): Server dekodiert und deserialisiert beide Felder, setzt den ServerKey im globalen Thread-Kontext und führt \verb|age_check| aus: \verb|enc_age.gt(17) & enc_age.ge(0)|.
+    \item Response: Server serialisiert das FheBool-Ergebnis, base64-kodiert es und gibt es als \verb|is_adult| zurück.
+    \item Auswertung (Client): Client dekodiert und deserialisiert \verb|is_adult|, entschlüsselt das FheBool mit dem ClientKey und erhält das boolesche Ergebnis.
+
+\end{enumerate}
+    
 \subsubsection*{OpenAPI-Schnittstelle}
 
 \subsubsection*{Trust- und Threat-Model}
