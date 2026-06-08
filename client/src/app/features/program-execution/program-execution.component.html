@@ -16,21 +16,48 @@
         (scroll)="onScroll()"
         placeholder=""
         [spellcheck]="false">
-  </textarea>
+    </textarea>
 </div>
-
-<span>RAM size: {{ lineCount * 2 }}B</span>
 
 <div class="registers">
-    <app-input label="Acc value (hex)" [(value)]="a"></app-input>
-    <app-input label="B value (hex)" [(value)]="b"></app-input>
-    <app-input label="PC value (hex)" [(value)]="c"></app-input>
-    <app-checkbox label="carry" [(checked)]="carry"></app-checkbox>
+    <app-input [disabled]="executing" (valueChange)="invalidate()" label="Acc value (hex)" [(value)]="a"></app-input>
+    <app-input [disabled]="executing" (valueChange)="invalidate()" label="B value (hex)" [(value)]="b"></app-input>
+    <app-input [disabled]="executing" (valueChange)="invalidate()" label="PC value (hex)" [(value)]="c"></app-input>
+    <app-checkbox [disabled]="executing" label="carry" [(checked)]="carry"></app-checkbox>
 </div>
-<app-input label="cycles to execute:" [(value)]="cycles"></app-input>
+<app-input [disabled]="executing" label="cycles to execute:" type="number" (valueChange)="invalidate()" [(value)]="cycles"></app-input>
 
 
-<app-button (clicked)="assemble()"></app-button>
+<app-button label="assemble" (clicked)="assemble()"></app-button>
 @if (displayMessage) {
     {{ message }}
+}
+
+@if (assembled) {
+
+    <div class="editor-container ram-display">
+        <div class="line-numbers">
+            @for (address of addresses; track address) {
+                <div class="line-number">
+                    ${{ address }}
+                </div>
+            }
+        </div>
+
+        <textarea
+                [value]="ram"
+                (scroll)="onScroll()"
+                placeholder=""
+                [disabled]="true"
+                [spellcheck]="false">
+        </textarea>
+    </div>
+
+    <span>RAM size: {{ lineCount * 2 }}B</span>
+
+    @if (!keypair) {
+        <app-button [disabled]="generating" label="gen" (clicked)="generate()"></app-button>
+    } @else {
+        <app-button [disabled]="executing" label="run" (clicked)="executeStreamingProgram()"></app-button>
+    }
 }

@@ -31,19 +31,9 @@ pub fn make_cpu(size: usize) -> CPU {
 impl CPU {
     // specify needed additional instructions?
 
-    pub fn execute_program(&mut self, cycles: usize, sk: &ServerKey) {
-        let mut i = 0usize;
-        loop {
-            println!("{}", i);
-            if i >= cycles {
-                break;
-            }
-
-            let (op, or) = self.fetch(sk);
-            println!("fetch done");
-            self.execute_cycle(&op, &or, sk);
-            i += 1;
-        }
+    pub fn execute_program(&mut self, sk: &ServerKey) {
+        let (op, or) = self.fetch(sk);
+        self.execute_cycle(&op, &or, sk);
     }
 
     fn fetch(&self, sk: &ServerKey) -> (FheUint8, FheUint8) {
@@ -142,8 +132,6 @@ impl CPU {
         let is_xor = opcode.eq(0x1Eu8);
         let is_dec = opcode.eq(0x1Fu8);
         let is_inc = opcode.eq(0x20u8);
-
-        println!("decode done");
 
         let one_u8 = &FheUint8::encrypt_trivial(1u8);
         let zero_u8 = &FheUint8::encrypt_trivial(0u8);
@@ -261,7 +249,6 @@ impl CPU {
                 },
             )
             .expect("");
-        println!("arithmetic done");
 
         let bit_7 = (&self.a & msb_enc).ne(0u8);
         let bit_0 = (&self.a & one_u8).ne(0u8);
@@ -301,7 +288,6 @@ impl CPU {
             let matches_idx = operand.eq(idx as u8);
             loaded_mem_val = matches_idx.cmux(cell, &loaded_mem_val);
         }
-        println!("memory done");
 
         let a_is_zero = self.a.eq(0u8);
 
@@ -342,7 +328,6 @@ impl CPU {
         next_a = is_xor.cmux(&res_xor, &next_a);
         next_a = is_dec.cmux(&res_dec, &next_a);
         next_a = is_inc.cmux(&res_inc, &next_a);
-        println!("a cmux done");
 
         let mut next_b = self.b.clone();
         next_b = is_swp.cmux(&self.a, &next_b);
@@ -547,7 +532,9 @@ mod tests {
         assert!(!c_dec, "init false");
 
         // ram is initialized with 0 for every address, 0x00 = NOP
-        cpu.execute_program(4, &sk);
+        for _ in 0..4 {
+            cpu.execute_program(&sk);
+        }
 
         let a_dec: u8 = cpu.a.decrypt(&ck);
         let pc_dec: u8 = cpu.pc.decrypt(&ck);
@@ -559,7 +546,9 @@ mod tests {
         assert_eq!(b_dec, 0, "unchanged");
         assert!(!c_dec, "unchanged");
 
-        cpu.execute_program(4, &sk);
+        for _ in 0..4 {
+            cpu.execute_program(&sk);
+        }
 
         let a_dec: u8 = cpu.a.decrypt(&ck);
         let pc_dec: u8 = cpu.pc.decrypt(&ck);
@@ -597,7 +586,9 @@ mod tests {
         cpu.memory[14] = FheUint8::encrypt_trivial(0x11u8); // MUL
         cpu.memory[15] = FheUint8::encrypt_trivial(0x00u8); // ignored
 
-        cpu.execute_program(8, &sk);
+        for _ in 0..8 {
+            cpu.execute_program(&sk);
+        }
 
         let a: u8 = cpu.pc.decrypt(&ck);
         let b: u8 = cpu.b.decrypt(&ck);
@@ -629,7 +620,7 @@ mod tests {
         cpu.memory[14] = FheUint8::encrypt_trivial(0x08u8); // DJNZ
         cpu.memory[15] = FheUint8::encrypt_trivial(0x08u8); // Address
 
-        cpu.execute_program(1, &sk);
+        cpu.execute_program(&sk);
 
         let a: u8 = cpu.pc.decrypt(&ck);
         let b: u8 = cpu.a.decrypt(&ck);
@@ -639,7 +630,7 @@ mod tests {
         assert_eq!(5u8, b);
         assert_eq!(0u8, c);
 
-        cpu.execute_program(1, &sk);
+        cpu.execute_program(&sk);
 
         let a: u8 = cpu.pc.decrypt(&ck);
         let b: u8 = cpu.a.decrypt(&ck);
@@ -649,7 +640,7 @@ mod tests {
         assert_eq!(0u8, b);
         assert_eq!(5u8, c);
 
-        cpu.execute_program(1, &sk);
+        cpu.execute_program(&sk);
 
         let a: u8 = cpu.pc.decrypt(&ck);
         let b: u8 = cpu.a.decrypt(&ck);
@@ -659,7 +650,7 @@ mod tests {
         assert_eq!(5u8, b);
         assert_eq!(5u8, c);
 
-        cpu.execute_program(1, &sk);
+        cpu.execute_program(&sk);
 
         let a: u8 = cpu.pc.decrypt(&ck);
         let b: u8 = cpu.a.decrypt(&ck);
@@ -669,7 +660,7 @@ mod tests {
         assert_eq!(4u8, b);
         assert_eq!(5u8, c);
 
-        cpu.execute_program(1, &sk);
+        cpu.execute_program(&sk);
 
         let a: u8 = cpu.pc.decrypt(&ck);
         let b: u8 = cpu.a.decrypt(&ck);
@@ -681,7 +672,7 @@ mod tests {
         assert_eq!(5u8, c);
         assert_eq!(4u8, d);
 
-        cpu.execute_program(1, &sk);
+        cpu.execute_program(&sk);
 
         let a: u8 = cpu.pc.decrypt(&ck);
         let b: u8 = cpu.a.decrypt(&ck);
@@ -693,7 +684,7 @@ mod tests {
         assert_eq!(20u8, c);
         assert_eq!(4u8, d);
 
-        cpu.execute_program(1, &sk);
+        cpu.execute_program(&sk);
 
         let a: u8 = cpu.pc.decrypt(&ck);
         let b: u8 = cpu.a.decrypt(&ck);
@@ -705,7 +696,7 @@ mod tests {
         assert_eq!(20u8, c);
         assert_eq!(4u8, d);
 
-        cpu.execute_program(1, &sk);
+        cpu.execute_program(&sk);
 
         let a: u8 = cpu.pc.decrypt(&ck);
         let b: u8 = cpu.a.decrypt(&ck);
@@ -717,7 +708,7 @@ mod tests {
         assert_eq!(20u8, c);
         assert_eq!(4u8, d);
 
-        cpu.execute_program(1, &sk);
+        cpu.execute_program(&sk);
 
         let a: u8 = cpu.pc.decrypt(&ck);
         let b: u8 = cpu.a.decrypt(&ck);
@@ -729,7 +720,7 @@ mod tests {
         assert_eq!(20u8, c);
         assert_eq!(3u8, d);
 
-        cpu.execute_program(1, &sk);
+        cpu.execute_program(&sk);
 
         let a: u8 = cpu.pc.decrypt(&ck);
         let b: u8 = cpu.a.decrypt(&ck);
@@ -741,7 +732,9 @@ mod tests {
         assert_eq!(60u8, c);
         assert_eq!(3u8, d);
 
-        cpu.execute_program(4, &sk);
+        for _ in 0..4 {
+            cpu.execute_program(&sk);
+        }
 
         let a: u8 = cpu.pc.decrypt(&ck);
         let b: u8 = cpu.a.decrypt(&ck);

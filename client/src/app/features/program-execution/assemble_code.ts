@@ -13,9 +13,7 @@ export function assemble_code(programme: string): number[] {
     const bytes: number[] = [];
 
     for (const l of lines) {
-        const x = l.split(" ");
-        console.log(x);
-        let [op_s, or_s] = x;
+        let [op_s, or_s] = l.split(" ");
         if (!or_s) {
             or_s = "00";
         }
