@@ -1,6 +1,6 @@
 # ⚙️ 09 · Encrypted Program Execution
 
-![version](https://img.shields.io/badge/version-0.1.20-blue)
+![version](https://img.shields.io/badge/version-0.1.21-blue)
 
 Execute programs on encrypted inputs — the runtime never sees the actual values.
 
