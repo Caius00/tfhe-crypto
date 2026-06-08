@@ -904,7 +904,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
   }
 
   fifoStateLabel(job: FifoJob): string {
-    return job.state === 'running' ? 'laeuft' : 'wartet';
+    return job.state === 'running' ? 'running...' : 'waiting...';
   }
 
   isOwnSessionJob(job: FifoJob): boolean {

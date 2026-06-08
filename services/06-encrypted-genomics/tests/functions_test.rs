@@ -2,6 +2,8 @@
 
 include!("../src/functions.rs");
 
+// cargo test --test functions_test -- --test-threads=1
+
 struct TestKeys {
     client_key: tfhe::ClientKey,
     public_key: tfhe::CompactPublicKey,
