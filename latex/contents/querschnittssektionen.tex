@@ -1,17 +1,166 @@
 \section{Querschnittssektionen}
 \label{sec:querschnittssektionen}
 
-\subsection{Architektur-Übersich}
+\subsection{Architektur-Übersicht}
 \label{sub:architektur_uebersicht}
+\textbf{Gesamtarchitektur}:
+Das System folgt einer Microservice-Architektur. Jeder Use Case (UC) wird als eigenständiger Service umgesetzt. Dadurch erhalten die einzelnen UCs getrennte Lebenszyklen, unabhängige Deployments und eine klare fachliche Verantwortlichkeit. Zusätzlich wird eine Isolation auf Prozessebene erreicht, sodass Fehler oder Abstürze eines Services keine Auswirkungen auf andere UCs haben.
+
+Insbesondere im Kontext von Fully Homomorphic Encryption (FHE) ist diese Trennung vorteilhaft, da jeder Service seinen eigenen ServerKey im Arbeitsspeicher hält. In einer monolithischen Architektur würden sich die Speicheranforderungen aller UCs gegenseitig beeinflussen.
+
+Die Services sind als Rust-Anwendungen implementiert und verwenden das Framework Axum für die Bereitstellung von HTTP-APIs. Wiederkehrende Funktionalitäten wie Health-Endpunkte, Prometheus-Metriken, Tracing und OpenAPI-Dokumentation werden über gemeinsame Shared Crates bereitgestellt.
+
+\textbf{Komponenten}:
+Die Architektur besteht aus folgenden Hauptkomponenten:
+
+\begin{tabular}{||l|p{4cm}|p{6cm}||}
+    \hline
+    \textbf{Komponente} & \textbf{Technologie} & \textbf{Verantwortung} \\
+    \hline\hline
+    Frontend & Angular + TypeScript + TFHE.js & Benutzeroberfläche, clientseitige FHE-Operationen, Schlüsselgenerierung \\
+    \hline
+    API Gateway &Traefik & Routing eingehender Requests, TLS-Terminierung \\
+    \hline
+    UC-Service 1-9 & Rust + Axum & Fachlogik des jeweiligen Use Cases \\
+    \hline
+    Redis & Redis & Speicherung von Session-Daten und Schlüsseln \\
+    \hline
+    Kubernetes (k3s) & Kubernetes & Orchestrierung und Skalierung \\
+    \hline
+    Observability Stack & Prometheus, Grafana, Tempo & Monitoring, Metriken und Tracing \\
+    \hline
+\end{tabular}
+
+\textbf{FHE-Grenze}:
+Folgende Komponenten verarbeiten FHE-spezifische Datentypen:
+\begin{itemize}
+    \item Frontend (TFHE.js)
+    \item UC-Services (Rust + tfhe-rs)
+    \item Redis (gespeicherte Schlüsselmaterialien)
+\end{itemize}
+
+Folgende Komponenten kennen keine FHE-internen Datentypen:
+\begin{itemize}
+    \item Traefik Gateway
+    \item Kubernetes
+    \item Observability-Komponenten
+\end{itemize}
 
 \subsection{Gateway und Routing}
 \label{sub:gateway_und_routing}
+Als API-Gateway wird Traefik eingesetzt. Traefik unterstützt die Kubernetes Gateway API und übernimmt das Routing eingehender HTTP-Anfragen auf die jeweiligen UC-Services.
+
+\textbf{Routing}:
+Das Routing erfolgt pfadbasiert. Requests werden anhand ihres URL-Pfades an den zuständigen Microservice weitergeleitet.
+
+\textbf{Authentifizierung}:
+
+\textbf{Rate Limiting}:
+Traefik bietet technische Unterstützung für Rate Limiting über Middleware.
+
+\textbf{Fehlerbehandlung}:
+
+\textbf{Sichtbarkeit von Daten im Gateway}:
+Da Traefik ausschließlich als Gateway fungiert und keine FHE-Bibliotheken verwendet, verarbeitet das Gateway lediglich die eingehenden HTTP-Anfragen und die darin enthaltenen Request-Payloads.
 
 \subsection{Key Lifecycle}
 \label{sub:key_lifecycle}
+Das Frontend verwendet TFHE.js und führt FHE-bezogene Operationen clientseitig aus.
+
+Redis wird zur Speicherung von Schlüsseln verwendet. Die Schlüssel werden mit einer Time-to-Live (TTL) abgelegt.
+
+\textbf{Schlüsselgenerierung}:
+
+\textbf{Schlüsselübertragung}:
+
+\textbf{Speicherung}:
+Schlüssel werden in Redis gespeichert und mit einer TTL versehen.
+
+\textbf{Isolation}:
+\begin{itemize}
+    \item Wie die Isolation zwischen Sessions umgesetzt wird
+    \item Wie Mandanten- oder Benutzertrennung erfolgt
+\end{itemize}
+
+\textbf{Wiederverwendung}:
+
+\textbf{Session-Ende}:
 
 \subsection{Serialisierung}
 \label{sub:serialisierung}
+Für die APIs werden Rust-Datenstrukturen verwendet, die gleichzeitig zur automatischen OpenAPI-Generierung genutzt werden.
+
+\textbf{API-Schnittstellen}:
+Die OpenAPI-Spezifikation wird automatisch mit aide und schemars aus den Rust-Datentypen erzeugt. Jeder Service stellt seine API-Dokumentation unter /docs bereit.
+
+\textbf{Serialisierungsformate}:
+
+\textbf{Größen von Ciphertexten}:
 
 \subsection{Build, Deployment, Tests}
 \label{sub:build_deployment_tests}
+\textbf{Build-Pipeline}:
+Das Projekt wird als Cargo-Workspace und Monorepo organisiert.
+
+Für die Containerisierung wird ein eigenes Docker-Image pro UC-Service verwendet. Die Images werden mittels Multi-Stage-Builds und cargo-chef erzeugt, um Abhängigkeiten zwischenzuspeichern und Buildzeiten zu reduzieren.
+
+Zur Optimierung der FHE-Leistung wird die tfhe-Crate bereits im Entwicklungsprofil mit opt-level=3 kompiliert.
+
+Für produktive Builds wird zusätzlich eine CPU-Optimierung über target-cpu=znver5 genutzt.
+
+\textbf{CI/CD}:
+Die CI/CD-Pipeline basiert auf GitHub Actions.
+
+Wesentliche Bestandteile:
+\begin{itemize}
+    \item Pfadbasierte Change Detection mittels dorny/paths-filter
+    \item Clippy als verpflichtendes Qualitäts-Gate (-D warnings)
+    \item Automatischer Patch-Version-Bump nach Merge auf main
+    \item Veröffentlichung der Container-Images in GHCR
+    \item Automatische Aktualisierung der Helm-Konfiguration
+    \item Deployment über ArgoCD nach dem GitOps-Prinzip
+\end{itemize}
+
+\textbf{Deployment}:
+Das Deployment erfolgt auf einem k3s-Cluster.
+
+Verwendete Infrastrukturkomponenten:
+\begin{itemize}
+    \item Traefik (Gateway)
+    \item ArgoCD (GitOps)
+    \item KEDA (Scale-to-Zero)
+    \item Redis
+    \item Prometheus
+    \item Grafana
+    \item Tempo
+\end{itemize}
+
+Helm-Charts werden zur Verwaltung aller Kubernetes-Ressourcen verwendet.
+
+\textbf{Teststrategie}:
+Die Teststrategie umfasst:
+\begin{itemize}
+    \item Unit-Tests: Tests einzelner Komponenten und Funktionen innerhalb der Services.
+    \item Integrationstests: Tests der Endpunkte und des Zusammenspiels mehrerer Komponenten. Die Integrationstests werden im Release-Modus ausgeführt, um realistische Laufzeiten für FHE-Operationen zu gewährleisten.
+    \item FHE-Korrektheitstests: FHE-Ergebnisse werden gegen Klartextreferenzen validiert.
+\end{itemize}
+
+\textbf{Testausführung}:
+\begin{itemize}
+    \item \verb|cargo nextest| als Test-Runner
+    \item \verb|cargo llvm-cov| zur Ermittlung der Testabdeckung
+    \item Ausführung mit \verb|--test-threads=1|, um Speicherprobleme durch parallele ServerKey-Dekompression zu vermeiden
+\end{itemize}
+
+\textbf{Testabdeckung}:
+Die Testabdeckung wird über \verb|cargo llvm-cov| ermittelt.
+
+\textbf{Hinzufügen eines neuen Services}:
+\begin{enumerate}
+    \item Neuer Rust-Service als Crate im Cargo-Workspace anlegen.
+    \item Shared Crates als Dependencies einbinden.
+    \item Dockerfile und Helm-Chart ergänzen.
+    \item Routing-Konfiguration im Gateway erweitern.
+    \item GitHub-Action-Pipeline aktualisieren.
+    \item Deployment über ArgoCD automatisch ausrollen.
+\end{enumerate}
