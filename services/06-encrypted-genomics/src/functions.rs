@@ -17,12 +17,13 @@ use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore};
 use tokio_postgres::NoTls;
 
 type ApiError = (axum::http::StatusCode, String);
+type IndexedRiskPattern = (usize, RiskPattern);
 
 const DEFAULT_DATABASE_CONFIG: &str =
     "host=159.195.145.100 port=5432 user=genomics password=genomics dbname=genomics";
 const PARALLEL_HAMMING_WINDOWS: usize = 2;
 const PARALLEL_LEVENSHTEIN_CELLS: usize = 2;
-const PROCESSING_QUEUE_CAPACITY: usize = 10;
+const PROCESSING_QUEUE_CAPACITY: usize = 5;
 const MAX_HAMMING_SEQUENCE_LEN: usize = 255;
 const MAX_LEVENSHTEIN_SEQUENCE_LEN: usize = 122;
 const KEY_CACHE_CAPACITY: usize = 8;
@@ -199,8 +200,13 @@ impl Drop for QueuedProcessingJob {
 
 #[derive(Clone)]
 struct EncryptedRiskPattern {
-    pattern: RiskPattern,
     encrypted_bases: Vec<FheUint8>,
+}
+
+#[derive(Clone, Debug, Serialize, JsonSchema)]
+pub struct SkippedComparison {
+    pub index: usize,
+    pub reason: String,
 }
 
 #[derive(Clone)]
@@ -1012,6 +1018,33 @@ fn compare_against_encrypted_patterns(
         .collect()
 }
 
+fn prepare_risk_patterns_for_all_query(
+    patterns: &[RiskPattern],
+    input_len: usize,
+    skip_too_long_patterns: bool,
+) -> Result<(Vec<IndexedRiskPattern>, Vec<SkippedComparison>), ApiError> {
+    let mut comparable_patterns = Vec::new();
+    let mut skipped_results = Vec::new();
+
+    for (index, pattern) in patterns.iter().enumerate() {
+        let encoded = encode_dna(&pattern.sequence).map_err(bad_request)?;
+        if skip_too_long_patterns && encoded.len() > input_len {
+            skipped_results.push(SkippedComparison {
+                index,
+                reason: format!(
+                    "Pattern longer than sequence ({} > {})",
+                    encoded.len(),
+                    input_len
+                ),
+            });
+        } else {
+            comparable_patterns.push((index, pattern.clone()));
+        }
+    }
+
+    Ok((comparable_patterns, skipped_results))
+}
+
 fn homomorphic_levenshtein_distance(
     seq_a: &[FheUint8],
     seq_b: &[u8],
@@ -1258,7 +1291,6 @@ fn encrypt_risk_patterns(
             }
 
             Ok(EncryptedRiskPattern {
-                pattern: pattern.clone(),
                 encrypted_bases: encrypt_clear_values_on_current_pool(&encoded, public_key)?,
             })
         })
@@ -1408,6 +1440,7 @@ pub struct CompareDatabaseResponse {
     pub encrypted_result_items: Vec<Vec<String>>,
     pub compared_sequences: usize,
     pub patterns: Vec<RiskPattern>,
+    pub skipped_results: Vec<SkippedComparison>,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -1421,6 +1454,7 @@ pub struct CompareDatabaseLevenshteinResponse {
     pub encrypted_result_items: Vec<Vec<String>>,
     pub compared_sequences: usize,
     pub patterns: Vec<RiskPattern>,
+    pub skipped_results: Vec<SkippedComparison>,
 }
 
 #[derive(Deserialize, Serialize, JsonSchema)]
@@ -1498,25 +1532,33 @@ fn compare_database(
     enforce_sequence_limit(enc_input.len(), MAX_HAMMING_SEQUENCE_LEN, "Hamming")?;
     let public_key = decode_public_key(&keys.public_key)?;
     let server_key = decode_server_key(&keys.server_key)?;
-    let encrypted_patterns = encrypt_risk_patterns(&patterns, &public_key)?;
-    let response_patterns: Vec<RiskPattern> = encrypted_patterns
+    let response_patterns = patterns.clone();
+    let (comparable_patterns, skipped_results) =
+        prepare_risk_patterns_for_all_query(&patterns, enc_input.len(), req.pattern_id.is_none())?;
+    let patterns_to_compare = comparable_patterns
         .iter()
-        .map(|pattern| pattern.pattern.clone())
-        .collect();
+        .map(|(_, pattern)| pattern.clone())
+        .collect::<Vec<_>>();
+    let encrypted_patterns = encrypt_risk_patterns(&patterns_to_compare, &public_key)?;
 
     let results = with_server_key(server_key, move || {
         compare_against_encrypted_patterns(&enc_input, &encrypted_patterns)
     })?;
 
-    let encrypted_result_items: Vec<Vec<String>> = results
+    let serialized_results: Vec<Vec<String>> = results
         .par_iter()
         .map(|distances| serialize_fhe_items(distances))
         .collect::<Result<_, _>>()?;
+    let mut encrypted_result_items = vec![Vec::new(); response_patterns.len()];
+    for ((index, _), items) in comparable_patterns.iter().zip(serialized_results) {
+        encrypted_result_items[*index] = items;
+    }
 
     Ok(CompareDatabaseResponse {
         encrypted_result_items,
         compared_sequences: response_patterns.len(),
         patterns: response_patterns,
+        skipped_results,
     })
 }
 
@@ -1558,25 +1600,33 @@ fn compare_database_levenshtein(
     enforce_sequence_limit(enc_input.len(), MAX_LEVENSHTEIN_SEQUENCE_LEN, "Levenshtein")?;
     let public_key = decode_public_key(&keys.public_key)?;
     let server_key = decode_server_key(&keys.server_key)?;
-    let encrypted_patterns = encrypt_risk_patterns(&patterns, &public_key)?;
-    let response_patterns: Vec<RiskPattern> = encrypted_patterns
+    let response_patterns = patterns.clone();
+    let (comparable_patterns, skipped_results) =
+        prepare_risk_patterns_for_all_query(&patterns, enc_input.len(), req.pattern_id.is_none())?;
+    let patterns_to_compare = comparable_patterns
         .iter()
-        .map(|pattern| pattern.pattern.clone())
-        .collect();
+        .map(|(_, pattern)| pattern.clone())
+        .collect::<Vec<_>>();
+    let encrypted_patterns = encrypt_risk_patterns(&patterns_to_compare, &public_key)?;
 
     let results = with_server_key(server_key, move || {
         compare_against_encrypted_patterns_levenshtein(&enc_input, &encrypted_patterns)
     })?;
 
-    let encrypted_result_items: Vec<Vec<String>> = results
+    let serialized_results: Vec<Vec<String>> = results
         .par_iter()
         .map(|distance| serialize_fhe_items(std::slice::from_ref(distance)))
         .collect::<Result<_, _>>()?;
+    let mut encrypted_result_items = vec![Vec::new(); response_patterns.len()];
+    for ((index, _), items) in comparable_patterns.iter().zip(serialized_results) {
+        encrypted_result_items[*index] = items;
+    }
 
     Ok(CompareDatabaseLevenshteinResponse {
         encrypted_result_items,
         compared_sequences: response_patterns.len(),
         patterns: response_patterns,
+        skipped_results,
     })
 }
 
@@ -1659,7 +1709,11 @@ fn compare_session_sequences_levenshtein(
         encrypted_sequences
             .par_iter()
             .map(|stored_sequence| {
-                homomorphic_levenshtein_distance_encrypted(&enc_input, stored_sequence)
+                if enc_input.len() >= stored_sequence.len() {
+                    homomorphic_levenshtein_distance_encrypted(&enc_input, stored_sequence)
+                } else {
+                    homomorphic_levenshtein_distance_encrypted(stored_sequence, &enc_input)
+                }
             })
             .collect::<Result<Vec<_>, ApiError>>()
     })?;

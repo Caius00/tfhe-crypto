@@ -108,8 +108,8 @@ fn expected_levenshtein(left: &[u8], right: &[u8]) -> u8 {
     for (i, row) in dp.iter_mut().enumerate() {
         row[0] = i as u8;
     }
-    for j in 0..=right.len() {
-        dp[0][j] = j as u8;
+    for (j, value) in dp[0].iter_mut().enumerate() {
+        *value = j as u8;
     }
 
     for i in 1..=left.len() {
@@ -132,8 +132,9 @@ fn risk_pattern(id: i32, sequence: &str) -> RiskPattern {
 }
 
 fn encrypted_pattern(id: i32, sequence: &str) -> EncryptedRiskPattern {
+    let _ = id;
+
     EncryptedRiskPattern {
-        pattern: risk_pattern(id, sequence),
         encrypted_bases: trivial_values(&encode_dna(sequence).unwrap()),
     }
 }
