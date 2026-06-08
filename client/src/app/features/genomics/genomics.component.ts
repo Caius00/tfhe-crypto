@@ -473,7 +473,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
       const started = this.nowMs();
 
       await this.tfhe.ensureInitialized();
-      this.encryptedSequenceItems = this.tfhe.encryptUint8sCompact(publicKeyB64, encoded);
+      this.encryptedSequenceItems = this.tfhe.encryptUint32Compact(publicKeyB64, encoded);
       this.encryptedSource = cleanSequence;
       this.encryptedLength.set(encoded.length);
       this.encryptedSequenceReady.set(true);
@@ -984,7 +984,7 @@ export class GenomicsComponent implements OnInit, OnDestroy {
     const encoded = this.encodeDna(cleanSequence);
 
     await this.tfhe.ensureInitialized();
-    return this.tfhe.encryptUint8sCompact(publicKeyB64, encoded);
+    return this.tfhe.encryptUint32Compact(publicKeyB64, encoded);
   }
 
   private async ensureEncryptedSequence(): Promise<boolean> {
