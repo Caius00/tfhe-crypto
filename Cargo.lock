@@ -1025,7 +1025,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-program-execution"
-version = "0.1.22"
+version = "0.1.23"
 dependencies = [
  "axum 0.8.9",
  "base64",
