@@ -12,6 +12,7 @@ import { ImageProcessingService } from '../services/image-processing.service';
 import { DecryptedData, EncryptedData, ImageEncryptionService } from '../services/image-encryption.service';
 import { ImageUrlService } from '../services/image-url.service';
 import { Observable } from 'rxjs';
+import { KeyStoreService } from '../services/key-store.service';
 
 @Component({
   	selector: 'app-image-editor',
@@ -27,13 +28,13 @@ import { Observable } from 'rxjs';
 })
 export class ImageEditorComponent {
 	public imageService = inject(ImageFileService);
-	private encryptionService = inject(ImageEncryptionService);
 	public processingService = inject(ImageProcessingService);
+	private encryptionService = inject(ImageEncryptionService);
 	private tfhe = inject(TfheService);
 	private imageServer = inject(ImageServerService);
 	private urlService = inject(ImageUrlService);
 	private router = inject(Router);
-	private keyPair: { clientKey: any; serverKeyBytes: Uint8Array; } | null = null;
+	private keyStore = inject(KeyStoreService);
 
 	image = this.processingService.processedImage();
 	imageName = this.imageService.imageName();
@@ -49,6 +50,12 @@ export class ImageEditorComponent {
 
 	ngOnInit(): void {
 		this.getSessionStatus();
+		const keyPair = this.keyStore.keyPair();
+		if (!keyPair) {
+			this.hasKeys.set(false);
+			return;
+		}
+		this.hasKeys.set(true);
 	}
 
 	async generateKeys(): Promise<void> {
@@ -61,9 +68,9 @@ export class ImageEditorComponent {
 		try {
 			await this.tfhe.ensureInitialized();
 			const kp = this.tfhe.generateKeyPair();
-			this.keyPair = {
+			this.keyStore.addKey({
 				...kp
-			};
+			});
 			this.hasKeys.set(true);
 			this.successMessage.set('Schlüssel erfolgreich erzeugt.');
 		} catch (e) {
@@ -86,7 +93,7 @@ export class ImageEditorComponent {
 	}
 
 	async createSession(): Promise<void> {
-		if (!this.keyPair) {
+		if (!this.keyStore.keyPair()) {
 			this.errorMessage.set('Keine Keys vorhanden, bitte erstelle zuerst neue Keys.');
 			return;
 		}
@@ -103,8 +110,10 @@ export class ImageEditorComponent {
 			height: imageData.height
 		}
 
-		const encryptedImage = await this.encryptionService.encryptImage(decryptedImage, this.keyPair.clientKey);
-		const compressed_server_key = Array.from(this.keyPair.serverKeyBytes);
+		const keyPair = this.keyStore.keyPair();
+		if (!keyPair) return;
+		const encryptedImage = await this.encryptionService.encryptImage(decryptedImage, keyPair.clientKey);
+		const compressed_server_key = Array.from(keyPair.serverKeyBytes);
 		const image_data = encryptedImage.bytes.map(pixel => Array.from(pixel))
 
 		this.imageServer
@@ -130,7 +139,7 @@ export class ImageEditorComponent {
 	}
 
 	async finalizeSession(): Promise<void> {
-		if (!this.keyPair) {
+		if (!this.keyStore.keyPair()) {
 			this.errorMessage.set('Keine Keys vorhanden.');
 			return;
 		}
@@ -153,10 +162,11 @@ export class ImageEditorComponent {
 				height: height
 			}
 
-			if (!this.keyPair) return;
+			const keyPair = this.keyStore.keyPair();
+			if (!keyPair) return;
 			const decryptedImage = await this.encryptionService.decryptImage(
 				encryptedImage, 
-				this.keyPair.clientKey
+				keyPair.clientKey
 			);
 
 			const previewUrl = this.urlService.createPreviewUrl(
@@ -188,10 +198,6 @@ export class ImageEditorComponent {
 		request: Observable<any>,
 		keyword: string 
 	): void {
-		if (!this.keyPair) {
-			this.errorMessage.set('Keine Keys vorhanden.');
-			return;
-		}
 		this.errorMessage.set(null);
 		this.successMessage.set(null);
 		this.isLoading.set(true);
