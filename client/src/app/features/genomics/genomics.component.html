@@ -324,7 +324,7 @@
       @if (resultKind() === 'db-hamming' || resultKind() === 'db-levenshtein' || resultKind() === 'session-hamming' || resultKind() === 'session-levenshtein') {
         <div class="result-heading">
           <h2>Database results</h2>
-          <span>{{ databaseResults().length }} Trefferlisten</span>
+          <span>{{ databaseResults().length }} hits</span>
         </div>
         <div class="db-match-summary" [class.match]="databaseMatchCount() > 0" [class.no-match]="databaseMatchCount() === 0">
           <strong>{{ databaseMatchCount() }} MATCHES</strong>
@@ -335,7 +335,7 @@
             <article class="db-result" [class.match-entry]="entryHasMatch(entry)" [class.no-match-entry]="!entryHasMatch(entry)">
               <div class="db-result-heading">
                 <h3>{{ entry.label }}</h3>
-                <span>{{ entry.skippedReason ? 'Skipped' : 'Bestwert: ' + (entry.bestDistance ?? '-') }}</span>
+                <span>{{ entry.skippedReason ? 'Skipped' : 'Min value: ' + (entry.bestDistance ?? '-') }}</span>
               </div>
               <div class="match-indicator compact" [class.match]="entryHasMatch(entry)" [class.no-match]="!entryHasMatch(entry)">
                 {{ entryHasMatch(entry) ? 'MATCH' : 'NO MATCH' }}
