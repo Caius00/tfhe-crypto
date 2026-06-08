@@ -11,6 +11,7 @@ import {KeyPair} from "../../core/crypto/key-pair.model";
 import {ExecReq, ExecResp} from "./types";
 import {forkJoin, from, of, switchMap} from "rxjs";
 import {getDB, getKey, setKey} from "./db";
+import {SERVICE_URLS} from "../../core/api/service-urls";
 
 @Component({
     selector: "app-program-execution",
@@ -189,7 +190,7 @@ export class ProgramExecutionComponent implements OnInit {
             server_key: b64Key,
         };
 
-        const ws = new WebSocket("ws://localhost:8080/execute-stream");
+        const ws = new WebSocket(SERVICE_URLS.programExecution.localBase + SERVICE_URLS.programExecution.path);
 
         ws.onopen = () => {
             ws.send(JSON.stringify(req));

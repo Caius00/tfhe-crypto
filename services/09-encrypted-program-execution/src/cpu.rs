@@ -174,32 +174,32 @@ impl CPU {
                         rayon::scope(|s| {
                             s.spawn(|_| res_add_tuple = Some((&self.a).overflowing_add(&self.b)));
                             s.spawn(|_| {
-                                res_addc_tuple =
-                                    Some((&self.a).overflowing_add(
-                                        &(&self.b + self.carry.cmux(one_u8, zero_u8)),
-                                    ))
+                                let (x, y) =
+                                    (&self.b).overflowing_add(&self.carry.cmux(one_u8, zero_u8));
+                                let (a, c) = (&self.a).overflowing_add(&x);
+                                res_addc_tuple = Some((a, y | c));
                             });
                             s.spawn(|_| res_add_i_tuple = Some((&self.a).overflowing_add(operand)));
                             s.spawn(|_| {
-                                res_addc_i_tuple =
-                                    Some((&self.a).overflowing_add(
-                                        &(operand + self.carry.cmux(one_u8, zero_u8)),
-                                    ))
+                                let (x, y) =
+                                    operand.overflowing_add(&self.carry.cmux(one_u8, zero_u8));
+                                let (a, c) = (&self.a).overflowing_add(&x);
+                                res_addc_i_tuple = Some((a, y | c));
                             });
 
                             s.spawn(|_| res_sub_tuple = Some((&self.a).overflowing_sub(&self.b)));
                             s.spawn(|_| {
-                                res_subc_tuple =
-                                    Some((&self.a).overflowing_sub(
-                                        &(&self.b + self.carry.cmux(one_u8, zero_u8)),
-                                    ))
+                                let (x, y) =
+                                    (&self.b).overflowing_sub(&self.carry.cmux(one_u8, zero_u8));
+                                let (a, c) = (&self.a).overflowing_sub(&x);
+                                res_subc_tuple = Some((a, y | c));
                             });
                             s.spawn(|_| res_sub_i_tuple = Some((&self.a).overflowing_sub(operand)));
                             s.spawn(|_| {
-                                res_subc_i_tuple =
-                                    Some((&self.a).overflowing_sub(
-                                        &(operand + self.carry.cmux(one_u8, zero_u8)),
-                                    ))
+                                let (x, y) =
+                                    operand.overflowing_sub(&self.carry.cmux(one_u8, zero_u8));
+                                let (a, c) = (&self.a).overflowing_sub(&x);
+                                res_subc_i_tuple = Some((a, y | c));
                             });
 
                             s.spawn(|_| {
