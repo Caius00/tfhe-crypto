@@ -21,6 +21,7 @@ metadata:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
+  revisionHistoryLimit: 3
   source:
     repoURL: {{ $repoURL }}
     targetRevision: HEAD
