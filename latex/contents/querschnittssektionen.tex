@@ -52,13 +52,13 @@ Als API-Gateway wird Traefik eingesetzt. Traefik unterstützt die Kubernetes Gat
 
 \textbf{Routing}:
 Das Routing erfolgt pfadbasiert. Requests werden anhand ihres URL-Pfades an den zuständigen Microservice weitergeleitet.
-
-\textbf{Authentifizierung}:
+%
+%\textbf{Authentifizierung}:
 
 \textbf{Rate Limiting}:
 Traefik bietet technische Unterstützung für Rate Limiting über Middleware.
-
-\textbf{Fehlerbehandlung}:
+%
+%\textbf{Fehlerbehandlung}:
 
 \textbf{Sichtbarkeit von Daten im Gateway}:
 Da Traefik ausschließlich als Gateway fungiert und keine FHE-Bibliotheken verwendet, verarbeitet das Gateway lediglich die eingehenden HTTP-Anfragen und die darin enthaltenen Request-Payloads.
@@ -68,10 +68,10 @@ Da Traefik ausschließlich als Gateway fungiert und keine FHE-Bibliotheken verwe
 Das Frontend verwendet TFHE.js und führt FHE-bezogene Operationen clientseitig aus.
 
 Redis wird zur Speicherung von Schlüsseln verwendet. Die Schlüssel werden mit einer Time-to-Live (TTL) abgelegt.
-
-\textbf{Schlüsselgenerierung}:
-
-\textbf{Schlüsselübertragung}:
+%
+%\textbf{Schlüsselgenerierung}:
+%
+%\textbf{Schlüsselübertragung}:
 
 \textbf{Speicherung}:
 Schlüssel werden in Redis gespeichert und mit einer TTL versehen.
@@ -81,10 +81,10 @@ Schlüssel werden in Redis gespeichert und mit einer TTL versehen.
     \item Wie die Isolation zwischen Sessions umgesetzt wird
     \item Wie Mandanten- oder Benutzertrennung erfolgt
 \end{itemize}
-
-\textbf{Wiederverwendung}:
-
-\textbf{Session-Ende}:
+%
+%\textbf{Wiederverwendung}:
+%
+%\textbf{Session-Ende}:
 
 \subsection{Serialisierung}
 \label{sub:serialisierung}
@@ -92,10 +92,10 @@ Für die APIs werden Rust-Datenstrukturen verwendet, die gleichzeitig zur automa
 
 \textbf{API-Schnittstellen}:
 Die OpenAPI-Spezifikation wird automatisch mit aide und schemars aus den Rust-Datentypen erzeugt. Jeder Service stellt seine API-Dokumentation unter /docs bereit.
-
-\textbf{Serialisierungsformate}:
-
-\textbf{Größen von Ciphertexten}:
+%
+%\textbf{Serialisierungsformate}:
+%
+%\textbf{Größen von Ciphertexten}:
 
 \subsection{Build, Deployment, Tests}
 \label{sub:build_deployment_tests}
