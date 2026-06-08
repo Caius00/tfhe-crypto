@@ -49,14 +49,17 @@ pub(crate) fn decode_server_key(
     let bytes = general_purpose::STANDARD.decode(encoded).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
-            format!("Invalid ServerKey base64: {}", e),
+            format!("Ungültiger ServerKey (Base64): {}", e),
         )
     })?;
 
     bincode::deserialize(&bytes).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
-            format!("Failed to deserialize CompressedServerKey: {}", e),
+            format!(
+                "Deserialisierung von CompressedServerKey fehlgeschlagen: {}",
+                e
+            ),
         )
     })
 }
@@ -65,14 +68,14 @@ pub(crate) fn decode_encrypted_age(encoded: &str) -> Result<FheInt8, (StatusCode
     let bytes = general_purpose::STANDARD.decode(encoded).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
-            format!("Invalid Age base64: {}", e),
+            format!("Ungültiger Age (Base64): {}", e),
         )
     })?;
 
     bincode::deserialize(&bytes).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
-            format!("Failed to deserialize Encrypted Age: {}", e),
+            format!("Deserialisierung von Encrypted Age fehlgeschlagen: {}", e),
         )
     })
 }
