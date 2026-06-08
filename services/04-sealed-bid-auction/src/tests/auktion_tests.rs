@@ -10,9 +10,7 @@ use base64::{engine::general_purpose, Engine as _};
 use serde_json::{json, Value};
 use serial_test::serial;
 use std::sync::OnceLock;
-use tfhe::{
-    generate_keys, prelude::*, ClientKey, CompressedServerKey, ConfigBuilder, FheBool, FheUint32,
-};
+use tfhe::{generate_keys, prelude::*, ClientKey, CompressedServerKey, ConfigBuilder, FheUint32};
 use tower::util::ServiceExt;
 
 // ── Gecachter ServerKey für die Testumgebung ──────────────────────────────
@@ -121,13 +119,13 @@ async fn test_auction_successful_flow() {
         .decode(encrypted_result_b64)
         .unwrap();
 
-    let ist_b_groesser: FheBool = bincode::deserialize(&result_bytes).unwrap();
+    let gewinner_gebot_fhe: FheUint32 = bincode::deserialize(&result_bytes).unwrap();
 
-    let ergebnis: bool = ist_b_groesser.decrypt(client_key);
-
-    assert!(
-            ergebnis,"Mathematischer FHE-Check fehlgeschlagen: Gebot B (750) muss als größer als Gebot A (500) evaluiert werden!"
-        );
+    let ergebnis_klartext: u32 = gewinner_gebot_fhe.decrypt(client_key);
+    assert_eq!(
+        ergebnis_klartext, 750,
+        "Mathematischer FHE-Check fehlgeschlagen: Der Gewinner-Betrag muss 750 sein!"
+    );
 
     println!("✅ test: Vollständiger FHE-Auktionsdurchlauf inklusive Entschlüsselung erfolgreich!");
 }
