@@ -190,7 +190,8 @@ export class ProgramExecutionComponent implements OnInit {
             server_key: b64Key,
         };
 
-        const ws = new WebSocket(SERVICE_URLS.programExecution.localBase + SERVICE_URLS.programExecution.path);
+        const ws = new WebSocket(SERVICE_URLS.programExecution.remoteBase + "/" +
+          "program-execution" + SERVICE_URLS.programExecution.path + "-stream");
 
         ws.onopen = () => {
             ws.send(JSON.stringify(req));
