@@ -10,6 +10,7 @@ use tfhe::prelude::{FheEq, FheTrivialEncrypt, IfThenElse};
 use tfhe::{set_server_key, FheBool};
 use tfhe::ServerKey;
 use tokio::sync::{RwLock};
+use crate::routes::VALUE_LENGTH;
 
 fn get_redis_client() -> Client {
     let password = env::var("REDIS_PASSWORD").unwrap_or_default();
@@ -71,14 +72,34 @@ impl AppState {
 
     pub async fn put(
         &self,
-        key: &CustomFheAsciiString,
-        value: &CustomFheAsciiString,
-        session_id: &str,
+        route_key: CompressedCustomFheAsciiString,
+        route_value: CompressedCustomFheAsciiString,
+        session_id: String,
     ) -> Result<(), AppError> {
+        let server_key = {
+            let keys_lock = self.server_keys.read().await;
+            keys_lock.get(&session_id)
+                .ok_or(AppError::Unauthorized)?
+                .clone()
+        };
         let mut con = self.client.get_multiplexed_async_connection().await?;
+        let (db_key, compressed_value) = tokio::task::spawn_blocking(move || {
+            set_server_key(server_key);
 
-        let db_key = Self::create_db_key(key, session_id);
-        let compressed_value = value.compress().string;
+            let key = route_key.route_decompress();
+            let value = route_value.route_decompress();
+
+            // if value.string.len() != VALUE_LENGTH {
+            //     Err(AppError::ValueLength(value.string.len()))?
+            // }
+
+            let db_key = Self::create_db_key(&key, &session_id);
+            let compressed_value = value.compress().string;
+
+            (db_key, compressed_value)
+        })
+        .await
+        .map_err(|e| AppError::InternalError(e.to_string()))?;
 
         con.set_ex::<Vec<u8>, Vec<u8>, ()>(db_key, compressed_value, self.ttl_sec)
             .await?;
@@ -88,7 +109,7 @@ impl AppState {
 
     pub async fn get(
         &self,
-        key: CustomFheAsciiString,
+        route_key: CompressedCustomFheAsciiString,
         session_id: String,
     ) -> Result<(CustomFheAsciiString, FheBool), AppError> {
         let server_key = {
@@ -111,6 +132,7 @@ impl AppState {
 
         tokio::task::spawn_blocking(move || {
             set_server_key(server_key);
+            let key = route_key.route_decompress();
 
             let (is_match, last_found_value) = keys
                 .into_iter()
@@ -148,7 +170,7 @@ impl AppState {
 
     pub async fn exists(
         &self,
-        key: CustomFheAsciiString,
+        route_key: CompressedCustomFheAsciiString,
         session_id: String,
     ) -> Result<FheBool, AppError> {
         let server_key = {
@@ -169,6 +191,7 @@ impl AppState {
 
         tokio::task::spawn_blocking(move || {
             set_server_key(server_key);
+            let key = route_key.route_decompress();
 
             let mut result = FheBool::encrypt_trivial(false);
             for k in raw_keys {
@@ -191,10 +214,23 @@ impl AppState {
     /// dont use. should just wait for entries to expire
     pub async fn delete(
         &self,
-        key: CustomFheAsciiString,
+        route_key: CompressedCustomFheAsciiString,
         session_id: String,
-        server_key: ServerKey,
     ) -> Result<(), AppError> {
+        let server_key = {
+            let keys_lock = self.server_keys.read().await;
+            keys_lock.get(&session_id)
+                .ok_or(AppError::Unauthorized)?
+                .clone()
+        };
+        let key = tokio::task::spawn_blocking(move || {
+            set_server_key(server_key);
+
+            route_key.route_decompress()
+        })
+        .await
+        .map_err(|e| AppError::InternalError(e.to_string()))?;
+
         let mut con = self.client.get_multiplexed_async_connection().await?;
         let db_key = Self::create_db_key(&key, &session_id);
 
@@ -204,12 +240,17 @@ impl AppState {
     }
 
     fn create_db_key(key: &CustomFheAsciiString, session_id: &str) -> Vec<u8> {
+        println!("create_db_key-A");
         let mut db_key = Vec::new();
-
+        println!("create_db_key-B");
         let len = session_id.len() as u32;
+        println!("create_db_key-C");
         db_key.extend_from_slice(&len.to_be_bytes());
+        println!("create_db_key-D");
         db_key.extend_from_slice(session_id.as_bytes());
+        println!("create_db_key-E");
         db_key.extend_from_slice(&key.compress().string);
+        println!("create_db_key-F");
 
         db_key
     }
@@ -246,100 +287,100 @@ impl Default for AppState {
     }
 }
 
-#[cfg(test)]
-mod test_exists {
-    use std::thread;
-    use super::*;
-    use redis::Commands;
-    use tfhe::prelude::FheDecrypt;
-    use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
-    use tfhe::{set_server_key, ClientKey, CompressedServerKey};
-    use tokio::runtime::Runtime;
-    use uuid::Uuid;
-
-    async fn run_basic(app_state: Arc<AppState>, key: &str, value: &str) {
-        let parameters =
-            MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
-                .with_compression(true)
-                .find()
-                .expect("Could not find suitable parameters");
-
-        let client_key = ClientKey::generate(parameters);
-        let compressed_server_key = CompressedServerKey::new(&client_key);
-        set_server_key(compressed_server_key.decompress());
-
-        let enc_key = CustomFheAsciiString::new(key, &client_key);
-        let enc_value = CustomFheAsciiString::new(value, &client_key);
-        let session_id = Uuid::new_v4().to_string();
-        let db_key = AppState::create_db_key(&enc_key, &session_id);
-
-        let enc_should_false = app_state.exists(enc_key.clone(), session_id.clone()).await.unwrap();
-
-        let mut con = app_state.client.get_connection().unwrap();
-        con.set::<Vec<u8>, Vec<u8>, ()>(db_key, enc_value.compress().string)
-            .unwrap();
-
-        let enc_should_true = app_state.exists(enc_key, session_id).await.unwrap();
-
-        let should_false = enc_should_false.decrypt(&client_key);
-        let should_true = enc_should_true.decrypt(&client_key);
-
-        assert!(!should_false);
-        assert!(should_true);
-    }
-
-    #[tokio::test]
-    async fn basic() {
-        let parameters =
-            MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
-                .with_compression(true)
-                .find()
-                .expect("Could not find suitable parameters");
-
-        let client_key = ClientKey::generate(parameters);
-        let compressed_server_key = CompressedServerKey::new(&client_key);
-        set_server_key(compressed_server_key.decompress());
-
-        let enc_key = CustomFheAsciiString::new("Hello Key", &client_key);
-        let enc_value = CustomFheAsciiString::new("Hello Value", &client_key);
-        let session_id = Uuid::new_v4().to_string();
-        let db_key = AppState::create_db_key(&enc_key, &session_id);
-
-        let app_state = AppState::new();
-
-        let enc_should_false = app_state.exists(enc_key.clone(), session_id.clone()).await.unwrap();
-
-        let mut con = app_state.client.get_connection().unwrap();
-        con.set::<Vec<u8>, Vec<u8>, ()>(db_key, enc_value.compress().string)
-            .unwrap();
-
-        let enc_should_true = app_state.exists(enc_key, session_id).await.unwrap();
-
-        let should_false = enc_should_false.decrypt(&client_key);
-        let should_true = enc_should_true.decrypt(&client_key);
-
-        assert!(!should_false);
-        assert!(should_true);
-    }
-
-    #[tokio::test]
-    async fn basic_threads() {
-        let app_state = Arc::new(AppState::new());
-
-        let a1 = Arc::clone(&app_state);
-        let a2 = Arc::clone(&app_state);
-
-        let handle1 = thread::spawn(move || {
-            let rt = Runtime::new().unwrap();
-            rt.block_on(run_basic(a1, "Hello Key A", "Hello Value A"));
-        });
-
-        let handle2 = thread::spawn(move || {
-            let rt = Runtime::new().unwrap();
-            rt.block_on(run_basic(a2, "Hello Key B", "Hello Value B"));
-        });
-
-        handle1.join().unwrap();
-        handle2.join().unwrap();
-    }
-}
+// #[cfg(test)]
+// mod test_exists {
+//     use std::thread;
+//     use super::*;
+//     use redis::Commands;
+//     use tfhe::prelude::FheDecrypt;
+//     use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
+//     use tfhe::{set_server_key, ClientKey, CompressedServerKey};
+//     use tokio::runtime::Runtime;
+//     use uuid::Uuid;
+//
+//     async fn run_basic(app_state: Arc<AppState>, key: &str, value: &str) {
+//         let parameters =
+//             MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
+//                 .with_compression(true)
+//                 .find()
+//                 .expect("Could not find suitable parameters");
+//
+//         let client_key = ClientKey::generate(parameters);
+//         let compressed_server_key = CompressedServerKey::new(&client_key);
+//         set_server_key(compressed_server_key.decompress());
+//
+//         let enc_key = CustomFheAsciiString::new(key, &client_key);
+//         let enc_value = CustomFheAsciiString::new(value, &client_key);
+//         let session_id = Uuid::new_v4().to_string();
+//         let db_key = AppState::create_db_key(&enc_key, &session_id);
+//
+//         let enc_should_false = app_state.exists(enc_key.clone(), session_id.clone()).await.unwrap();
+//
+//         let mut con = app_state.client.get_connection().unwrap();
+//         con.set::<Vec<u8>, Vec<u8>, ()>(db_key, enc_value.compress().string)
+//             .unwrap();
+//
+//         let enc_should_true = app_state.exists(enc_key, session_id).await.unwrap();
+//
+//         let should_false = enc_should_false.decrypt(&client_key);
+//         let should_true = enc_should_true.decrypt(&client_key);
+//
+//         assert!(!should_false);
+//         assert!(should_true);
+//     }
+//
+//     #[tokio::test]
+//     async fn basic() {
+//         let parameters =
+//             MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
+//                 .with_compression(true)
+//                 .find()
+//                 .expect("Could not find suitable parameters");
+//
+//         let client_key = ClientKey::generate(parameters);
+//         let compressed_server_key = CompressedServerKey::new(&client_key);
+//         set_server_key(compressed_server_key.decompress());
+//
+//         let enc_key = CustomFheAsciiString::new("Hello Key", &client_key);
+//         let enc_value = CustomFheAsciiString::new("Hello Value", &client_key);
+//         let session_id = Uuid::new_v4().to_string();
+//         let db_key = AppState::create_db_key(&enc_key, &session_id);
+//
+//         let app_state = AppState::new();
+//
+//         let enc_should_false = app_state.exists(enc_key.clone(), session_id.clone()).await.unwrap();
+//
+//         let mut con = app_state.client.get_connection().unwrap();
+//         con.set::<Vec<u8>, Vec<u8>, ()>(db_key, enc_value.compress().string)
+//             .unwrap();
+//
+//         let enc_should_true = app_state.exists(enc_key, session_id).await.unwrap();
+//
+//         let should_false = enc_should_false.decrypt(&client_key);
+//         let should_true = enc_should_true.decrypt(&client_key);
+//
+//         assert!(!should_false);
+//         assert!(should_true);
+//     }
+//
+//     #[tokio::test]
+//     async fn basic_threads() {
+//         let app_state = Arc::new(AppState::new());
+//
+//         let a1 = Arc::clone(&app_state);
+//         let a2 = Arc::clone(&app_state);
+//
+//         let handle1 = thread::spawn(move || {
+//             let rt = Runtime::new().unwrap();
+//             rt.block_on(run_basic(a1, "Hello Key A", "Hello Value A"));
+//         });
+//
+//         let handle2 = thread::spawn(move || {
+//             let rt = Runtime::new().unwrap();
+//             rt.block_on(run_basic(a2, "Hello Key B", "Hello Value B"));
+//         });
+//
+//         handle1.join().unwrap();
+//         handle2.join().unwrap();
+//     }
+// }

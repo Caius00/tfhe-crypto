@@ -1,20 +1,28 @@
 import { Component, inject, signal } from '@angular/core';
 import { JsonPipe } from '@angular/common';
-import { FormsModule } from '@angular/forms'; // <--- ADD THIS
+import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { TfheService } from '../../core/crypto/tfhe.service';
 import { SERVICE_URLS } from '../../core/api/service-urls';
 import { firstValueFrom } from 'rxjs';
 import { KeyPair } from '../../core/crypto/key-pair.model';
-import { CompressedFheUint8, TfheClientKey } from 'tfhe';
-import { Serializer } from '@angular/compiler';
+import {
+  CompactCiphertextList,
+  ShortintParameters,
+  ShortintParametersName,
+  TfheClientKey,
+  TfheCompactPublicKey,
+  TfheCompressedServerKey,
+  TfheConfigBuilder,
+  TfhePublicKey,
+} from 'tfhe';
 
 interface SessionResponse {
   message: string;
 }
 
 interface ValueResponse {
-  value: number[];
+  value: Uint8Array<ArrayBufferLike>;
 }
 
 interface MessageResponse {
@@ -55,7 +63,7 @@ export class KeyValueStoreComponent {
 
   async createKeypair(): Promise<void> {
     await this.tfheService.ensureInitialized();
-    this.keyPair = this.tfheService.generateKeyPair();
+    this.keyPair = generateKeyPair();
 
     this.message.set('Key pair generated successfully.');
     this.error.set(null);
@@ -110,15 +118,16 @@ export class KeyValueStoreComponent {
       return;
     }
 
-    let enc_key = encryptString(currentKey, keyPair.clientKey);
-    let enc_value = encryptString(currentValue, keyPair.clientKey);
+    let pub_key = TfheCompactPublicKey.new(keyPair.clientKey);
+    let enc_key = encryptString(currentKey, pub_key);
+    let enc_value = encryptString(currentValue, pub_key);
 
     try {
       // 3. Make the request (Adjust payload to match your actual API)
       const res = await firstValueFrom(
         this.http.post(`${this.baseUrl}/entry`, {
-          key: enc_key,
-          value: enc_value,
+          key: Array.from(enc_key),
+          value: Array.from(enc_value),
           session_id: activeSessionId,
         }),
       );
@@ -157,21 +166,25 @@ export class KeyValueStoreComponent {
       return;
     }
 
-    let enc_key = encryptString(currentKey, keyPair.clientKey);
+    let pub_key = TfheCompactPublicKey.new(keyPair.clientKey);
+    let enc_key = encryptString(currentKey, pub_key);
 
     try {
       // 3. Make the GET request
       const res = await firstValueFrom(
         this.http.get<ValueResponse>(`${this.baseUrl}/entry`, {
           params: {
-            key: currentKey,
+            key: Array.from(enc_key),
             session_id: activeSessionId,
           },
         }),
       );
 
       // 4. Handle Success
-      this.message.set(`Successfully retrieved "${currentKey}"`);
+      const pubKey = TfhePublicKey.new(keyPair.clientKey);
+      const parsed_string = decryptString(res.value, pubKey);
+
+      this.message.set(`Successfully retrieved value: "${currentKey}", "${parsed_string}"`);
       this.error.set(null);
       this.response.set(res);
 
@@ -203,20 +216,22 @@ export class KeyValueStoreComponent {
       return;
     }
 
-    let enc_key = encryptString(currentKey, keyPair.clientKey);
+    let pub_key = TfheCompactPublicKey.new(keyPair.clientKey);
+    let enc_key = encryptString(currentKey, pub_key);
 
     try {
       // 3. Make the GET request
       const res = await firstValueFrom(
         this.http.get<ValueResponse>(`${this.baseUrl}/entry/exists`, {
           params: {
-            key: currentKey,
+            key: Array.from(enc_key),
             session_id: activeSessionId,
           },
         }),
       );
 
       // 4. Handle Success
+      // const parsed_string = decryptString(res.value, keyPair.clientKey);
       this.message.set(`Successfully retrieved "${currentKey}"`);
       this.error.set(null);
       this.response.set(res);
@@ -249,14 +264,15 @@ export class KeyValueStoreComponent {
       return;
     }
 
-    let enc_key = encryptString(currentKey, keyPair.clientKey);
+    let pub_key = TfheCompactPublicKey.new(keyPair.clientKey);
+    let enc_key = encryptString(currentKey, pub_key);
 
     try {
       // 3. Make the GET request
       const res = await firstValueFrom(
         this.http.delete(`${this.baseUrl}/entry`, {
           params: {
-            key: currentKey,
+            key: Array.from(enc_key),
             session_id: activeSessionId,
           },
         }),
@@ -279,11 +295,52 @@ export class KeyValueStoreComponent {
   }
 }
 
-function encryptString(str: string, clientKey: TfheClientKey) {
-  // TODO()
+function encryptString(plaintext: string, pub_key: TfheCompactPublicKey) {
+  const encoder = new TextEncoder();
+  const builder = CompactCiphertextList.builder(pub_key);
+
+  for (const char of plaintext) {
+    const utf8Bytes = encoder.encode(char);
+    for (const byte of utf8Bytes) {
+      builder.push_u8(byte);
+    }
+  }
+
+  const compactList = builder.build();
+
+  return compactList.serialize();
 }
 
-function decryptString(encrypted: string, clientKey: TfheClientKey): string {
-  // TODO()
-  return encrypted
+function decryptString(encrypted: Uint8Array<ArrayBufferLike>, client_key: TfheClientKey): String {
+  const decoder = new TextDecoder('utf-8');
+
+  const compactList = CompactCiphertextList.deserialize(encrypted).expand();
+
+  const bytes: number[] = [];
+
+  for (let i = 0; i < compactList.len(); i++) {
+    const byte = compactList.get_uint8(i).decrypt(client_key);
+    bytes.push(byte);
+  }
+
+  return decoder.decode(new Uint8Array(bytes));
+}
+
+function generateKeyPair(): KeyPair {
+  const config = TfheConfigBuilder.default().build();
+  const clientKey = TfheClientKey.generate(config);
+  const publicKey = TfheCompactPublicKey.new(clientKey);
+  const publicKeyBytes = publicKey.serialize();
+
+  const compressedServerKey = TfheCompressedServerKey.new(clientKey);
+  const serverKeyBytes = compressedServerKey.serialize();
+
+  publicKey.free();
+  compressedServerKey.free();
+
+  return {
+    clientKey,
+    publicKeyBytes,
+    serverKeyBytes,
+  };
 }

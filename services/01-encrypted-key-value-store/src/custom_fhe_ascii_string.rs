@@ -1,8 +1,6 @@
 use std::ops::{BitAnd, Not};
 use tfhe::prelude::{CiphertextList, FheDecrypt, FheEncrypt, FheEq, FheTrivialEncrypt, IfThenElse};
-use tfhe::{
-    ClientKey, CompressedCiphertextList, CompressedCiphertextListBuilder, FheBool, FheUint8,
-};
+use tfhe::{ClientKey, CompactCiphertextList, CompactPublicKey, CompressedCiphertextList, CompressedCiphertextListBuilder, FheBool, FheUint8};
 
 #[derive(Clone)]
 pub struct CustomFheAsciiString {
@@ -47,8 +45,20 @@ impl CompressedCustomFheAsciiString {
             string: compressed_string,
         }
     }
+    pub fn route_decompress(&self) -> CustomFheAsciiString {
+        let compact_list: CompactCiphertextList = bincode::deserialize(&self.string).unwrap();
+        let expanded_list = compact_list.expand().unwrap();
+
+        let string = (0..expanded_list.len())
+            .map(|i| expanded_list.get(i).unwrap().unwrap())
+            .collect::<Vec<FheUint8>>();
+
+        CustomFheAsciiString { string }
+    }
+
     pub fn decompress(&self) -> CustomFheAsciiString {
         let compressed_list: CompressedCiphertextList = bincode::deserialize(&self.string).unwrap();
+
         let string = (0..compressed_list.len())
             .map(|i| compressed_list.get(i).unwrap().unwrap())
             .collect::<Vec<FheUint8>>();
