@@ -2,6 +2,88 @@
 \label{sub:encrypted_program_execution}
 
 \subsubsection{Funktionsbeschreibung}
+Der Use-Case ``Encrypted Program Execution'' bietet Usern die Möglichkeit,
+ein Programm auf einem Server auszuführen, ohne dass diesem dafür Einsicht in Algorithmen oder Berechnungen gewährt wird.
+
+Dafür läuft auf dem Server ein CPU-Simulator, auf dem Programme isoliert und vollständig verschlüsselt ausgeführt werden.
+
+Der Simulator basiert dabei auf einer Von-Neumann-Akkumulator-Architektur und verfügt über
+
+\begin{itemize}
+    \item einem Akkumulator-Register A
+    \item einem weiteren Register B, das bei vielen Instruktionen einen der beiden Operanden enthält
+    \item 16-Bit Instruktionen mit 8-Bit Opcode und 8-Bit Operanden
+    \item native Unterstützung von höheren Zahlenbereichen durch \texttt{ADDC} und \texttt{SUBC} Befehlen
+    \item 8-Bit Wortbreite
+    \item einem RAM mit 8-Bit Adressraum
+    \item geteiltem Adressraum für Programmcode und Programmspeicher
+\end{itemize}
+
+\autoref{tab:instruction_set} bietet eine Übersicht über das Instruction-Set.
+Besonders hervorzuheben ist dabei, dass auf jeden Opcode ein Operand folgt, auch bei Operationen,
+bei denen dieser keine Bedeutung hat.
+Dieses redundante Byte kann als Don't-Care angesehen werden.
+Bemerkenswert ist auch das explizite Fehlen eines
+Nach Sprüngen wird der Programmcounter nicht inkrementiert, ein Assembler muss Sprungadressen dementsprechend bei der Assemblierung nicht verändern.
+Nach allen weiteren Instruktionen wird der Programmcounter um zwei inkrementiert:
+\begin{gather*}
+    PC \leftarrow PC + 2
+\end{gather*}
+Der aktuelle Zustand des Programms wird dem Client nach jedem ausgeführten Zyklus mitgeteilt.
+
+\textbf{Funktionsweise der verschlüsselten Ausführung:}\\
+
+
+\begin{table}[htbp]
+    \centering
+    \caption{Simulator Instruction-Set-Architecture}
+    \label{tab:instruction_set}
+    \small
+    \begin{tabularx}{\textwidth}{l l l c X}
+\toprule
+\textbf{Opcode} & \textbf{Mnemonic} & \textbf{Operand} & \textbf{Carry} & \textbf{Description} \\
+\midrule
+$0000\_0000$ & $NOP$              & $ignored$  & $-$     & $No\ operation$ \\
+$0000\_0001$ & $LDA (direct)$     & $source\_ADR$ & $-$     & $A \leftarrow M[source\_ADR]$ \\
+$0000\_0010$ & $LDA (immediate)$  & $data$       & $-$     & $A \leftarrow data$ \\
+$0000\_0011$ & $LDR$              & $target\_ADR$ & $-$     & $M[target\_ADR] \leftarrow A$ \\
+$0000\_0100$ & $SWP$              & $ignored$  & $-$     & $A \leftarrow B, B \leftarrow A$ \\
+$0000\_0101$ & $JMP  (direct)$    & $ADR$        & $-$     & $SP \leftarrow ADR - 1$ \\
+$0000\_0110$ & $JMZ  (direct)$    & $ADR$        & $-$     & if $A = 0\ then\ SP \leftarrow ADR$ \\
+$0000\_0111$ & $JMC  (direct)$    & $ADR$        & $-$     & if $carry\ then\ SP \leftarrow ADR$ \\
+$0000\_1000$ & $DJNZ (direct)$    & $ADR$        & $-$     & ${A \leftarrow A - 1;} {if A \neq 0\ then\ SP \leftarrow ADR}$ \\
+\midrule
+$0000\_1001$ & $ADD$              & $ignored$  & $*$   & $A \leftarrow A + B$ \\
+$0000\_1010$ & $ADDC$             & $ignored$  & $*$   & $A \leftarrow A + B + carry$ \\
+$0000\_1011$ & $ADD (immediate)$  & $data$       & $*$   & $A \leftarrow A + data$ \\
+$0000\_1100$ & $ADDC (immediate)$ & $data$       & $*$   & $A \leftarrow A + data + carry$ \\
+$0000\_1101$ & $SUB$              & $ignored$  & $*$   & $A \leftarrow A - B$ \\
+$0000\_1110$ & $SUBC$             & $ignored$  & $*$   & $A \leftarrow A - B - carry$ \\
+$0000\_1111$ & $SUB (immediate)$  & $data $      & $*$   & $A \leftarrow A - data$ \\
+$0001\_0000$ & $SUBC (immediate)$ & $data $      & $*$   & $A \leftarrow A - data - carry$ \\
+\midrule
+$0001\_0001$ & $MUL$              & $ignored$  & $0$     & $A \mathbin{\Vert} B \leftarrow A \times B$ \\
+$0001\_0010$ & $MUL (immediate)$  & $data$       & $0$     & $A \mathbin{\Vert} B \leftarrow A \times data$ \\
+$0001\_0011$ & $DIV$              & $ignored$  & $0$     & $A \leftarrow \lfloor A / B \rfloor$ \\
+$0001\_0100$ & $DIV (immediate)$  & $data$       & $0$     & $A \leftarrow \lfloor A / data \rfloor$ \\
+\midrule
+$0001\_0101$ & $SLA$              & $ignored$  & $A[7]$  & $A \leftarrow A \ll 1$ \\
+$0001\_0110$ & $SRA$              & $ignored$  & $A[0]$  & $A \leftarrow A \gg 1$ \\
+$0001\_0111$ & $RLA$              & $ignored$  & $A[7]$  & $A \leftarrow (A \ll 1) \lor carry$ \\
+$0001\_1000$ & $RLC$              & $ignored$  & $A[7]$  & $A \leftarrow (A \ll 1) \lor A[7]$ \\
+$0001\_1001$ & $RRA$              & $ignored$  & $A[0]$  & $A \leftarrow (A \gg 1) \lor (carry \ll 7)$ \\
+$0001\_1010$ & $RRC$              & $ignored$  & $A[0]$  & $A \leftarrow (A \gg 1) \lor (A[0] \ll 7)$ \\
+\midrule
+$0001\_1011$ & $CCA$              & $ignored$  & $-$     & $A \leftarrow \overline{A}$ \\
+$0001\_1100$ & $AND$              & $ignored$  & $-$     & $A \leftarrow A \land B$ \\
+$0001\_1101$ & $OR$               & $ignored$  & $-$     & $A \leftarrow A  \lor B$ \\
+$0001\_1110$ & $XOR$              & $ignored$  & $-$     & $A \leftarrow A \oplus B$ \\
+\midrule
+$0001\_1111$ & $DEC$              & $ignored$  & $*$   & $A \leftarrow A - 1$ \\
+$0010\_0000$ & $INC$              & $ignored$  & $*$   & $A \leftarrow A + 1$ \\
+\bottomrule
+    \end{tabularx}
+\end{table}
 
 \subsubsection{OpenAPI-Schnittstelle}
 
