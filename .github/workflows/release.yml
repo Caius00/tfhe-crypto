@@ -16,7 +16,7 @@ env:
 
 jobs:
   setup:
-    runs-on: ubuntu-latest
+    runs-on: bunto #ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
       any: ${{ steps.matrix.outputs.any }}
@@ -87,7 +87,7 @@ jobs:
   bump:
     needs: setup
     if: needs.setup.outputs.any == 'true'
-    runs-on: ubuntu-latest
+    runs-on: bunto #ubuntu-latest
     permissions:
       contents: write
     outputs:
@@ -141,7 +141,7 @@ jobs:
   build-push:
     needs: [setup, bump]
     if: needs.setup.outputs.any == 'true'
-    runs-on: ubuntu-latest
+    runs-on: bunto #ubuntu-latest
     permissions:
       contents: read
       packages: write
@@ -204,7 +204,7 @@ jobs:
   update-readme:
     needs: [bump, build-push]
     if: always() && needs.bump.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: bunto #ubuntu-latest
     permissions:
       contents: write
     steps:
@@ -247,7 +247,7 @@ jobs:
   update-helm:
     needs: [bump, build-push, update-readme]
     if: always() && needs.bump.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: bunto #ubuntu-latest
     permissions:
       contents: write
     steps:
