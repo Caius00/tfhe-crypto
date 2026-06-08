@@ -41,9 +41,7 @@ async fn main() {
                 op.description("Fetch the encrypted value for an encrypted key under the session.")
             })
             .delete_with(delete_route, |op| {
-                op.description(
-                    "Delete an encrypted entry. Prefer letting the TTL expire instead.",
-                )
+                op.description("Delete an encrypted entry. Prefer letting the TTL expire instead.")
             }),
         )
         .api_route(
