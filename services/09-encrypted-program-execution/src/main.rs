@@ -38,6 +38,7 @@ struct ExecResp {
 #[tokio::main]
 async fn main() {
     let app = Router::new()
+        .merge(health::router(env!("CARGO_PKG_VERSION")))
         .route("/execute", post(handle_compute))
         .route("/execute-stream", get(handle_execute_stream))
         .layer(
