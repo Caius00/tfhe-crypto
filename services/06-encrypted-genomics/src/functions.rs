@@ -1039,9 +1039,7 @@ fn homomorphic_levenshtein_distance(
         dp[i][0] = init_values[i].clone();
     }
 
-    for j in 0..=n {
-        dp[0][j] = init_values[j].clone();
-    }
+    dp[0][..(n + 1)].clone_from_slice(&init_values[..(n + 1)]);
 
     for diagonal in 2..=(m + n) {
         let start_i = diagonal.saturating_sub(n).max(1);
@@ -1106,9 +1104,7 @@ fn homomorphic_levenshtein_distance_encrypted(
         dp[i][0] = init_values[i].clone();
     }
 
-    for j in 0..=n {
-        dp[0][j] = init_values[j].clone();
-    }
+    dp[0][..(n + 1)].clone_from_slice(&init_values[..(n + 1)]);
 
     for diagonal in 2..=(m + n) {
         let start_i = diagonal.saturating_sub(n).max(1);
@@ -1574,7 +1570,7 @@ fn compare_database_levenshtein(
 
     let encrypted_result_items: Vec<Vec<String>> = results
         .par_iter()
-        .map(|distance| serialize_fhe_items(&[distance.clone()]))
+        .map(|distance| serialize_fhe_items(std::slice::from_ref(distance)))
         .collect::<Result<_, _>>()?;
 
     Ok(CompareDatabaseLevenshteinResponse {
@@ -1670,7 +1666,7 @@ fn compare_session_sequences_levenshtein(
 
     let encrypted_result_items: Vec<Vec<String>> = results
         .par_iter()
-        .map(|distance| serialize_fhe_items(&[distance.clone()]))
+        .map(|distance| serialize_fhe_items(std::slice::from_ref(distance)))
         .collect::<Result<_, _>>()?;
 
     Ok(CompareSessionSequencesResponse {
