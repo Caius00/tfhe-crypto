@@ -9,9 +9,9 @@ use crate::routes::{
 use crate::store::{AppState, SharedState};
 use axum::extract::DefaultBodyLimit;
 use axum::routing::{delete, get, post};
-use axum::Router;
 use std::env;
 use std::sync::Arc;
+use aide::axum::ApiRouter;
 
 #[tokio::main]
 async fn main() {
@@ -22,16 +22,24 @@ async fn main() {
     // TODO() use threadpool and add parallelisation (does it work?)
     // TODO() change from u8 to bigger number to store more with less overhead
 
-    let app = Router::new()
+    let api_router = ApiRouter::new()
         .route("/session", post(create_session_route))
         .route("/entry", post(put_route)) // TODO() better naming for put_route (not http put, but key-value put meant)
         .route("/entry", get(get_route))
         .route("/entry/exists", get(exists_route))
         .route("/entry", delete(delete_route))
         .route("/clear", delete(clear_db))
-        .with_state(state)
-        .layer(DefaultBodyLimit::max(2 * 1024 * 1024 * 1024)) // TODO() this is huge; find better solution
-        .merge(health::router(env!("CARGO_PKG_VERSION")));
+        .with_state(state);
+
+    let app = openapi_docs::attach(
+        api_router,
+        "Key Value Store",
+        "Stores both keys and values in its homomorphic representation.\
+        Both keys and values are stored in an array of FheUint8.",
+        env!("CARGO_PKG_VERSION"),
+    )
+        .merge(health::router(env!("CARGO_PKG_VERSION")))
+        .layer(DefaultBodyLimit::max(2 * 1024 * 1024 * 1024));
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();

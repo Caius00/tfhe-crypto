@@ -1,1 +1,16 @@
 <h1>01 – Encrypted Key-Value Store</h1>
+
+<div class="button-group">
+    @for (action of actions; track action.label) {
+        <button type="button" (click)="action.handler()">
+            {{ action.label }}
+        </button>
+    }
+</div>
+
+@if (response) {
+    <section class="response">
+        <h3>Response</h3>
+        <pre>{{ response | json }}</pre>
+    </section>
+}

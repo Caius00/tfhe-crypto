@@ -5,11 +5,11 @@ use redis::{AsyncCommands, Client, ConnectionAddr, ConnectionInfo, RedisConnecti
 use std::collections::HashMap;
 use std::ops::BitOr;
 use std::sync::Arc;
-use std::{env, thread};
+use std::{env};
 use tfhe::prelude::{FheEq, FheTrivialEncrypt, IfThenElse};
-use tfhe::FheBool;
+use tfhe::{set_server_key, FheBool};
 use tfhe::ServerKey;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock};
 
 fn get_redis_client() -> Client {
     let password = env::var("REDIS_PASSWORD").unwrap_or_default();
@@ -75,7 +75,6 @@ impl AppState {
         value: &CustomFheAsciiString,
         session_id: &str,
     ) -> Result<(), AppError> {
-        println!("Putting in thread: {:?}", thread::current().id());
         let mut con = self.client.get_multiplexed_async_connection().await?;
 
         let db_key = Self::create_db_key(key, session_id);
@@ -89,9 +88,16 @@ impl AppState {
 
     pub async fn get(
         &self,
-        key: &CustomFheAsciiString,
-        session_id: &str,
+        key: CustomFheAsciiString,
+        session_id: String,
     ) -> Result<(CustomFheAsciiString, FheBool), AppError> {
+        let server_key = {
+            let keys_lock = self.server_keys.read().await;
+            keys_lock.get(&session_id)
+                .ok_or(AppError::Unauthorized)?
+                .clone()
+        };
+
         let mut con = self.client.get_multiplexed_async_connection().await?;
         let mut iter: redis::AsyncIter<Vec<u8>> = con.scan().await?;
 
@@ -103,76 +109,94 @@ impl AppState {
 
         let values: Vec<Option<Vec<u8>>> = con.mget(&keys).await?;
 
-        let (is_match, last_found_value) = keys
-            .into_iter()
-            .zip(values)
-            .filter_map(|(k, v_opt)| {
-                let v = v_opt?;
+        tokio::task::spawn_blocking(move || {
+            set_server_key(server_key);
 
-                let (sid, found_key) = Self::parse_db_key(&k).ok()?;
-                if sid != session_id {
-                    None
-                } else {
-                    Some((
-                        found_key.eq(key.clone()),
-                        CompressedCustomFheAsciiString::new(v).decompress(),
-                    ))
-                }
-            })
-            .fold(None::<(FheBool, CustomFheAsciiString)>, |acc, (m, v)| {
-                Some(match acc {
-                    None => (m.clone(), v),
-                    Some((acc_m, acc_v)) => {
-                        let new_m = acc_m.bitor(m);
-                        let new_v = new_m.if_then_else(&v, &acc_v);
-                        (new_m, new_v)
+            let (is_match, last_found_value) = keys
+                .into_iter()
+                .zip(values)
+                .filter_map(|(k, v_opt)| {
+                    let v = v_opt?;
+
+                    let (sid, found_key) = Self::parse_db_key(&k).ok()?;
+                    if sid != session_id {
+                        None
+                    } else {
+                        Some((
+                            found_key.eq(key.clone()),
+                            CompressedCustomFheAsciiString::new(v).decompress(),
+                        ))
                     }
                 })
-            })
-            .ok_or_else(|| AppError::NotFound(session_id.to_string()))?;
+                .fold(None::<(FheBool, CustomFheAsciiString)>, |acc, (m, v)| {
+                    Some(match acc {
+                        None => (m.clone(), v),
+                        Some((acc_m, acc_v)) => {
+                            let new_m = acc_m.bitor(m);
+                            let new_v = new_m.if_then_else(&v, &acc_v);
+                            (new_m, new_v)
+                        }
+                    })
+                })
+                .ok_or_else(|| AppError::NotFound(session_id.to_string()))?;
 
-        Ok((last_found_value, is_match))
+            Ok((last_found_value, is_match))
+        })
+        .await
+        .map_err(|e| AppError::InternalError(e.to_string()))?
     }
 
     pub async fn exists(
         &self,
-        key: &CustomFheAsciiString,
-        session_id: &str,
+        key: CustomFheAsciiString,
+        session_id: String,
     ) -> Result<FheBool, AppError> {
-        println!("Exists in thread: {:?}", thread::current().id());
+        let server_key = {
+            let keys_lock = self.server_keys.read().await;
+            keys_lock.get(&session_id)
+                .ok_or(AppError::Unauthorized)?
+                .clone()
+        };
+
         let mut con = self.client.get_multiplexed_async_connection().await?;
         let mut iter: redis::AsyncIter<Vec<u8>> = con.scan().await?;
 
-        let mut keys = Vec::new();
+        let mut raw_keys = Vec::new();
         while let Some(found_key) = iter.next_item().await {
-            keys.push(found_key);
+            raw_keys.push(found_key);
         }
         drop(iter);
 
-        let mut result = FheBool::encrypt_trivial(false);
-        for k in keys {
-            let Ok((sid, found_key)) = Self::parse_db_key(&k) else {
-                continue;
-            };
-            if sid != session_id {
-                continue;
-            } else {
-                println!("Found match for session: {}", session_id);
-                result = result.bitor(found_key.eq(key.clone()));
-            }
-        }
+        tokio::task::spawn_blocking(move || {
+            set_server_key(server_key);
 
-        Ok(result)
+            let mut result = FheBool::encrypt_trivial(false);
+            for k in raw_keys {
+                let Ok((sid, found_key)) = Self::parse_db_key(&k) else {
+                    continue;
+                };
+                if sid != session_id {
+                    continue;
+                } else {
+                    result = result.bitor(found_key.eq(key.clone()));
+                }
+            }
+
+            Ok(result)
+        })
+        .await
+        .map_err(|e| AppError::InternalError(e.to_string()))?
     }
 
     /// dont use. should just wait for entries to expire
     pub async fn delete(
         &self,
-        key: &CustomFheAsciiString,
-        session_id: &str,
+        key: CustomFheAsciiString,
+        session_id: String,
+        server_key: ServerKey,
     ) -> Result<(), AppError> {
         let mut con = self.client.get_multiplexed_async_connection().await?;
-        let db_key = Self::create_db_key(key, session_id);
+        let db_key = Self::create_db_key(&key, &session_id);
 
         con.del::<_, ()>(db_key).await?;
 
@@ -226,11 +250,10 @@ impl Default for AppState {
 mod test_exists {
     use super::*;
     use redis::Commands;
-    use std::time::Duration;
     use tfhe::prelude::FheDecrypt;
     use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
     use tfhe::{set_server_key, ClientKey, CompressedServerKey};
-    use tokio::time::sleep;
+    use tokio::runtime::Runtime;
     use uuid::Uuid;
 
     async fn run_basic(app_state: Arc<AppState>, key: &str, value: &str) {
@@ -249,13 +272,13 @@ mod test_exists {
         let session_id = Uuid::new_v4().to_string();
         let db_key = AppState::create_db_key(&enc_key, &session_id);
 
-        let enc_should_false = app_state.exists(&enc_key, &session_id).await.unwrap();
+        let enc_should_false = app_state.exists(enc_key.clone(), session_id.clone()).await.unwrap();
 
         let mut con = app_state.client.get_connection().unwrap();
         con.set::<Vec<u8>, Vec<u8>, ()>(db_key, enc_value.compress().string)
             .unwrap();
 
-        let enc_should_true = app_state.exists(&enc_key, &session_id).await.unwrap();
+        let enc_should_true = app_state.exists(enc_key, session_id).await.unwrap();
 
         let should_false = enc_should_false.decrypt(&client_key);
         let should_true = enc_should_true.decrypt(&client_key);
@@ -283,13 +306,13 @@ mod test_exists {
 
         let app_state = AppState::new();
 
-        let enc_should_false = app_state.exists(&enc_key, &session_id).await.unwrap();
+        let enc_should_false = app_state.exists(enc_key.clone(), session_id.clone()).await.unwrap();
 
         let mut con = app_state.client.get_connection().unwrap();
         con.set::<Vec<u8>, Vec<u8>, ()>(db_key, enc_value.compress().string)
             .unwrap();
 
-        let enc_should_true = app_state.exists(&enc_key, &session_id).await.unwrap();
+        let enc_should_true = app_state.exists(enc_key, session_id).await.unwrap();
 
         let should_false = enc_should_false.decrypt(&client_key);
         let should_true = enc_should_true.decrypt(&client_key);
@@ -305,10 +328,17 @@ mod test_exists {
         let a1 = Arc::clone(&app_state);
         let a2 = Arc::clone(&app_state);
 
-        let c1 = tokio::spawn(run_basic(a1, "Hello Key A", "Hello Value A"));
-        // sleep(Duration::from_secs(30)).await;
-        let c2 = tokio::spawn(run_basic(a2, "Hello Key B", "Hello Value B"));
+        let handle1 = thread::spawn(move || {
+            let rt = Runtime::new().unwrap();
+            rt.block_on(run_basic(a1, "Hello Key A", "Hello Value A"));
+        });
 
-        let results = tokio::try_join!(c1, c2).unwrap();
+        let handle2 = thread::spawn(move || {
+            let rt = Runtime::new().unwrap();
+            rt.block_on(run_basic(a2, "Hello Key B", "Hello Value B"));
+        });
+
+        handle1.join().unwrap();
+        handle2.join().unwrap();
     }
 }

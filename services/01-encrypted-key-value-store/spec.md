@@ -1,12 +1,19 @@
 # Spezifikation
 **für 01-encrypted-key-value-store**
-> [!NOTE]
-> Pro umgesetztem Use Case sind die folgenden acht Sektionen verpflichtend. Die Sektionsstruktur ist für alle UCs identisch; die Detailtiefe darf je nach UC-Komplexität variieren (UC2 wird hier zwangsläufig weniger Inhalt haben als UC9).
----
 
 ### Funktionsbeschreibung
 > [!NOTE]
 > Welches Problem löst der UC, wer sind die Akteure (typischerweise Initiator E vs. weitere Clients vs. Server), wie sieht der Lebenszyklus einer Session aus (Erstellung, Teilnahme, Auswertung, Schließen). Ein Verhaltensdiagramm gehört hierher. 
+
+Beim Key Value Store werden Keys und Values verschlüsselt auf dem Server für eine konfigurierbare Zeit gespeichert.
+Key und Value werden als Vec<FheUint8> gespeichert, wodurch flexible Datentypen verwendet werden können.
+Der Server hat keine informationen darüber, welche werte ausgelesen werden.
+Um dies zu ermöglichen, müssen Values eine länge von 200 einträgen haben. Keys haben allerdings keine einschränkungen.
+TODO() kann man existierende session mit anderem client nutzen?
+TODO() Verhaltensdiagram für Akteure/ operations und lifecycle
+
+Dies ist somit eine gute Lösung, wenn man größere Keys und values verschlüsselt und temporär auf einem Server speichern
+möchte, wobei der Server keine Kenntnis darüber hat, was abgefragt wird.
 
 ### OpenAPI-Schnittstelle
 > [!NOTE]
@@ -16,6 +23,18 @@
 > [!NOTE]
 > Tabelle mit den Spalten *Datum* | *am Server klar* | *am Server verschlüsselt* | *nur am Client*. Jedes relevante Datum (Eingabewerte, Optionsnamen, Voter-IDs, Session-IDs, Grenzwerte, Zeitstempel, …) bekommt eine Zeile. Darunter eine Analyse beobachtbarer (Meta)daten und was ein bösartiger Server-Operator damit anfangen könnte (Anzahl Stimmen, Sequenzlängen, Request-Timing, Aufruffrequenz). 
 > Außerdem: Restvertrauen in den Server-Operator (was hängt nicht an FHE, sondern an korrektem Server-Verhalten?), Annahmen außerhalb von FHE (TLS, Frontend, TFHE-rs als Black Box, fehlende Auth am Gateway) und ein konkreter Satz, was am Schutzversprechen nicht produktreif ist und was genau eigentlich versprochen wird („Der Server kennt deine DNA nicht“, …) Diese Sektion ist die wichtigste der ganzen Spec – hier wird FHE konkret.
+
+| Datum                                  | Am Server klar | Am Server verschlüsselt | Am Client  |
+|----------------------------------------| ----------- |-------------------------|------------|
+| Server Key                             | X           |                         | X          |
+| Client Key                             |             |                         | X          |
+| Session ID                             | X           |                         | X          |
+| Key                                    |             | x                       | X          |
+| Value                                  |             | x                       | X          |
+| Value Länge                            | X           |                         | X          |
+| TTL                                    | X           |                         | X          |
+
+Der Server weiß welcher Client etwas queried, da Keys mit der Session ID annotiert sind.
 
 ### FHE-Designentscheidungen
 > [!NOTE]

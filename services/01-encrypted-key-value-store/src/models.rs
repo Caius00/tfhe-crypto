@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use crate::routes::VALUE_LENGTH;
 
 #[derive(Deserialize, Serialize)]
 pub struct PutRequest {
@@ -47,6 +48,7 @@ pub enum AppError {
     NotFound(String),
     Unauthorized,
     InternalError(String),
+    ValueLength(usize),
 }
 
 impl From<redis::RedisError> for AppError {
@@ -84,6 +86,10 @@ impl axum::response::IntoResponse for AppError {
             AppError::InternalError(e) => (
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Internal Server Error: {}", e),
+            ),
+            AppError::ValueLength(len) => (
+                axum::http::StatusCode::BAD_REQUEST,
+                format!("Value length ({}) doesnt match fixed length: {}", len, VALUE_LENGTH),
             ),
         };
 

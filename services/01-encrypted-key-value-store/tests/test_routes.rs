@@ -130,7 +130,7 @@ mod test_set {
     use encrypted_key_value_store::custom_fhe_ascii_string::CustomFheAsciiString;
     use std::time::Duration;
     use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
-    use tfhe::{set_server_key, ServerKey};
+    use tfhe::{set_server_key};
     use tokio::time::sleep;
 
     async fn run_client(server: Arc<TestServer>, key: &str, value: &str) {
@@ -305,6 +305,7 @@ mod test_get {
         let s2 = Arc::clone(&server);
 
         let c1 = tokio::spawn(run_client(s1, "Hello Key A", "Hello Value A"));
+        sleep(Duration::from_secs(30)).await;
         let c2 = tokio::spawn(run_client(s2, "Hello Key B", "Hello Value B"));
 
         tokio::try_join!(c1, c2).unwrap();
@@ -335,7 +336,6 @@ mod test_exists {
 
         let client_key = ClientKey::generate(parameters);
         let compressed_server_key = CompressedServerKey::new(&client_key);
-        set_server_key(compressed_server_key.decompress());
 
         let enc_key = CustomFheAsciiString::new(key, &client_key);
         let enc_value = CustomFheAsciiString::new(value, &client_key);
