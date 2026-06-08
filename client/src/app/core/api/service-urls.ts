@@ -59,8 +59,8 @@ export const SERVICE_URLS = {
     path: '/leaderboard',
   },
   programExecution: {
-    localBase: LOCAL_BASE,
-    remoteBase: REMOTE_BASE,
-    path: '/program-execution',
+    localBase: "ws://localhost:8080",
+    remoteBase: "ws://159.195.145.100",
+    path: "/execute",
   },
 } satisfies Record<string, ServiceConfig>;
