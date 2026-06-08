@@ -1,0 +1,32 @@
+.action-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: 1.25rem;
+}
+
+.action {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.action-icon {
+  font-size: 2rem;
+  line-height: 1;
+  margin-bottom: 0.25rem;
+}
+
+.action-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--c-text);
+}
+
+.action-desc {
+  font-size: 0.82rem;
+  color: var(--c-text-muted);
+  margin: 0 0 0.5rem 0;
+  line-height: 1.5;
+}

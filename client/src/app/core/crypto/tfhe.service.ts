@@ -158,7 +158,7 @@ export class TfheService {
    * Anwendung: alle Vote-Bits einer Session in einem Aufruf statt
    * pro Frage einzeln.
    */
-  encryptUint8sCompact(publicKeyB64: string, values: number[]): string[] {
+  encryptUint32Compact(publicKeyB64: string, values: number[]): string[] {
     if (values.length === 0) return [];
 
     const pkBytes = this.fromBase64(publicKeyB64);
@@ -166,7 +166,7 @@ export class TfheService {
     const builder = CompactCiphertextList.builder(pk);
 
     for (const v of values) {
-      builder.push_u8(Math.max(0, Math.min(255, Math.round(v))));
+      builder.push_u32(Math.max(0, Math.min(255, Math.round(v))));
     }
 
     const list = builder.build();
@@ -174,7 +174,7 @@ export class TfheService {
 
     const out: string[] = [];
     for (let i = 0; i < values.length; i++) {
-      const enc = expander.get_uint8(i);
+      const enc = expander.get_uint32(i);
       out.push(this.toBase64(enc.serialize()));
       enc.free();
     }

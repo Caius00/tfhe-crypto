@@ -1,0 +1,6 @@
+# Generierte Corpus-Dateien: enthalten den ServerKey (mehrere hundert MB)
+# und sind reproduzierbar via `cargo run --bin gen_corpus`.
+corpus/
+
+# k6-Run-Outputs: pro Lauf eindeutig, gehören nicht in die Versionierung.
+results/

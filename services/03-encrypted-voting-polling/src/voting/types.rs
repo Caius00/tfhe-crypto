@@ -11,13 +11,11 @@ pub struct Question {
     pub text: String,
     pub question_type: QuestionType,
     pub options: Option<Vec<String>>,
-    pub multiple: Option<bool>, // optional, falls Frontend dieses Feld nutzt
 }
 
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum QuestionType {
-    Bool,
     Single,
     Multiple,
     Numeric,
@@ -27,6 +25,7 @@ pub enum QuestionType {
 pub struct ParticipantState {
     pub approved: bool,
     pub enc_name_chunks: Option<Vec<String>>, // optional, wird beim Join übergeben
+    pub has_voted: bool,
 }
 
 // SessionState ist nicht Teil der API – kein JsonSchema nötig.
@@ -110,6 +109,14 @@ pub struct StatusResponse {
 #[derive(Serialize, JsonSchema)]
 pub struct ParticipantStatusResponse {
     pub status: String,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema, Clone)]
+pub struct ParticipantAdminView {
+    pub participant_id: String,
+    pub approved: bool,
+    pub has_voted: bool,
+    pub enc_name_chunks: Option<Vec<String>>,
 }
 
 /// Antwort auf `GET /session/:session_id` – die für Teilnehmer sichtbaren Felder.

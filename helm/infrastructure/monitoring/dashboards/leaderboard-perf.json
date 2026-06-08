@@ -1,0 +1,459 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Live-Korrelation Client-Latenz (k6) ↔ Server-Latenz (axum) ↔ Pod- und Node-Ressourcen für die Performance-Messung des Leaderboard-Services. Filterung pro Run über die testid-Variable.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "panels": [],
+      "title": "Latenz (Client ↔ Server)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "p95-Latenz aus Sicht des k6-Clients (inkl. WAN) vs. aus Sicht des axum-Servers (nur Service). Differenz = Netzwerk- + Proxy-Overhead.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 9, "w": 16, "x": 0, "y": 1 },
+      "id": 1,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.95, sum(rate(k6_http_req_duration_seconds_bucket{testid=~\"$testid\"}[$__rate_interval])) by (le))",
+          "legendFormat": "k6 p95 (Client)",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.95, sum(rate(axum_http_requests_duration_seconds_bucket{namespace=\"08-encrypted-leaderboard\"}[$__rate_interval])) by (le, path))",
+          "legendFormat": "axum p95 — {{path}} (Server)",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "histogram_quantile(0.50, sum(rate(k6_http_req_duration_seconds_bucket{testid=~\"$testid\"}[$__rate_interval])) by (le))",
+          "legendFormat": "k6 p50 (Client)",
+          "refId": "C"
+        }
+      ],
+      "title": "p50 / p95 — Client (k6) vs Server (axum)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Aktuelle Anzahl k6 Virtual Users. Zeigt die aktive Ramp-Stufe.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 1 },
+      "id": 2,
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "max(k6_vus{testid=~\"$testid\"})",
+          "refId": "A"
+        }
+      ],
+      "title": "Aktive k6 VUs",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Request-Rate Client- vs Server-Sicht. Sollten übereinstimmen wenn nichts droppt.",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 2 }, "unit": "reqps" }
+      },
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 5 },
+      "id": 3,
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(k6_http_reqs_total{testid=~\"$testid\"}[$__rate_interval]))",
+          "legendFormat": "k6 (Client)",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(axum_http_requests_total{namespace=\"08-encrypted-leaderboard\"}[$__rate_interval])) by (path)",
+          "legendFormat": "axum {{path}}",
+          "refId": "B"
+        }
+      ],
+      "title": "Throughput (RPS)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 10 },
+      "id": 200,
+      "panels": [],
+      "title": "Fehlerrate (Live-Abort-Signal)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Failed Requests aus k6-Sicht. Threshold-Linie bei 1/s — alles darüber heißt: Test sofort abbrechen.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "thresholdsStyle": { "mode": "line" }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "unit": "reqps"
+        }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 11 },
+      "id": 4,
+      "options": { "legend": { "displayMode": "list" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(k6_http_req_failed_total{testid=~\"$testid\"}[$__rate_interval]))",
+          "legendFormat": "k6 failed/s",
+          "refId": "A"
+        }
+      ],
+      "title": "k6 Failed Requests",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "HTTP-5xx aus dem Service. Spike = Timeout (504), Internal Error (500) oder Pod restartet.",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 2 }, "unit": "reqps" }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 11 },
+      "id": 5,
+      "options": { "legend": { "displayMode": "list" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(axum_http_requests_total{namespace=\"08-encrypted-leaderboard\", status=~\"5..\"}[$__rate_interval])) by (status)",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ],
+      "title": "5xx Rate (Server)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "HTTP-4xx — z.B. 409 (Raum voll), 413 (Body > Limit), 400 (kaputter Ciphertext).",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 2 }, "unit": "reqps" }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 11 },
+      "id": 6,
+      "options": { "legend": { "displayMode": "list" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(axum_http_requests_total{namespace=\"08-encrypted-leaderboard\", status=~\"4..\"}[$__rate_interval])) by (status)",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ],
+      "title": "4xx Rate (Server)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+      "id": 300,
+      "panels": [],
+      "title": "Pod-Ressourcen (warum kippt's?)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Working-Set Memory pro Container. Threshold-Linie bei 10 GiB = Pod-Limit aus helm/services/08-encrypted-leaderboard/values.yaml. Bei Annäherung → OOM-Kill droht.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "thresholdsStyle": { "mode": "line" }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 8589934592 },
+              { "color": "red", "value": 10737418240 }
+            ]
+          },
+          "unit": "bytes"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 19 },
+      "id": 7,
+      "options": { "legend": { "displayMode": "list" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(container_memory_working_set_bytes{namespace=\"08-encrypted-leaderboard\", container!=\"\"}) by (pod, container)",
+          "legendFormat": "{{pod}}/{{container}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Pod Memory Working-Set",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "CPU-Verbrauch pro Container in Cores. Threshold-Linie bei 6 = Pod-Limit. Bei Erreichen wird gethrottlet (siehe nächstes Panel).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "thresholdsStyle": { "mode": "line" }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 4 },
+              { "color": "red", "value": 6 }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 19 },
+      "id": 8,
+      "options": { "legend": { "displayMode": "list" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"08-encrypted-leaderboard\", container!=\"\"}[$__rate_interval])) by (pod, container)",
+          "legendFormat": "{{pod}}/{{container}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Pod CPU Usage (Cores)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "CPU Throttling > 0 = Pod hat sein CPU-Limit erreicht. Korreliert direkt mit p95-Anstieg auf FHE-Endpunkten.",
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "palette-classic" }, "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 20 }, "unit": "s" }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 19 },
+      "id": 9,
+      "options": { "legend": { "displayMode": "list" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(rate(container_cpu_cfs_throttled_periods_total{namespace=\"08-encrypted-leaderboard\", container!=\"\"}[$__rate_interval]) / rate(container_cpu_cfs_periods_total{namespace=\"08-encrypted-leaderboard\", container!=\"\"}[$__rate_interval])) by (pod)",
+          "legendFormat": "{{pod}} (throttled fraction)",
+          "refId": "A"
+        }
+      ],
+      "title": "CPU Throttling Anteil",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 27 },
+      "id": 400,
+      "panels": [],
+      "title": "Knoten-Ressourcen (Server gesamt)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Verfügbarer RAM auf dem k3s-Knoten. Bei < 500 MiB SOFORT Test abbrechen — sonst stirbt k3s + Traefik.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "thresholdsStyle": { "mode": "line" }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 524288000 },
+              { "color": "green", "value": 2147483648 }
+            ]
+          },
+          "unit": "bytes"
+        }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 28 },
+      "id": 10,
+      "options": { "legend": { "displayMode": "list" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "node_memory_MemAvailable_bytes",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Node Memory Available",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "CPU-Auslastung des Knotens. > 90% = Service-Pod kämpft auch wenn unter Pod-Limit.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 10 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.8 },
+              { "color": "red", "value": 0.95 }
+            ]
+          },
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 28 },
+      "id": 11,
+      "options": { "legend": { "displayMode": "list" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[$__rate_interval])) by (instance)",
+          "legendFormat": "{{instance}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Node CPU Auslastung",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "description": "Pod-Restarts im Leaderboard-Namespace. Spike = OOM-Kill oder Crash.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": { "drawStyle": "line", "lineWidth": 2 },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 28 },
+      "id": 12,
+      "options": { "legend": { "displayMode": "list" } },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "$datasource" },
+          "expr": "sum(kube_pod_container_status_restarts_total{namespace=\"08-encrypted-leaderboard\"}) by (pod, container)",
+          "legendFormat": "{{pod}}/{{container}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Pod Restarts (Total)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["leaderboard", "performance", "loadtest"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": false, "text": "Prometheus", "value": "Prometheus" },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "queryValue": "",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
+        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "datasource": { "type": "prometheus", "uid": "$datasource" },
+        "definition": "label_values(k6_vus, testid)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "k6 Test-Run (testid)",
+        "multi": true,
+        "name": "testid",
+        "options": [],
+        "query": { "query": "label_values(k6_vus, testid)", "refId": "PrometheusVariableQueryEditor-VariableQuery" },
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 5,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-30m", "to": "now" },
+  "timepicker": {},
+  "timezone": "Europe/Berlin",
+  "title": "Leaderboard Performance (k6 ↔ axum)",
+  "uid": "leaderboard-perf",
+  "version": 1,
+  "weekStart": ""
+}

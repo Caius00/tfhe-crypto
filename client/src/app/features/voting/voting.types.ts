@@ -1,10 +1,17 @@
-// src/app/features/voting/voting.types.ts
-export type QuestionType = 'bool' | 'single' | 'multiple' | 'numeric';
+export type QuestionType = 'single' | 'multiple' | 'numeric';
 
 export interface Question {
   id: number;
   text: string;
   question_type: QuestionType;
   options: string[] | null;
-  multiple?: boolean;
+}
+
+export interface ParticipantAdminView {
+  participant_id: string;
+  approved: boolean;
+  has_voted: boolean;
+  enc_name_chunks?: string[];
+
+  decrypted_name?: string | null;
 }

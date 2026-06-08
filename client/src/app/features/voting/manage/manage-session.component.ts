@@ -5,7 +5,7 @@ import { firstValueFrom } from 'rxjs';
 
 import { VotingService } from '../voting.service';
 import { TfheService } from '../../../core/crypto/tfhe.service';
-import { Question } from '../voting.types';
+import { ParticipantAdminView, Question } from '../voting.types';
 
 import { PageHeaderComponent } from '../../../shared/components/page-header/page-header.component';
 import { CardComponent } from '../../../shared/components/card/card.component';
@@ -14,10 +14,6 @@ import { AlertComponent } from '../../../shared/components/alert/alert.component
 import { BadgeComponent } from '../../../shared/components/badge/badge.component';
 import { LoadingOverlayComponent } from '../../../shared/components/loading-overlay/loading-overlay.component';
 
-import {
-  PendingEntryView,
-  PendingListComponent,
-} from '../components/pending-list/pending-list.component';
 import {
   DecryptedResult,
   ResultsViewComponent,
@@ -50,7 +46,6 @@ const POLL_INTERVAL_MS = 2000;
     AlertComponent,
     BadgeComponent,
     LoadingOverlayComponent,
-    PendingListComponent,
     ResultsViewComponent,
     CopyButtonComponent,
     KeyDisplayComponent,
@@ -66,6 +61,10 @@ export class ManageSessionComponent implements OnInit, OnDestroy {
 
   // --- State ----------------------------------------------------------------
 
+  encResults: string[][] = [];
+
+  viewMode = signal<'encrypted' | 'decrypted'>('encrypted');
+
   /** Session-ID aus der Route */
   sessionId = '';
   /** Creator-ID aus localStorage (vom Create-Schritt persistiert) */
@@ -73,12 +72,12 @@ export class ManageSessionComponent implements OnInit, OnDestroy {
 
   /** Fragen der Session */
   questions = signal<Question[]>([]);
-  /** Aktuell wartende Teilnehmer (View-Modell mit ggf. entschlüsseltem Namen) */
-  pending = signal<PendingEntryView[]>([]);
   /** Verschlüsselte Roh-Ergebnisse vom Server (Base64) */
   encryptedResults = signal<string[][]>([]);
   /** Entschlüsselte Ergebnisse für die Ansicht */
   decryptedResults = signal<DecryptedResult[]>([]);
+  /** Liste aller Teilnehmer in der Session inklusive Status (abgestimmt/nicht abgestimmt) */
+  participants = signal<ParticipantAdminView[]>([]);
 
   /** Lade-/Status-Flags */
   isInitializing = signal(true);
@@ -241,8 +240,10 @@ export class ManageSessionComponent implements OnInit, OnDestroy {
   // --- Polling der Pending-Liste --------------------------------------------
 
   private startPolling(): void {
-    this.fetchPending();
-    this.pollTimer = setInterval(() => this.fetchPending(), POLL_INTERVAL_MS);
+    this.fetchParticipants();
+    this.pollTimer = setInterval(() => {
+    this.fetchParticipants();
+  }, POLL_INTERVAL_MS);
   }
 
   private stopPolling(): void {
@@ -252,74 +253,69 @@ export class ManageSessionComponent implements OnInit, OnDestroy {
     }
   }
 
-  private fetchPending(): void {
-    this.votingService.getPending(this.sessionId, this.creatorId).subscribe({
+  private fetchParticipants(): void {
+  this.votingService.getParticipants(this.sessionId, this.creatorId)
+    .subscribe({
       next: (res) => {
-        // Bestehende Entschlüsselungen behalten, falls Teilnehmer noch in Liste ist
-        const previous = new Map(
-          this.pending().map((p) => [p.participantId, p.decryptedName] as const),
+
+        const oldMap = new Map(
+          this.participants().map(p => [p.participant_id, p.decrypted_name])
         );
-        this.pending.set(
-          res.map((entry) => ({
-            participantId: entry.participant_id,
-            encNameChunks: entry.enc_name_chunks ?? [],
-            decryptedName: previous.get(entry.participant_id),
-          })),
-        );
-        // Wenn Polling vorher Fehler hatte: nach Erfolg löschen
-        if (this.errorMessage()?.startsWith('Pending-Anfragen')) {
-          this.errorMessage.set(null);
-        }
-      },
-      error: (err) => {
-        console.error('Fetch pending failed', err);
-        // Sichtbarer Hinweis statt stiller Konsolenfehler
-        this.errorMessage.set(
-          'Pending-Anfragen konnten nicht geladen werden. Verbindung zum Server prüfen.',
-        );
-      },
+
+        const updated = res.map(p => {
+          const decryptedFromCache = oldMap.get(p.participant_id);
+
+          // wenn schon entschlüsselt → behalten
+          if (decryptedFromCache) {
+            return { ...p, decrypted_name: decryptedFromCache };
+          }
+
+          // sonst initial leer
+          return { ...p, decrypted_name: null };
+        });
+
+        this.participants.set(updated);
+      }
     });
-  }
+}
 
   // --- Pending-Aktionen -----------------------------------------------------
 
-  /** Entschlüsselt den (verschlüsselten) Namen eines Teilnehmers in der Liste */
-  decryptName(entry: PendingEntryView): void {
-    if (!this.clientKey) {
-      this.errorMessage.set('Kein Client-Key verfügbar.');
-      return;
-    }
-    if (!entry.encNameChunks.length) {
-      this.updatePendingName(entry.participantId, '(kein Name)');
-      return;
-    }
 
-    try {
-      const bytes: number[] = [];
-      for (const chunkB64 of entry.encNameChunks) {
-        const raw = this.tfhe.fromBase64(chunkB64);
-        bytes.push(this.tfhe.decryptUint8(raw, this.clientKey));
-      }
-      const name = new TextDecoder().decode(new Uint8Array(bytes));
-      this.updatePendingName(entry.participantId, name);
-    } catch (e) {
-      console.error('Decrypt name failed', e);
-      this.updatePendingName(entry.participantId, '(Fehler beim Entschlüsseln)');
-    }
+decryptParticipant(entry: ParticipantAdminView): void {
+  if (!this.clientKey || !entry.enc_name_chunks?.length) {
+    return;
   }
 
-  /** Hilfsfunktion: aktualisiert den entschlüsselten Namen im Pending-State */
-  private updatePendingName(participantId: string, name: string): void {
-    this.pending.update((arr) =>
-      arr.map((p) => (p.participantId === participantId ? { ...p, decryptedName: name } : p)),
+  try {
+    const bytes: number[] = [];
+
+    for (const chunkB64 of entry.enc_name_chunks) {
+      const raw = this.tfhe.fromBase64(chunkB64);
+      bytes.push(this.tfhe.decryptUint8(raw, this.clientKey));
+    }
+
+    const name = new TextDecoder().decode(new Uint8Array(bytes));
+
+    this.participants.update(list =>
+      list.map(p =>
+        p.participant_id === entry.participant_id
+          ? { ...p, decrypted_name: name }
+          : p
+      )
     );
+
+  } catch (e) {
+    console.error('Decrypt participant failed', e);
   }
+}
+
 
   approve(participantId: string): void {
     this.votingService
       .approveParticipant(this.sessionId, this.creatorId, participantId, true)
       .subscribe({
-        next: () => this.fetchPending(),
+        next: () => this.fetchParticipants(),
         error: () => this.errorMessage.set('Annahme fehlgeschlagen.'),
       });
   }
@@ -328,7 +324,7 @@ export class ManageSessionComponent implements OnInit, OnDestroy {
     this.votingService
       .approveParticipant(this.sessionId, this.creatorId, participantId, false)
       .subscribe({
-        next: () => this.fetchPending(),
+        next: () => this.fetchParticipants(),
         error: () => this.errorMessage.set('Ablehnung fehlgeschlagen.'),
       });
   }
@@ -343,6 +339,7 @@ export class ManageSessionComponent implements OnInit, OnDestroy {
    * haben abgestimmt), wird die Entschlüsselung übersprungen und ein Hinweis
    * angezeigt. Sonst werden die Ciphertexts lokal mit dem Client-Key entschlüsselt.
    */
+  
   showResults(): void {
     console.log('[Voting] showResults clicked', {
       sessionId: this.sessionId,
@@ -372,6 +369,7 @@ export class ManageSessionComponent implements OnInit, OnDestroy {
 
         this.encryptedResults.set(res.encrypted_results as unknown as string[][]);
         this.isResultsReady.set(res.ready);
+        //console.log(this.encryptedResults());
 
         if (!res.ready) {
           this.resultsStatus.set({
@@ -395,23 +393,15 @@ export class ManageSessionComponent implements OnInit, OnDestroy {
           return;
         }
 
-        // Server-Aggregate liegen vor → lokal entschlüsseln
-        try {
-          const decrypted = this.decryptAggregates(enc);
-          this.decryptedResults.set(decrypted);
-          this.resultsStatus.set({
+        this.encResults = res.encrypted_results as unknown as string[][];
+        this.decryptedResults.set(enc);
+        this.isLoadingResults.set(false);
+        this.resultsStatus.set({
             kind: 'success',
-            message: `Auswertung erfolgreich entschlüsselt (${decrypted.length} Frage${decrypted.length === 1 ? '' : 'n'}).`,
+            message: `Auswertung erfolgreich entschlüsselt (${this.encResults.length} Frage${this.encResults  .length === 1 ? '' : 'n'}).`,
           });
-        } catch (e) {
-          console.error('Decrypt aggregates failed', e);
-          this.resultsStatus.set({
-            kind: 'error',
-            message: 'Entschlüsselung der Ergebnisse fehlgeschlagen: ' + (e as Error).message,
-          });
-        } finally {
-          this.isLoadingResults.set(false);
-        }
+        this.viewMode.set('encrypted');
+        
       },
       error: (err) => {
         console.error('Load results failed', err);
@@ -426,6 +416,27 @@ export class ManageSessionComponent implements OnInit, OnDestroy {
     });
   }
 
+  decrypt() {
+    // Server-Aggregate liegen vor → lokal entschlüsseln
+        try {
+          const decrypted = this.decryptAggregates(this.encResults);
+          this.viewMode.set('decrypted'); 
+          this.decryptedResults.set(decrypted);
+          this.resultsStatus.set({
+            kind: 'success',
+            message: `Auswertung erfolgreich entschlüsselt (${decrypted.length} Frage${decrypted.length === 1 ? '' : 'n'}).`,
+          });
+        } catch (e) {
+          console.error('Decrypt aggregates failed', e);
+          this.resultsStatus.set({
+            kind: 'error',
+            message: 'Entschlüsselung der Ergebnisse fehlgeschlagen: ' + (e as Error).message,
+          });
+        } finally {
+          this.isLoadingResults.set(false);
+        }
+  }
+
   /**
    * Mappt verschlüsselte Aggregate auf lesbare Ergebnisse (pro Frage).
    * Für Bool/Numeric: skalar. Für Single/Multiple: pro Option ein Zähler.
@@ -438,11 +449,12 @@ export class ManageSessionComponent implements OnInit, OnDestroy {
       if (!entry || entry.length === 0) return '(keine Daten)';
 
       try {
-        // BOOL und NUMERIC: skalares Ergebnis
-        if (q.question_type === 'bool' || q.question_type === 'numeric') {
-          const raw = this.tfhe.fromBase64(entry[0]);
-          const num = this.tfhe.decryptUint8(raw, this.clientKey);
-          return q.question_type === 'bool' ? `Ja-Stimmen: ${num}` : `Summe: ${num}`;
+        // NUMERIC: skalares Ergebnis
+        if (q.question_type === 'numeric') {
+          const raw = this.tfhe.fromBase64(entry[0]); 
+          //console.log("Verschlüsselte Numerische Daten: " + raw)
+          const num = this.tfhe.decryptUint32(raw, this.clientKey);
+          return `Summe: ${num}`;
         }
 
         // SINGLE und MULTIPLE: pro Option ein Zähler
@@ -452,7 +464,8 @@ export class ManageSessionComponent implements OnInit, OnDestroy {
             const ct = entry[i];
             if (!ct) return `${opt}: 0`;
             const raw = this.tfhe.fromBase64(ct);
-            const count = this.tfhe.decryptUint8(raw, this.clientKey);
+            //console.log("Verschlüsselte Single/Multiple Daten: " + raw)
+            const count = this.tfhe.decryptUint32(raw, this.clientKey);
             return `${opt}: ${count}`;
           });
         }

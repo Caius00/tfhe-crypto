@@ -2,6 +2,8 @@
 resolver = "2"
 members = [
     "shared/health",
+    "shared/metrics",
+    "shared/observability",
     "shared/openapi-docs",
     "services/01-encrypted-key-value-store",
     "services/02-encrypted-age-verification",
@@ -17,11 +19,13 @@ members = [
 [workspace.dependencies]
 axum = "0.8.9"
 health = { path = "shared/health" }
+metrics-exporter = { path = "shared/metrics" }
+observability = { path = "shared/observability" }
 openapi-docs = { path = "shared/openapi-docs" }
 tokio = { version = "1.52.2", features = ["full"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
-tfhe = { version = "1.6.1", features = ["boolean", "shortint", "integer"] }
+tfhe = { version = "1.6.1", features = ["software-prng", "boolean", "shortint", "integer"] }
 aide = { version = "0.15", features = ["axum", "axum-json", "macros", "swagger"] }
 schemars = "0.9"
 
@@ -34,3 +38,19 @@ opt-level = 3
 
 [profile.test.package.tfhe]
 opt-level = 3
+
+# Maximal aggressives Release-Profil für die produktiven Container-Images.
+# - lto="fat":           Full-Link-Time-Optimization über alle Crates hinweg.
+#                        Erlaubt dem Compiler, tfhe-rs-Funktionen in den eigenen
+#                        Code zu inlinen — gerade bei kleinen FHE-Ops wie `lt`
+#                        und `if_then_else` der größte Hebel.
+# - codegen-units=1:     Alles in einer Übersetzungseinheit, damit der Optimizer
+#                        Sichtbarkeit auf den gesamten Code hat. Langsamer zu
+#                        kompilieren, schneller zur Laufzeit.
+# - strip="symbols":     Debug-Symbole raus, Image rund 30 % kleiner.
+# panic bleibt absichtlich auf "unwind", damit `spawn_blocking` Panics als
+# JoinError zurückgeben kann statt den ganzen Container zu killen.
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = "symbols"

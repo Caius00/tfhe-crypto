@@ -1,0 +1,13 @@
+apiVersion: v2
+name: keda
+description: |
+  KEDA Core (Operator + Metrics Adapter + CRDs).
+  Muss VOR dem keda-http-Chart installiert werden, weil das HTTP-Add-on
+  Custom Resources (ScaledObject) anlegt, die ohne KEDA-CRDs fehlschlagen.
+type: application
+version: 0.1.0
+
+dependencies:
+  - name: keda
+    version: "2.19.0"
+    repository: https://kedacore.github.io/charts

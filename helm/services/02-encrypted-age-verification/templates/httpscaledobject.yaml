@@ -1,0 +1,28 @@
+# KEDA HTTP Add-on: definiert wie der Service skaliert wird.
+# Der Interceptor matcht eingehende Requests anhand des Host-Headers
+# (siehe httproute.yaml → URLRewrite.hostname) und skaliert das Deployment
+# bei Bedarf hoch.
+apiVersion: http.keda.sh/v1alpha1
+kind: HTTPScaledObject
+metadata:
+  name: {{ .Chart.Name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  # Eindeutige interne Routing-Hostname. Wird vom Traefik-HTTPRoute via
+  # URLRewrite gesetzt und dann vom KEDA-Interceptor zum Matching benutzt.
+  # ".keda.local" existiert NICHT in DNS — reiner Routing-Schlüssel.
+  hosts:
+    - {{ .Chart.Name }}.keda.local
+  # Skalier-Ziel: das Deployment + der ClusterIP-Service, an den der
+  # Interceptor nach erfolgreichem Cold-Start weiterleitet.
+  scaleTargetRef:
+    name: {{ .Chart.Name }}
+    kind: Deployment
+    apiVersion: apps/v1
+    service: {{ .Chart.Name }}
+    port: {{ .Values.service.port }}
+  replicas:
+    min: 0
+    max: 1
+  # 5 min ohne Request → KEDA skaliert das Deployment wieder auf 0.
+  scaledownPeriod: 300
