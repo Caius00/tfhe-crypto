@@ -114,7 +114,11 @@ impl FheEq for CustomFheAsciiString {
 
 impl FheDecrypt<String> for CustomFheAsciiString {
     fn decrypt(&self, key: &ClientKey) -> String {
-        let bytes = self.chars.iter().map(|c| c.decrypt(key)).collect::<Vec<u8>>();
+        let bytes = self
+            .chars
+            .iter()
+            .map(|c| c.decrypt(key))
+            .collect::<Vec<u8>>();
         String::from_utf8(bytes).expect("encrypted string was not valid UTF-8")
     }
 }

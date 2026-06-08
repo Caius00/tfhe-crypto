@@ -18,7 +18,9 @@
 
 use crate::models::AppError;
 use dotenvy::from_path;
-use redis::{AsyncCommands, AsyncIter, Client, ConnectionAddr, ConnectionInfo, RedisConnectionInfo};
+use redis::{
+    AsyncCommands, AsyncIter, Client, ConnectionAddr, ConnectionInfo, RedisConnectionInfo,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
@@ -140,8 +142,7 @@ impl AppState {
             .unwrap_or(60)
             * 60;
 
-        let (client, redis_endpoint) =
-            build_redis_client().expect("failed to open Redis client");
+        let (client, redis_endpoint) = build_redis_client().expect("failed to open Redis client");
 
         Self {
             client,

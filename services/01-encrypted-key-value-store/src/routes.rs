@@ -94,57 +94,58 @@ pub async fn get_entry(
 
     // Heavy-Compute: ServerKey aktivieren, dann pro Eintrag homomorph
     // vergleichen und konditional in den laufenden Wert mischen.
-    let compressed_value = tokio::task::block_in_place(move || -> Result<Vec<Vec<u8>>, AppError> {
-        tfhe::set_server_key(server_key);
+    let compressed_value =
+        tokio::task::block_in_place(move || -> Result<Vec<Vec<u8>>, AppError> {
+            tfhe::set_server_key(server_key);
 
-        let needle = CompressedCustomFheAsciiString::from_chunks(needle_chunks).decompress()?;
+            let needle = CompressedCustomFheAsciiString::from_chunks(needle_chunks).decompress()?;
 
-        let mut acc_match: Option<FheBool> = None;
-        let mut acc_value: Option<CustomFheAsciiString> = None;
+            let mut acc_match: Option<FheBool> = None;
+            let mut acc_value: Option<CustomFheAsciiString> = None;
 
-        for entry in entries {
-            let stored_key =
-                CompressedCustomFheAsciiString::from_chunks(entry.key_chunks).decompress()?;
-            let stored_value =
-                CompressedCustomFheAsciiString::from_chunks(entry.value_chunks).decompress()?;
+            for entry in entries {
+                let stored_key =
+                    CompressedCustomFheAsciiString::from_chunks(entry.key_chunks).decompress()?;
+                let stored_value =
+                    CompressedCustomFheAsciiString::from_chunks(entry.value_chunks).decompress()?;
 
-            let match_this = stored_key.eq(needle.clone());
+                let match_this = stored_key.eq(needle.clone());
 
-            match (&acc_match, &acc_value) {
-                (None, _) => {
-                    acc_match = Some(match_this);
-                    acc_value = Some(stored_value);
-                }
-                (Some(prev_match), Some(prev_value)) => {
-                    // Wenn die laufende Akkumulator-Wert-Länge nicht zum
-                    // aktuellen Eintrag passt, können wir homomorph nicht
-                    // mischen — das wäre eine semantisch ungeklärte Situation
-                    // bei heterogenen Wertlängen pro Session. Spec dokumentiert
-                    // diese Limitation; wir lehnen den Request sauber ab.
-                    if prev_value.chars.len() != stored_value.chars.len() {
-                        return Err(AppError::BadRequest(
-                            "stored values have mismatching lengths — \
-                             use uniform value lengths within a session"
-                                .into(),
-                        ));
+                match (&acc_match, &acc_value) {
+                    (None, _) => {
+                        acc_match = Some(match_this);
+                        acc_value = Some(stored_value);
                     }
+                    (Some(prev_match), Some(prev_value)) => {
+                        // Wenn die laufende Akkumulator-Wert-Länge nicht zum
+                        // aktuellen Eintrag passt, können wir homomorph nicht
+                        // mischen — das wäre eine semantisch ungeklärte Situation
+                        // bei heterogenen Wertlängen pro Session. Spec dokumentiert
+                        // diese Limitation; wir lehnen den Request sauber ab.
+                        if prev_value.chars.len() != stored_value.chars.len() {
+                            return Err(AppError::BadRequest(
+                                "stored values have mismatching lengths — \
+                             use uniform value lengths within a session"
+                                    .into(),
+                            ));
+                        }
 
-                    let new_match = prev_match.clone().bitor(match_this.clone());
-                    let new_value = match_this.if_then_else(&stored_value, prev_value);
-                    acc_match = Some(new_match);
-                    acc_value = Some(new_value);
+                        let new_match = prev_match.clone().bitor(match_this.clone());
+                        let new_value = match_this.if_then_else(&stored_value, prev_value);
+                        acc_match = Some(new_match);
+                        acc_value = Some(new_value);
+                    }
+                    _ => unreachable!("acc_match and acc_value are always set together"),
                 }
-                _ => unreachable!("acc_match and acc_value are always set together"),
             }
-        }
 
-        // Der Server kann den Match-Status nicht prüfen (er ist verschlüsselt) —
-        // er gibt einfach den Akkumulator zurück. Falls der Schlüssel nicht
-        // existiert, ist `acc_value` Müll, aber der Client erkennt das beim
-        // Entschlüsseln (z.B. via vorgelagertem `/entry/exists`).
-        let value = acc_value.expect("entries non-empty, acc_value must be set");
-        Ok(value.compress()?.chunks)
-    })?;
+            // Der Server kann den Match-Status nicht prüfen (er ist verschlüsselt) —
+            // er gibt einfach den Akkumulator zurück. Falls der Schlüssel nicht
+            // existiert, ist `acc_value` Müll, aber der Client erkennt das beim
+            // Entschlüsseln (z.B. via vorgelagertem `/entry/exists`).
+            let value = acc_value.expect("entries non-empty, acc_value must be set");
+            Ok(value.compress()?.chunks)
+        })?;
 
     Ok(Json(ValueResponse {
         value: compressed_value
@@ -204,4 +205,3 @@ pub async fn clear_entries(
         message: format!("cleared {deleted} entries"),
     }))
 }
-
