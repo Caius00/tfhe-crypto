@@ -1,42 +1,43 @@
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use crate::routes::VALUE_LENGTH;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, JsonSchema)]
 pub struct PutRequest {
     pub key: Vec<u8>,
     pub value: Vec<u8>,
     pub session_id: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, JsonSchema)]
 pub struct GetRequest {
     pub key: Vec<u8>,
     pub session_id: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, JsonSchema)]
 pub struct ExistsRequest {
     pub key: Vec<u8>,
     pub session_id: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, JsonSchema)]
 pub struct DeleteRequest {
     pub key: Vec<u8>,
     pub session_id: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, JsonSchema)]
 pub struct ValueResponse {
     pub value: Vec<u8>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct MessageResponse {
     pub message: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct CreateSessionRequest {
     pub server_key: Vec<u8>,
 }
@@ -95,4 +96,8 @@ impl axum::response::IntoResponse for AppError {
 
         (status, axum::Json(MessageResponse { message })).into_response()
     }
+}
+
+impl aide::OperationOutput for AppError {
+    type Inner = MessageResponse;
 }
