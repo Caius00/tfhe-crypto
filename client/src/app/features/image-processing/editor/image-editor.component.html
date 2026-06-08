@@ -30,7 +30,7 @@
 			<p>
 				Generiere Keys, um das Bild verschlüsselt an den Server senden zu können.
 			</p>
-			<app-button label="Erstelle Keys" [fullWidth]="true" [disabled]="!image" (clicked)="generateKeys()"/>
+			<app-button label="Erstelle Keys" [fullWidth]="true" [disabled]="(!image || hasKeys())" (clicked)="generateKeys()"/>
 		</app-card>
 
 		<app-card>
@@ -40,7 +40,7 @@
 			<p>
 				Sende das Bild an den Server und erstelle deine Bearbeitungs-Session.
 			</p>
-			<app-button label="Erstelle Session" [fullWidth]="true" [disabled]="!hasKeys()" (clicked)="createSession()"/>
+			<app-button label="Erstelle Session" [fullWidth]="true" [disabled]="(!hasKeys() || hasSession())" (clicked)="createSession()"/>
 		</app-card>
 
 		<app-card>
