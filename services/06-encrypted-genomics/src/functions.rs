@@ -2,9 +2,9 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use rayon::prelude::*;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     Arc, Mutex, OnceLock,
 };
 use std::time::Instant;
@@ -25,9 +25,14 @@ const PARALLEL_LEVENSHTEIN_CELLS: usize = 2;
 const PROCESSING_QUEUE_CAPACITY: usize = 4;
 const MAX_HAMMING_SEQUENCE_LEN: usize = 255;
 const MAX_LEVENSHTEIN_SEQUENCE_LEN: usize = 122;
+const KEY_CACHE_CAPACITY: usize = 8;
+const PARALLEL_HAMMING_PATTERN_CELLS: usize = 32;
 
 static FHE_SERVER_KEY_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 static PROCESSING_QUEUE: OnceLock<ProcessingQueue> = OnceLock::new();
+static DATABASE_INITIALIZED: AtomicBool = AtomicBool::new(false);
+static PUBLIC_KEY_CACHE: OnceLock<Mutex<DecodedKeyCache<CompactPublicKey>>> = OnceLock::new();
+static SERVER_KEY_CACHE: OnceLock<Mutex<DecodedKeyCache<ServerKey>>> = OnceLock::new();
 
 #[derive(Clone, Debug, Serialize, JsonSchema)]
 pub struct RiskPattern {
@@ -76,6 +81,37 @@ struct ProcessingQueue {
     notifier: Notify,
     capacity: Arc<Semaphore>,
     next_id: AtomicU64,
+}
+
+struct DecodedKeyCache<K> {
+    entries: HashMap<String, K>,
+    order: VecDeque<String>,
+}
+
+impl<K: Clone> DecodedKeyCache<K> {
+    fn new() -> Self {
+        Self {
+            entries: HashMap::new(),
+            order: VecDeque::new(),
+        }
+    }
+
+    fn get(&self, encoded: &str) -> Option<K> {
+        self.entries.get(encoded).cloned()
+    }
+
+    fn insert(&mut self, encoded: String, key: K) {
+        if !self.entries.contains_key(&encoded) {
+            self.order.push_back(encoded.clone());
+        }
+        self.entries.insert(encoded, key);
+
+        while self.order.len() > KEY_CACHE_CAPACITY {
+            if let Some(oldest) = self.order.pop_front() {
+                self.entries.remove(&oldest);
+            }
+        }
+    }
 }
 
 impl ProcessingQueue {
@@ -217,6 +253,14 @@ fn join_error(error: tokio::task::JoinError) -> ApiError {
     internal_error(format!("Blocking task failed: {error}"))
 }
 
+async fn ensure_database_initialized() -> Result<(), ApiError> {
+    if DATABASE_INITIALIZED.load(Ordering::Acquire) {
+        return Ok(());
+    }
+
+    initialize_database().await
+}
+
 fn processing_queue() -> &'static ProcessingQueue {
     PROCESSING_QUEUE.get_or_init(ProcessingQueue::new)
 }
@@ -320,6 +364,7 @@ pub async fn initialize_database() -> Result<(), ApiError> {
         .await
         .map_err(|e| internal_error(format!("Failed to create risk_patterns table: {e}")))?;
 
+    DATABASE_INITIALIZED.store(true, Ordering::Release);
     Ok(())
 }
 
@@ -328,7 +373,7 @@ async fn create_session(
     server_key: String,
 ) -> Result<GenomicsSession, ApiError> {
     let _timer = FunctionTimer::start("create_session");
-    initialize_database().await?;
+    ensure_database_initialized().await?;
     let client = connect_database().await?;
     let id = uuid::Uuid::new_v4().to_string();
 
@@ -350,7 +395,7 @@ async fn create_session(
 
 async fn list_sessions() -> Result<Vec<GenomicsSession>, ApiError> {
     let _timer = FunctionTimer::start("list_sessions");
-    initialize_database().await?;
+    ensure_database_initialized().await?;
     let client = connect_database().await?;
     let rows = client
         .query(
@@ -373,8 +418,16 @@ async fn list_sessions() -> Result<Vec<GenomicsSession>, ApiError> {
 
 async fn load_session_keys(session_id: &str) -> Result<SessionKeys, ApiError> {
     let _timer = FunctionTimer::start("load_session_keys");
-    initialize_database().await?;
+    ensure_database_initialized().await?;
     let client = connect_database().await?;
+    load_session_keys_from_client(&client, session_id).await
+}
+
+async fn load_session_keys_from_client(
+    client: &tokio_postgres::Client,
+    session_id: &str,
+) -> Result<SessionKeys, ApiError> {
+    let _timer = FunctionTimer::start("load_session_keys_from_client");
     let row = client
         .query_opt(
             "SELECT public_key, server_key FROM genomics_sessions WHERE id = $1 AND active = TRUE",
@@ -434,7 +487,7 @@ async fn resolve_session_keys(
 
 async fn load_risk_patterns(pattern_id: Option<i32>) -> Result<Vec<RiskPattern>, ApiError> {
     let _timer = FunctionTimer::start("load_risk_patterns");
-    initialize_database().await?;
+    ensure_database_initialized().await?;
     let client = connect_database().await?;
 
     let rows = if let Some(id) = pattern_id {
@@ -474,7 +527,7 @@ async fn load_single_risk_pattern(pattern_id: Option<i32>) -> Result<RiskPattern
 async fn create_risk_pattern(sequence: String) -> Result<RiskPattern, ApiError> {
     let _timer = FunctionTimer::start("create_risk_pattern");
     let clean = normalize_dna_sequence(&sequence)?;
-    initialize_database().await?;
+    ensure_database_initialized().await?;
     let client = connect_database().await?;
 
     let row = client
@@ -495,7 +548,7 @@ async fn create_risk_pattern(sequence: String) -> Result<RiskPattern, ApiError> 
 
 async fn list_session_sequence_groups() -> Result<Vec<SessionSequenceGroup>, ApiError> {
     let _timer = FunctionTimer::start("list_session_sequence_groups");
-    initialize_database().await?;
+    ensure_database_initialized().await?;
     let client = connect_database().await?;
 
     let rows = client
@@ -535,9 +588,9 @@ async fn store_session_sequence(
         "Session sequence",
     )?;
 
-    initialize_database().await?;
+    ensure_database_initialized().await?;
     let client = connect_database().await?;
-    let keys = load_session_keys(&session_id).await?;
+    let keys = load_session_keys_from_client(&client, &session_id).await?;
     let encoded = serde_json::to_string(&encrypted_bases)
         .map_err(|e| internal_error(format!("Failed to serialize session sequence: {e}")))?;
     let original_length = encrypted_bases.len() as i32;
@@ -558,12 +611,13 @@ async fn store_session_sequence(
         session_id: row.get("session_id"),
         original_length: row.get::<_, i32>("original_length") as usize,
         created_at: row.get("created_at"),
+        encrypted_bases: Vec::new(),
     })
 }
 
 async fn load_session_sequences(session_id: &str) -> Result<Vec<StoredSessionSequence>, ApiError> {
     let _timer = FunctionTimer::start("load_session_sequences");
-    initialize_database().await?;
+    ensure_database_initialized().await?;
     let client = connect_database().await?;
     let rows = client
         .query(
@@ -590,6 +644,7 @@ async fn load_session_sequences(session_id: &str) -> Result<Vec<StoredSessionSeq
                     session_id: row.get("session_id"),
                     original_length: row.get::<_, i32>("original_length") as usize,
                     created_at: row.get("created_at"),
+                    encrypted_bases: encrypted_bases.clone(),
                 },
                 encrypted_bases,
             })
@@ -684,19 +739,57 @@ fn b64_decode(encoded: &str, label: &str) -> Result<Vec<u8>, ApiError> {
         .map_err(|e| bad_request(format!("Invalid {label} base64: {e}")))
 }
 
-fn decode_public_key(encoded: &str) -> Result<CompactPublicKey, ApiError> {
-    let _timer = FunctionTimer::start("decode_public_key");
+fn decode_public_key_uncached(encoded: &str) -> Result<CompactPublicKey, ApiError> {
+    let _timer = FunctionTimer::start("decode_public_key_uncached");
     let bytes = b64_decode(encoded, "public_key")?;
     bincode::deserialize(&bytes)
         .map_err(|e| bad_request(format!("Failed to deserialize public_key: {e}")))
 }
 
-fn decode_server_key(encoded: &str) -> Result<ServerKey, ApiError> {
-    let _timer = FunctionTimer::start("decode_server_key");
+fn decode_server_key_uncached(encoded: &str) -> Result<ServerKey, ApiError> {
+    let _timer = FunctionTimer::start("decode_server_key_uncached");
     let bytes = b64_decode(encoded, "server_key")?;
     let compressed: CompressedServerKey = bincode::deserialize(&bytes)
         .map_err(|e| bad_request(format!("Failed to deserialize server_key: {e}")))?;
     Ok(compressed.decompress())
+}
+
+fn decode_public_key(encoded: &str) -> Result<CompactPublicKey, ApiError> {
+    let _timer = FunctionTimer::start("decode_public_key");
+    let cache = PUBLIC_KEY_CACHE.get_or_init(|| Mutex::new(DecodedKeyCache::new()));
+    if let Some(key) = cache
+        .lock()
+        .map_err(|_| internal_error("Public-key cache lock is poisoned"))?
+        .get(encoded)
+    {
+        return Ok(key);
+    }
+
+    let key = decode_public_key_uncached(encoded)?;
+    cache
+        .lock()
+        .map_err(|_| internal_error("Public-key cache lock is poisoned"))?
+        .insert(encoded.to_string(), key.clone());
+    Ok(key)
+}
+
+fn decode_server_key(encoded: &str) -> Result<ServerKey, ApiError> {
+    let _timer = FunctionTimer::start("decode_server_key");
+    let cache = SERVER_KEY_CACHE.get_or_init(|| Mutex::new(DecodedKeyCache::new()));
+    if let Some(key) = cache
+        .lock()
+        .map_err(|_| internal_error("Server-key cache lock is poisoned"))?
+        .get(encoded)
+    {
+        return Ok(key);
+    }
+
+    let key = decode_server_key_uncached(encoded)?;
+    cache
+        .lock()
+        .map_err(|_| internal_error("Server-key cache lock is poisoned"))?
+        .insert(encoded.to_string(), key.clone());
+    Ok(key)
 }
 
 fn with_server_key<F, R>(server_key: ServerKey, f: F) -> Result<R, ApiError>
@@ -762,7 +855,7 @@ fn fhe_min3(a: &FheUint8, b: &FheUint8, c: &FheUint8) -> FheUint8 {
     fhe_min(&ab, c)
 }
 
-fn homomorphic_hamming_distance(window: &[FheUint8], pattern: &[u8]) -> FheUint8 {
+fn homomorphic_hamming_distance_serial(window: &[FheUint8], pattern: &[u8]) -> FheUint8 {
     let mut pairs = window.iter().zip(pattern.iter());
     let (first_value, first_pattern) = pairs
         .next()
@@ -776,7 +869,20 @@ fn homomorphic_hamming_distance(window: &[FheUint8], pattern: &[u8]) -> FheUint8
     acc
 }
 
-fn homomorphic_hamming_distance_encrypted(
+fn homomorphic_hamming_distance(window: &[FheUint8], pattern: &[u8]) -> FheUint8 {
+    if window.len() >= PARALLEL_HAMMING_PATTERN_CELLS && rayon::current_num_threads() > 1 {
+        return window
+            .par_iter()
+            .zip(pattern.par_iter())
+            .map(|(value, pattern_value)| FheUint8::cast_from(value.ne(*pattern_value)))
+            .reduce_with(|left, right| &left + &right)
+            .expect("hamming distance needs a non-empty pattern");
+    }
+
+    homomorphic_hamming_distance_serial(window, pattern)
+}
+
+fn homomorphic_hamming_distance_encrypted_serial(
     window: &[FheUint8],
     enc_pattern: &[FheUint8],
 ) -> FheUint8 {
@@ -791,6 +897,22 @@ fn homomorphic_hamming_distance_encrypted(
         acc = &acc + &diff;
     }
     acc
+}
+
+fn homomorphic_hamming_distance_encrypted(
+    window: &[FheUint8],
+    enc_pattern: &[FheUint8],
+) -> FheUint8 {
+    if window.len() >= PARALLEL_HAMMING_PATTERN_CELLS && rayon::current_num_threads() > 1 {
+        return window
+            .par_iter()
+            .zip(enc_pattern.par_iter())
+            .map(|(value, pattern_value)| FheUint8::cast_from(value.ne(pattern_value)))
+            .reduce_with(|left, right| &left + &right)
+            .expect("hamming distance needs a non-empty pattern");
+    }
+
+    homomorphic_hamming_distance_encrypted_serial(window, enc_pattern)
 }
 
 pub fn homomorphic_sliding_window(
@@ -822,7 +944,7 @@ pub fn homomorphic_sliding_window(
             .into_par_iter()
             .map(|start| {
                 let window = &enc_seq[start..start + m];
-                homomorphic_hamming_distance(window, pattern)
+                homomorphic_hamming_distance_serial(window, pattern)
             })
             .collect())
     } else {
@@ -864,7 +986,7 @@ fn homomorphic_sliding_window_encrypted(
             .into_par_iter()
             .map(|start| {
                 let window = &enc_seq[start..start + m];
-                homomorphic_hamming_distance_encrypted(window, enc_pattern)
+                homomorphic_hamming_distance_encrypted_serial(window, enc_pattern)
             })
             .collect())
     } else {
@@ -929,24 +1051,24 @@ fn homomorphic_levenshtein_distance(
             continue;
         }
 
-        let cells: Vec<usize> = (start_i..=end_i).collect();
-        let values: Vec<(usize, FheUint8)> = if cells.len() >= PARALLEL_LEVENSHTEIN_CELLS {
-            cells
-                .par_iter()
-                .map(|&i| {
-                    let j = diagonal - i;
-                    (i, levenshtein_cell(seq_a, seq_b, &dp, i, j))
-                })
-                .collect()
-        } else {
-            cells
-                .iter()
-                .map(|&i| {
-                    let j = diagonal - i;
-                    (i, levenshtein_cell(seq_a, seq_b, &dp, i, j))
-                })
-                .collect()
-        };
+        let diagonal_len = end_i - start_i + 1;
+        let values: Vec<(usize, FheUint8)> =
+            if diagonal_len >= PARALLEL_LEVENSHTEIN_CELLS && rayon::current_num_threads() > 1 {
+                (start_i..=end_i)
+                    .into_par_iter()
+                    .map(|i| {
+                        let j = diagonal - i;
+                        (i, levenshtein_cell(seq_a, seq_b, &dp, i, j))
+                    })
+                    .collect()
+            } else {
+                (start_i..=end_i)
+                    .map(|i| {
+                        let j = diagonal - i;
+                        (i, levenshtein_cell(seq_a, seq_b, &dp, i, j))
+                    })
+                    .collect()
+            };
 
         for (i, value) in values {
             let j = diagonal - i;
@@ -996,24 +1118,24 @@ fn homomorphic_levenshtein_distance_encrypted(
             continue;
         }
 
-        let cells: Vec<usize> = (start_i..=end_i).collect();
-        let values: Vec<(usize, FheUint8)> = if cells.len() >= PARALLEL_LEVENSHTEIN_CELLS {
-            cells
-                .par_iter()
-                .map(|&i| {
-                    let j = diagonal - i;
-                    (i, levenshtein_cell_encrypted(seq_a, seq_b, &dp, i, j))
-                })
-                .collect()
-        } else {
-            cells
-                .iter()
-                .map(|&i| {
-                    let j = diagonal - i;
-                    (i, levenshtein_cell_encrypted(seq_a, seq_b, &dp, i, j))
-                })
-                .collect()
-        };
+        let diagonal_len = end_i - start_i + 1;
+        let values: Vec<(usize, FheUint8)> =
+            if diagonal_len >= PARALLEL_LEVENSHTEIN_CELLS && rayon::current_num_threads() > 1 {
+                (start_i..=end_i)
+                    .into_par_iter()
+                    .map(|i| {
+                        let j = diagonal - i;
+                        (i, levenshtein_cell_encrypted(seq_a, seq_b, &dp, i, j))
+                    })
+                    .collect()
+            } else {
+                (start_i..=end_i)
+                    .map(|i| {
+                        let j = diagonal - i;
+                        (i, levenshtein_cell_encrypted(seq_a, seq_b, &dp, i, j))
+                    })
+                    .collect()
+            };
 
         for (i, value) in values {
             let j = diagonal - i;
@@ -1024,16 +1146,11 @@ fn homomorphic_levenshtein_distance_encrypted(
     Ok(dp[m][n].clone())
 }
 
-fn encrypted_counting_values(max_value: usize, reference: &FheUint8) -> Vec<FheUint8> {
-    let zero = FheUint8::cast_from(reference.ne(reference));
-    let mut values = Vec::with_capacity(max_value + 1);
-    values.push(zero);
-
-    for value in 1..=max_value {
-        values.push(&values[value - 1] + 1u8);
-    }
-
-    values
+fn encrypted_counting_values(max_value: usize, _reference: &FheUint8) -> Vec<FheUint8> {
+    (0..=max_value)
+        .into_par_iter()
+        .map(|value| FheUint8::encrypt_trivial(value as u8))
+        .collect()
 }
 
 fn levenshtein_cell(
@@ -1134,7 +1251,7 @@ fn encrypt_risk_patterns(
 ) -> Result<Vec<EncryptedRiskPattern>, ApiError> {
     let _timer = FunctionTimer::start("encrypt_risk_patterns");
     patterns
-        .iter()
+        .par_iter()
         .map(|pattern| {
             let encoded = encode_dna(&pattern.sequence).map_err(bad_request)?;
             if encoded.is_empty() {
@@ -1221,6 +1338,8 @@ pub struct SessionSequenceInfo {
     pub session_id: String,
     pub original_length: usize,
     pub created_at: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub encrypted_bases: Vec<String>,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -1482,7 +1601,7 @@ fn compare_session_sequences_hamming(
         .map(|sequence| sequence.info.clone())
         .collect();
     let encrypted_sequences = sequences
-        .iter()
+        .par_iter()
         .map(|sequence| {
             let encrypted = deserialize_encrypted_sequence(None, Some(&sequence.encrypted_bases))?;
             enforce_sequence_limit(encrypted.len(), MAX_HAMMING_SEQUENCE_LEN, "Hamming")?;
@@ -1532,7 +1651,7 @@ fn compare_session_sequences_levenshtein(
         .map(|sequence| sequence.info.clone())
         .collect();
     let encrypted_sequences = sequences
-        .iter()
+        .par_iter()
         .map(|sequence| {
             let encrypted = deserialize_encrypted_sequence(None, Some(&sequence.encrypted_bases))?;
             enforce_sequence_limit(encrypted.len(), MAX_LEVENSHTEIN_SEQUENCE_LEN, "Levenshtein")?;

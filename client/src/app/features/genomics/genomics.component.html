@@ -323,7 +323,7 @@
 
       @if (resultKind() === 'db-hamming' || resultKind() === 'db-levenshtein' || resultKind() === 'session-hamming' || resultKind() === 'session-levenshtein') {
         <div class="result-heading">
-          <h2>{{ databaseResultTitle() }}</h2>
+          <h2>Database results</h2>
           <span>{{ databaseResults().length }} Trefferlisten</span>
         </div>
         <div class="db-match-summary" [class.match]="databaseMatchCount() > 0" [class.no-match]="databaseMatchCount() === 0">

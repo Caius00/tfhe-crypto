@@ -88,6 +88,7 @@ interface SessionSequenceInfo {
   session_id: string;
   original_length: number;
   created_at: string;
+  encrypted_bases?: string[];
 }
 
 interface StoreSessionSequenceResponse {
@@ -557,26 +558,19 @@ export class GenomicsComponent implements OnInit, OnDestroy {
       const canDecrypt = this.canDecryptSessionResults(group);
       if (canDecrypt) {
         this.databaseResults.set(
-          response.encrypted_result_items.map((items, index) => {
-            const distances = this.decryptItems(items);
-            const sequence = response.sequences[index];
-            return {
-              label: sequence ? `Session ${sequence.session_id} #${sequence.id}` : `Sequenz ${index + 1}`,
-              distances,
-              bestDistance: distances.length ? Math.min(...distances) : null,
-            };
-          }),
+          this.toDatabaseResults(
+            response.encrypted_result_items,
+            (index) => this.sessionSequenceLabel(response.sequences[index], index, canDecrypt),
+            (distances) => this.bestWindowDistance(distances),
+          ),
         );
         this.resultKind.set('session-hamming');
       } else {
         this.setEncryptedResult(
           'Encrypted Session-Hamming-Ergebnisse',
-          response.encrypted_result_items.map((items, index) => ({
-            label: response.sequences[index]
-              ? `Session ${response.sequences[index].session_id} #${response.sequences[index].id}`
-              : `Sequenz ${index + 1}`,
-            value: items.join('\n'),
-          })),
+          this.toEncryptedResultItems(response.encrypted_result_items, (index) =>
+            this.sessionSequenceLabel(response.sequences[index], index),
+          ),
           'session',
         );
       }
@@ -622,26 +616,19 @@ export class GenomicsComponent implements OnInit, OnDestroy {
       const canDecrypt = this.canDecryptSessionResults(group);
       if (canDecrypt) {
         this.databaseResults.set(
-          response.encrypted_result_items.map((items, index) => {
-            const distances = this.decryptItems(items);
-            const sequence = response.sequences[index];
-            return {
-              label: sequence ? `Session ${sequence.session_id} #${sequence.id}` : `Sequenz ${index + 1}`,
-              distances,
-              bestDistance: distances[0] ?? null,
-            };
-          }),
+          this.toDatabaseResults(
+            response.encrypted_result_items,
+            (index) => this.sessionSequenceLabel(response.sequences[index], index, canDecrypt),
+            (distances) => this.singleDistance(distances),
+          ),
         );
         this.resultKind.set('session-levenshtein');
       } else {
         this.setEncryptedResult(
           'Encrypted Session-Levenshtein-Ergebnisse',
-          response.encrypted_result_items.map((items, index) => ({
-            label: response.sequences[index]
-              ? `Session ${response.sequences[index].session_id} #${response.sequences[index].id}`
-              : `Sequenz ${index + 1}`,
-            value: items.join('\n'),
-          })),
+          this.toEncryptedResultItems(response.encrypted_result_items, (index) =>
+            this.sessionSequenceLabel(response.sequences[index], index),
+          ),
           'session',
         );
       }
@@ -758,24 +745,19 @@ export class GenomicsComponent implements OnInit, OnDestroy {
 
       if (this.canDecryptResults()) {
         this.databaseResults.set(
-          response.encrypted_result_items.map((items, index) => {
-            const distances = this.decryptItems(items);
-            const pattern = response.patterns[index];
-            return {
-              label: pattern ? `${pattern.sequence}` : `DB-Sequenz ${index + 1}`,
-              distances,
-              bestDistance: distances.length ? Math.min(...distances) : null,
-            };
-          }),
+          this.toDatabaseResults(
+            response.encrypted_result_items,
+            (index) => this.riskPatternLabel(response.patterns[index], index),
+            (distances) => this.bestWindowDistance(distances),
+          ),
         );
         this.resultKind.set('db-hamming');
       } else {
         this.setEncryptedResult(
           'Encrypted DB-Hamming-Ergebnisse',
-          response.encrypted_result_items.map((items, index) => ({
-            label: response.patterns[index]?.sequence ?? `DB-Sequenz ${index + 1}`,
-            value: items.join('\n'),
-          })),
+          this.toEncryptedResultItems(response.encrypted_result_items, (index) =>
+            this.riskPatternLabel(response.patterns[index], index),
+          ),
           'database',
         );
       }
@@ -808,24 +790,19 @@ export class GenomicsComponent implements OnInit, OnDestroy {
 
       if (this.canDecryptResults()) {
         this.databaseResults.set(
-          response.encrypted_result_items.map((items, index) => {
-            const distances = this.decryptItems(items);
-            const pattern = response.patterns[index];
-            return {
-              label: pattern ? `${pattern.sequence}` : `DB-Sequenz ${index + 1}`,
-              distances,
-              bestDistance: distances[0] ?? null,
-            };
-          }),
+          this.toDatabaseResults(
+            response.encrypted_result_items,
+            (index) => this.riskPatternLabel(response.patterns[index], index),
+            (distances) => this.singleDistance(distances),
+          ),
         );
         this.resultKind.set('db-levenshtein');
       } else {
         this.setEncryptedResult(
           'Encrypted DB-Levenshtein-Ergebnisse',
-          response.encrypted_result_items.map((items, index) => ({
-            label: response.patterns[index]?.sequence ?? `DB-Sequenz ${index + 1}`,
-            value: items.join('\n'),
-          })),
+          this.toEncryptedResultItems(response.encrypted_result_items, (index) =>
+            this.riskPatternLabel(response.patterns[index], index),
+          ),
           'database',
         );
       }
@@ -932,14 +909,6 @@ export class GenomicsComponent implements OnInit, OnDestroy {
 
   isOwnSessionJob(job: FifoJob): boolean {
     return this.activeSession()?.id === job.session_id;
-  }
-
-  databaseResultTitle(): string {
-    if (this.resultKind() === 'session-hamming' || this.resultKind() === 'session-levenshtein') {
-      return 'Sessionsequence results';
-    }
-
-    return 'Database results';
   }
 
   private async computeBody(
@@ -1091,6 +1060,55 @@ export class GenomicsComponent implements OnInit, OnDestroy {
     this.resultKind.set('encrypted');
   }
 
+  private toDatabaseResults(
+    encryptedResultItems: string[][],
+    labelForIndex: (index: number) => string,
+    bestDistanceFor: (distances: number[]) => number | null,
+  ): DatabaseResult[] {
+    return encryptedResultItems.map((items, index) => {
+      const distances = this.decryptItems(items);
+      return {
+        label: labelForIndex(index),
+        distances,
+        bestDistance: bestDistanceFor(distances),
+      };
+    });
+  }
+
+  private toEncryptedResultItems(
+    encryptedResultItems: string[][],
+    labelForIndex: (index: number) => string,
+  ): KeyOutput[] {
+    return encryptedResultItems.map((items, index) => ({
+      label: labelForIndex(index),
+      value: items.join('\n'),
+    }));
+  }
+
+  private bestWindowDistance(distances: number[]): number | null {
+    return distances.length ? Math.min(...distances) : null;
+  }
+
+  private singleDistance(distances: number[]): number | null {
+    return distances[0] ?? null;
+  }
+
+  private riskPatternLabel(pattern: RiskPattern | undefined, index: number): string {
+    return pattern?.sequence ?? `DB-Sequenz ${index + 1}`;
+  }
+
+  private sessionSequenceLabel(
+    sequence: SessionSequenceInfo | undefined,
+    index: number,
+    canDecrypt = false,
+  ): string {
+    if (sequence && canDecrypt && sequence.encrypted_bases?.length) {
+      return this.decryptDnaItems(sequence.encrypted_bases);
+    }
+
+    return sequence ? `Session ${sequence.session_id} #${sequence.id}` : `DB-Sequenz ${index + 1}`;
+  }
+
   private decryptItems(items: string[]): number[] {
     const material = this.keyMaterial();
     if (!material) {
@@ -1100,6 +1118,27 @@ export class GenomicsComponent implements OnInit, OnDestroy {
     return items.map((item) =>
       this.tfhe.decryptUint8(this.tfhe.fromBase64(item), material.keyPair.clientKey),
     );
+  }
+
+  private decryptDnaItems(items: string[]): string {
+    return this.decryptItems(items)
+      .map((value) => this.decodeDnaBase(value))
+      .join('');
+  }
+
+  private decodeDnaBase(value: number): string {
+    switch (value) {
+      case 0:
+        return 'A';
+      case 1:
+        return 'T';
+      case 2:
+        return 'C';
+      case 3:
+        return 'G';
+      default:
+        return '?';
+    }
   }
 
   private normalizeDna(sequence: string): string {
