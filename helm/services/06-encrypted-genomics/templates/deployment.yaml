@@ -40,7 +40,7 @@ spec:
             - name: RUST_LOG
               value: "info"
             {{- if .Values.postgres.enabled }}
-            - name: DATABASE_URL
+            - name: GENOMICS_DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: "{{ .Values.postgres.fullnameOverride }}"
