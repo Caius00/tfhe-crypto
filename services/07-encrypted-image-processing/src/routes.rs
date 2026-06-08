@@ -29,16 +29,21 @@ pub struct ApiResponse {
 #[derive(Serialize, Deserialize)]
 pub struct CreateSessionRequest {
     pub(crate) compressed_server_key: Vec<u8>,
-    pub(crate) image_data: Vec<u8>, //TODO() compress image data
+    pub(crate) image_data: Vec<Vec<u8>>, //TODO() compress image data
     pub(crate) width: u32,
     pub(crate) height: u32,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct DeleteSessionResponse {
-    pub(crate) image_data: Vec<u8>, //TODO() compress image data
+    pub(crate) image_data: Vec<Vec<u8>>, //TODO() compress image data
     pub(crate) width: u32,
     pub(crate) height: u32,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct StatusResponse {
+    pub(crate) session_active: bool
 }
 
 #[axum::debug_handler]
@@ -57,18 +62,36 @@ pub async fn create_session(
         );
     }
 
-    let (compressed_server_key, image_data) = match (
-        bincode::deserialize::<CompressedServerKey>(&body.compressed_server_key),
-        bincode::deserialize::<Vec<FheUint8>>(&body.image_data)
-        ) {
-        (Ok(key), Ok(data)) => (key, data),
-        _ => {
+    let compressed_server_key = 
+    match bincode::deserialize::<CompressedServerKey>(
+        &body.compressed_server_key
+    ) {
+        Ok(key) => key,
+        Err(_) => {
             return (
                 StatusCode::BAD_REQUEST,
                 Json(ApiResponse {
                     success: false,
                     message: "Invalid request body.".into(),
                 }),
+            );
+        }
+    };
+
+    let image_data: Vec<FheUint8> = match body
+        .image_data
+        .iter()
+        .map(|bytes| bincode::deserialize::<FheUint8>(bytes))
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(data) => data,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ApiResponse { 
+                    success: false, 
+                    message: "Invalid image data.".into() 
+                })
             );
         }
     };
@@ -125,10 +148,20 @@ pub async fn delete_session(
     };
 
     Ok(Json(DeleteSessionResponse {
-        image_data: bincode::serialize(&session.image.pixels).unwrap(),
+        image_data: session.image.pixels
+            .iter()
+            .map(|pixel| bincode::serialize(pixel).unwrap())
+            .collect(),
         width: session.image.width,
         height: session.image.height,
     }))
+}
+
+pub async fn session_status(
+    State(state): State<AppState>
+) -> Json<StatusResponse> {
+    let session_lock = state.current_session.lock().await;
+    Json(StatusResponse { session_active: session_lock.is_some() })
 }
 
 pub struct ImageOperation;
@@ -247,7 +280,7 @@ impl ImageOperation {
         State(state): State<AppState>,
     ) -> (StatusCode, Json<ApiResponse>) {
         Self::run_image_operation(state, |image| {
-            image.box_blur()
+            image.box_blur_weighted()
         }).await
     }
     pub async fn bloom(

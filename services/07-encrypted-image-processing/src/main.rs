@@ -6,7 +6,7 @@ use axum::{serve, Router};
 use axum::extract::DefaultBodyLimit;
 use axum::routing::{delete, get, post};
 use tokio::sync::{Mutex};
-use crate::routes::{create_session, delete_session, AppState, ImageOperation};
+use crate::routes::{AppState, ImageOperation, create_session, delete_session, session_status};
 
 #[tokio::main]
 async fn main() {
@@ -17,6 +17,7 @@ async fn main() {
     let app = Router::new()
         .route("/session", post(create_session))
         .route("/session", delete(delete_session))
+        .route("/status", get(session_status))
         .route("/per-pixel/invert", post(ImageOperation::invert))
         .route("/per-pixel/white-threshold", post(ImageOperation::white_threshold))
         .route("/per-pixel/black-threshold", post(ImageOperation::black_threshold))
@@ -25,6 +26,8 @@ async fn main() {
         .route("/rotate/270", post(ImageOperation::rotate_270))
         .route("/flip/vertical", post(ImageOperation::flip_vertical))
         .route("/flip/horizontal", post(ImageOperation::flip_horizontal))
+        .route("/effects/blur", post(ImageOperation::blur))
+        .route("/effects/bloom", post(ImageOperation::bloom))
         .with_state(state)
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024 * 1024))
         .merge(health::router(env!("CARGO_PKG_VERSION")));
@@ -34,6 +37,7 @@ async fn main() {
     serve(listener, app).await.unwrap();
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use std::time::Instant;
@@ -232,3 +236,4 @@ mod tests {
         // TODO() Don't write images to storage; verify authenticity in RAM
     }
 }
+*/

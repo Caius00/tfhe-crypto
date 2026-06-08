@@ -4,6 +4,7 @@ use axum_test::expect_json::__private::serde_trampoline::{Deserialize, Serialize
 use rayon::prelude::*;
 use tfhe::FheUint8;
 use tfhe::prelude::{FheOrd, FheTrivialEncrypt, IfThenElse};
+use tfhe::shortint::backward_compatibility::server_key;
 
 #[derive(Serialize, Deserialize)]
 pub struct EncryptedImage {
@@ -50,7 +51,6 @@ impl EncryptedImage {
             .map(|index| {
                 let row = index / width;
                 let col = index % width;
-
                 function(row, col, self)
             })
             .collect();
@@ -65,6 +65,10 @@ impl EncryptedImage {
     fn get_pixel(&self, row: u32, col: u32) -> &FheUint8 {
         let index = (row * self.width + col) as usize;
         &self.pixels[index]
+    }
+
+    fn get_pixel_by_index(&self, index: u32) -> &FheUint8 {
+        &self.pixels[index as usize]
     }
 
     pub fn invert(&mut self) {
@@ -112,25 +116,23 @@ impl EncryptedImage {
         });
     }
 
-    fn add_image_faster(&mut self, other: &EncryptedImage, factor: u8) {
-        self.extended_base_func(|row, col, image| {
-            image.get_pixel(row, col) + (other.get_pixel(row, col) >> factor)
-        });
-    }
-
     fn create_lightmap(&self) -> EncryptedImage {
         let theshhold = 220u8;
         let zero = FheUint8::encrypt_trivial(0u8);
 
         self.map_pixels(|pixel| {
             pixel.lt(theshhold).if_then_else(&zero, pixel)
-        })       
+        })
+    }
+
+    pub fn mask(&mut self) {
+
     }
     
     pub fn blooming(&mut self) {
         let mut lightmap = self.create_lightmap();
         lightmap.box_blur();
-        self.add_image_faster(&lightmap, 2u8);
+        self.add_image(&lightmap);
     }
 
     pub fn box_blur(&mut self) {
@@ -174,13 +176,16 @@ impl EncryptedImage {
     });}
 
     pub fn blooming_per_pixel(&mut self) {
+        let strong = FheUint8::encrypt_trivial(20u8);
+        let weak = FheUint8::encrypt_trivial(10u8);
+        let zero = FheUint8::encrypt_trivial(0u8);
+        let threshhold = 220u8;
+
         self.extended_base_func(|row, col, image| {
             if row == 0 || col == 0 ||row == image.height - 1 || col == image.width - 1 {
                 return image.get_pixel(row, col).clone();
             }
 
-            let threshhold = 220;
-            
             let center = image.get_pixel(row, col);
             
             let n  = image.get_pixel(row - 1, col);
@@ -193,18 +198,15 @@ impl EncryptedImage {
             let se = image.get_pixel(row + 1, col + 1);
             let sw = image.get_pixel(row + 1, col - 1);
             
-            let strong = FheUint8::encrypt_trivial(20u8);
-            let weak = FheUint8::encrypt_trivial(10u8);
-            let zero = FheUint8::encrypt_trivial(0u8);
-
-            let boost = n.gt(128).if_then_else(&strong, &zero)
-            + s.gt(threshhold).if_then_else(&strong, &zero)
-            + e.gt(threshhold).if_then_else(&strong, &zero)
-            + w.gt(threshhold).if_then_else(&strong, &zero)
-            + ne.gt(threshhold).if_then_else(&weak, &zero)
-            + nw.gt(threshhold).if_then_else(&weak, &zero)
-            + se.gt(threshhold).if_then_else(&weak, &zero)
-            + sw.gt(threshhold).if_then_else(&weak, &zero);
+            let boost = 
+                n.gt(threshhold).if_then_else(&strong, &zero)
+                + s.gt(threshhold).if_then_else(&strong, &zero)
+                + e.gt(threshhold).if_then_else(&strong, &zero)
+                + w.gt(threshhold).if_then_else(&strong, &zero)
+                + ne.gt(threshhold).if_then_else(&weak, &zero)
+                + nw.gt(threshhold).if_then_else(&weak, &zero)
+                + se.gt(threshhold).if_then_else(&weak, &zero)
+                + sw.gt(threshhold).if_then_else(&weak, &zero);
             
             center + boost
     });}
