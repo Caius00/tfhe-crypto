@@ -22,7 +22,7 @@ const DEFAULT_DATABASE_CONFIG: &str =
     "host=159.195.145.100 port=5432 user=genomics password=genomics dbname=genomics";
 const PARALLEL_HAMMING_WINDOWS: usize = 2;
 const PARALLEL_LEVENSHTEIN_CELLS: usize = 2;
-const PROCESSING_QUEUE_CAPACITY: usize = 4;
+const PROCESSING_QUEUE_CAPACITY: usize = 10;
 const MAX_HAMMING_SEQUENCE_LEN: usize = 255;
 const MAX_LEVENSHTEIN_SEQUENCE_LEN: usize = 122;
 const KEY_CACHE_CAPACITY: usize = 8;
