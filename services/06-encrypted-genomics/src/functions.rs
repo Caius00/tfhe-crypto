@@ -314,7 +314,7 @@ async fn enqueue_processing_job(
 }
 
 fn database_config() -> String {
-    std::env::var("GENOMICS_DATABASE_URL").unwrap_or_else(|_| DEFAULT_DATABASE_CONFIG.to_string())
+    std::env::var("DATABASE_URL").unwrap_or_else(|_| DEFAULT_DATABASE_CONFIG.to_string())
 }
 
 async fn connect_database() -> Result<tokio_postgres::Client, ApiError> {
