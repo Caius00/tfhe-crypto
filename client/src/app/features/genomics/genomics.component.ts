@@ -62,6 +62,7 @@ interface CompareDatabaseResponse {
   encrypted_result_items: string[][];
   compared_sequences: number;
   patterns: RiskPattern[];
+  skipped_results?: SkippedComparison[];
 }
 
 interface PatternsResponse {
@@ -115,6 +116,12 @@ interface DatabaseResult {
   label: string;
   distances: number[];
   bestDistance: number | null;
+  skippedReason?: string;
+}
+
+interface SkippedComparison {
+  index: number;
+  reason: string;
 }
 
 interface KeyOutput {
@@ -131,7 +138,7 @@ const BUSY_STATES: GenomicsStatus[] = ['generating', 'encrypting', 'processing']
 const MAX_HAMMING_SEQUENCE_LENGTH = 255;
 const MAX_LEVENSHTEIN_SEQUENCE_LENGTH = 122;
 const EMPTY_FIFO_STATUS: FifoStatusResponse = {
-  capacity: 4,
+  capacity: 5,
   used: 0,
   locked: false,
   jobs: [],
@@ -274,12 +281,12 @@ export class GenomicsComponent implements OnInit, OnDestroy {
 
       if (showMessage) {
         this.infoMessage.set(
-          `FIFO aktualisiert: ${response.used}/${response.capacity} Auftraege in ${this.elapsedMs(started)} ms.`,
+          `FIFO updated: ${response.used}/${response.capacity} jobs in ${this.elapsedMs(started)} ms.`,
         );
       }
     } catch (error) {
       if (showMessage) {
-        this.errorMessage.set(`FIFO konnte nicht geladen werden: ${this.errorText(error)}`);
+        this.errorMessage.set(`FIFO couldnt be loaded: ${this.errorText(error)}`);
       }
     }
   }
@@ -749,14 +756,17 @@ export class GenomicsComponent implements OnInit, OnDestroy {
             response.encrypted_result_items,
             (index) => this.riskPatternLabel(response.patterns[index], index),
             (distances) => this.bestWindowDistance(distances),
+            response.skipped_results,
           ),
         );
         this.resultKind.set('db-hamming');
       } else {
         this.setEncryptedResult(
           'Encrypted DB-Hamming-Ergebnisse',
-          this.toEncryptedResultItems(response.encrypted_result_items, (index) =>
-            this.riskPatternLabel(response.patterns[index], index),
+          this.toEncryptedResultItems(
+            response.encrypted_result_items,
+            (index) => this.riskPatternLabel(response.patterns[index], index),
+            response.skipped_results,
           ),
           'database',
         );
@@ -794,14 +804,17 @@ export class GenomicsComponent implements OnInit, OnDestroy {
             response.encrypted_result_items,
             (index) => this.riskPatternLabel(response.patterns[index], index),
             (distances) => this.singleDistance(distances),
+            response.skipped_results,
           ),
         );
         this.resultKind.set('db-levenshtein');
       } else {
         this.setEncryptedResult(
           'Encrypted DB-Levenshtein-Ergebnisse',
-          this.toEncryptedResultItems(response.encrypted_result_items, (index) =>
-            this.riskPatternLabel(response.patterns[index], index),
+          this.toEncryptedResultItems(
+            response.encrypted_result_items,
+            (index) => this.riskPatternLabel(response.patterns[index], index),
+            response.skipped_results,
           ),
           'database',
         );
@@ -1064,13 +1077,18 @@ export class GenomicsComponent implements OnInit, OnDestroy {
     encryptedResultItems: string[][],
     labelForIndex: (index: number) => string,
     bestDistanceFor: (distances: number[]) => number | null,
+    skippedResults: SkippedComparison[] = [],
   ): DatabaseResult[] {
+    const skippedByIndex = new Map(skippedResults.map((item) => [item.index, item.reason]));
+
     return encryptedResultItems.map((items, index) => {
-      const distances = this.decryptItems(items);
+      const skippedReason = skippedByIndex.get(index);
+      const distances = skippedReason ? [] : this.decryptItems(items);
       return {
         label: labelForIndex(index),
         distances,
         bestDistance: bestDistanceFor(distances),
+        skippedReason,
       };
     });
   }
@@ -1078,10 +1096,13 @@ export class GenomicsComponent implements OnInit, OnDestroy {
   private toEncryptedResultItems(
     encryptedResultItems: string[][],
     labelForIndex: (index: number) => string,
+    skippedResults: SkippedComparison[] = [],
   ): KeyOutput[] {
+    const skippedByIndex = new Map(skippedResults.map((item) => [item.index, item.reason]));
+
     return encryptedResultItems.map((items, index) => ({
       label: labelForIndex(index),
-      value: items.join('\n'),
+      value: skippedByIndex.get(index) ?? items.join('\n'),
     }));
   }
 

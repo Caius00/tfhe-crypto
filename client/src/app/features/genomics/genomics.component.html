@@ -36,7 +36,7 @@
     <section class="fifo-panel" [class.fifo-locked]="fifoLocked()">
       <div class="card-heading">
         <h2>FIFO</h2>
-        <span>{{ fifoStatus().used }}/{{ fifoStatus().capacity }} Auftraege</span>
+        <span>{{ fifoStatus().used }}/{{ fifoStatus().capacity }} jobs</span>
       </div>
       @if (fifoLocked()) {
         <div class="fifo-lock">Fifo full, no capacities left</div>
@@ -59,7 +59,7 @@
 
     <section class="action-card session-list-card">
       <div class="card-heading">
-        <h2>Active sessions</h2>
+        <h2>Sessions</h2>
         <span>{{ sessions().length }} available</span>
       </div>
       <div class="session-list">
@@ -84,7 +84,7 @@
   <header class="page-header">
     <div>
       <h1>06 - Encrypted Genomics</h1>
-      <p>Session {{ activeSession()?.id }} - {{ sessionRole() === 'creator' ? 'Ersteller' : 'Teilnehmer' }}</p>
+      <p>Session {{ activeSession()?.id }} - {{ sessionRole() === 'creator' ? 'Creator' : 'Joined' }}</p>
     </div>
     <div class="key-actions">
       <button type="button" class="primary-button" (click)="leaveSession()" [disabled]="isBusy()">
@@ -182,10 +182,10 @@
         spellcheck="false"
       ></textarea>
       <div class="button-row">
-        <button type="button" class="primary-button" (click)="encryptSequenceLocal()" [disabled]="!hasKeys() || isBusy()">
+        <button type="button" class="primary-button" (click)="encryptSequenceLocal()" [disabled]="!hasKeys()">
           Encrypt locally
         </button>
-        <button type="button" class="ghost-button" (click)="showEncryptedSequence()" [disabled]="!hasEncryptedSequence() || isBusy()">
+        <button type="button" class="ghost-button" (click)="showEncryptedSequence()" [disabled]="!hasEncryptedSequence()">
           Encrypted
         </button>
       </div>
@@ -215,7 +215,7 @@
         spellcheck="false"
       ></textarea>
       <div class="button-row">
-        <button type="button" class="primary-button" (click)="addRiskPattern()" [disabled]="!hasKeys() || isBusy() || fifoLocked() || !hasNewPatternInput()">
+        <button type="button" class="primary-button" (click)="addRiskPattern()" [disabled]="!hasKeys()  || fifoLocked() || !hasNewPatternInput()">
           Save pattern
         </button>
       </div>
@@ -241,7 +241,7 @@
         <button type="button" class="primary-button" (click)="compareDatabaseLevenshtein()" [disabled]="!hasKeys() || isBusy() || !hasRiskPatterns() || fifoLocked()">
           Levenshtein
         </button>
-        <button type="button" class="ghost-button" (click)="showResult()" [disabled]="!hasRiskDatabaseResult() || isBusy()">
+        <button type="button" class="ghost-button" (click)="showResult()" [disabled]="!hasRiskDatabaseResult()">
           Result
         </button>
       </div>
@@ -253,7 +253,7 @@
         <span>{{ sessionSequenceGroups().length }} Sessions</span>
       </div>
       <div class="button-row">
-        <button type="button" class="primary-button" (click)="storeSessionSequence()" [disabled]="!hasKeys() || isBusy() || fifoLocked()">
+        <button type="button" class="primary-button" (click)="storeSessionSequence()" [disabled]="!hasKeys() || fifoLocked()">
           save sequence
         </button>
       </div>
@@ -278,7 +278,7 @@
         <button type="button" class="primary-button" (click)="compareSessionSequencesLevenshtein()" [disabled]="!hasKeys() || isBusy() || !hasSessionSequenceGroups() || fifoLocked()">
           Levenshtein
         </button>
-        <button type="button" class="ghost-button" (click)="showResult()" [disabled]="!hasSessionSequenceResult() || isBusy()">
+        <button type="button" class="ghost-button" (click)="showResult()" [disabled]="!hasSessionSequenceResult()">
           Result
         </button>
       </div>
@@ -335,17 +335,24 @@
             <article class="db-result" [class.match-entry]="entryHasMatch(entry)" [class.no-match-entry]="!entryHasMatch(entry)">
               <div class="db-result-heading">
                 <h3>{{ entry.label }}</h3>
-                <span>Bestwert: {{ entry.bestDistance ?? '-' }}</span>
+                <span>{{ entry.skippedReason ? 'Skipped' : 'Bestwert: ' + (entry.bestDistance ?? '-') }}</span>
               </div>
               <div class="match-indicator compact" [class.match]="entryHasMatch(entry)" [class.no-match]="!entryHasMatch(entry)">
                 {{ entryHasMatch(entry) ? 'MATCH' : 'NO MATCH' }}
               </div>
               <div class="result-list compact">
-                @for (distance of entry.distances; track $index) {
-                  <div class="result-row" [class.match-window]="distance === 0" [class.no-match-window]="distance > 0">
-                    <span>{{ resultKind() === 'db-hamming' || resultKind() === 'session-hamming' ? 'Window ' + $index : 'Distanz' }}</span>
-                    <strong>{{ distance }}</strong>
+                @if (entry.skippedReason) {
+                  <div class="result-row no-match-window">
+                    <span>Skipped</span>
+                    <strong>{{ entry.skippedReason }}</strong>
                   </div>
+                } @else {
+                  @for (distance of entry.distances; track $index) {
+                    <div class="result-row" [class.match-window]="distance === 0" [class.no-match-window]="distance > 0">
+                      <span>{{ resultKind() === 'db-hamming' || resultKind() === 'session-hamming' ? 'Window ' + $index : 'Distanz' }}</span>
+                      <strong>{{ distance }}</strong>
+                    </div>
+                  }
                 }
               </div>
             </article>
