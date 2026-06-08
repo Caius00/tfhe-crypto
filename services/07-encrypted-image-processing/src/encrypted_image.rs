@@ -67,10 +67,6 @@ impl EncryptedImage {
         &self.pixels[index]
     }
 
-    fn get_pixel_by_index(&self, index: u32) -> &FheUint8 {
-        &self.pixels[index as usize]
-    }
-
     pub fn invert(&mut self) {
         let inverting = |pixel_value: &FheUint8| !pixel_value;
 
@@ -124,56 +120,99 @@ impl EncryptedImage {
             pixel.lt(theshhold).if_then_else(&zero, pixel)
         })
     }
-
-    pub fn mask(&mut self) {
-
-    }
     
     pub fn blooming(&mut self) {
         let mut lightmap = self.create_lightmap();
-        lightmap.box_blur();
+        lightmap.box_blur_splitted();
         self.add_image(&lightmap);
     }
 
-    pub fn box_blur(&mut self) {
+    pub fn box_blur_simple(&mut self) {
+        let width = self.width;
         self.extended_base_func(|row, col, image| {
             if row == 0 || col == 0 ||row == image.height - 1 || col == image.width - 1 {
                 return image.get_pixel(row, col).clone();
             }
-            
-            let center = image.get_pixel(row, col);
+            let index = row * width + col;
+            let pixels = &image.pixels;
+            let center =  &pixels[index as usize];
 
-            let n  = image.get_pixel(row - 1, col);
-            let s  = image.get_pixel(row + 1, col);
-            let e  = image.get_pixel(row, col + 1);
-            let w  = image.get_pixel(row, col - 1);
+            let n = &pixels[(index - width) as usize];
+            let s = &pixels[(index + width) as usize];
+            let e = &pixels[(index + 1) as usize];
+            let w = &pixels[(index - 1) as usize];
 
-            (center >> 2u8) 
-                + (n >> 3u8) + (e >> 3u8) + (s >> 3u8) + (w >> 3u8)
+            let cent = center >> 2u8;
+            let card1 = (n >> 3u8) + (e >> 3u8);
+            let card2 = (s >> 3u8) + (w >> 3u8);
+
+            cent + (card1 + card2)
     });}
 
     pub fn box_blur_weighted(&mut self) {
+        let width = self.width;
         self.extended_base_func(|row, col, image| {
+            let index = row * width + col;
             if row == 0 || col == 0 ||row == image.height - 1 || col == image.width - 1 {
                 return image.get_pixel(row, col).clone();
             }
             
-            let center = image.get_pixel(row, col);
+            let pixels = &image.pixels;
+            let center =  &pixels[index as usize];
 
-            let n  = image.get_pixel(row - 1, col);
-            let s  = image.get_pixel(row + 1, col);
-            let e  = image.get_pixel(row, col + 1);
-            let w  = image.get_pixel(row, col - 1);
+            let n = &pixels[(index - width) as usize];
+            let s = &pixels[(index + width) as usize];
+            let e = &pixels[(index + 1) as usize];
+            let w = &pixels[(index - 1) as usize];
             
-            let ne = image.get_pixel(row - 1, col + 1);
-            let nw = image.get_pixel(row - 1, col - 1);
-            let se = image.get_pixel(row + 1, col + 1);
-            let sw = image.get_pixel(row + 1, col - 1);
+            let ne = &pixels[(index - width + 1) as usize];
+            let nw = &pixels[(index - width - 1) as usize];
+            let se = &pixels[(index + width + 1) as usize];
+            let sw = &pixels[(index + width - 1) as usize];
 
-            (center >> 2u8) 
-                + (n >> 3u8) + (e >> 3u8) + (s >> 3u8) + (w >> 3u8)
-                + (ne >> 4u8) + (nw >> 4u8) + (se >> 4u8) + (sw >> 4u8)
+            let cent = center >> 2u8;
+            let card1 = (n >> 3u8) + (e >> 3u8);
+            let card2 = (s >> 3u8) + (w >> 3u8);
+            let diag1 = (ne >> 4u8) + (nw >> 4u8);
+            let diag2 = (se >> 4u8) + (sw >> 4u8);
+
+            cent + (card1 + card2) + (diag1 + diag2)
     });}
+
+    pub fn box_blur_splitted(&mut self) {
+        self.box_blur_horizontal();
+        self.box_blur_vertical();
+    }
+
+    pub fn box_blur_horizontal(&mut self) {
+        let width = self.width;
+        self.extended_base_func(|row, col, image| {
+            if col == 0 || col == image.width - 1 {
+                return image.get_pixel(row, col).clone();
+            }
+            let index = row * width + col;
+            let pixels = &image.pixels;
+            let left = &pixels[(index - 1) as usize];
+            let center =  &pixels[index as usize];
+            let right = &pixels[(index + 1) as usize];
+            (left >> 2u8) + (center >> 1u8) + (right >> 2u8)
+        });
+    }
+
+    pub fn box_blur_vertical(&mut self) {
+        let width = self.width;
+        self.extended_base_func(|row, col, image| {
+            if row == 0 || row == image.height - 1 {
+                return image.get_pixel(row, col).clone();
+            }
+            let index = row * width + col;
+            let pixels = &image.pixels;
+            let top = &pixels[(index - width) as usize];
+            let center =  &pixels[index as usize];
+            let bottom = &pixels[(index + width) as usize];
+            (top >> 2u8) + (center >> 1u8) + (bottom >> 2u8)
+        });
+    }
 
     pub fn blooming_per_pixel(&mut self) {
         let strong = FheUint8::encrypt_trivial(20u8);
