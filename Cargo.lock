@@ -927,7 +927,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-genomics"
-version = "0.1.22"
+version = "0.1.23"
 dependencies = [
  "aide",
  "axum 0.8.9",
@@ -949,7 +949,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-image-processing"
-version = "0.1.22"
+version = "0.1.23"
 dependencies = [
  "axum 0.8.9",
  "axum-test",
