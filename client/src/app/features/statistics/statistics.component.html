@@ -1,36 +1,33 @@
 <div class="page">
-  <h1>05 – Encrypted Statistics Service</h1>
-  <p class="subtitle">
-    Die Zahlen werden lokal verschlüsselt. Der Server berechnet alle Statistiken
-    homomorph, ohne die Klartextwerte zu kennen.
-  </p>
+  <app-page-header
+    title="05 – Encrypted Statistics Service"
+    subtitle="Die Zahlen werden lokal verschlüsselt. Der Server berechnet alle Statistiken homomorph, ohne die Klartextwerte zu kennen."
+  />
 
   <!-- Step: init -->
   @if (currentStep() === 'init') {
-    <div class="card">
+    <app-card>
       <h2>Schritt 1: Schlüssel generieren</h2>
       <p class="hint">
         Es werden ein Client-Key (lokal) und ein Server-Key (für das Backend)
         erzeugt. Dies dauert <strong>30–90 Sekunden</strong>.
       </p>
       <app-button label="Schlüssel generieren" (clicked)="generateKeys()" />
-    </div>
+    </app-card>
   }
 
   <!-- Step: generating keys -->
   @if (currentStep() === 'generating') {
-    <div class="card loading-card">
-      <app-spinner />
-      <div>
-        <p class="loading-title">Schlüssel werden generiert …</p>
-        <p class="hint">TFHE-Schlüsselgenerierung läuft. Bitte warten.</p>
-      </div>
-    </div>
+    <app-loading-overlay
+      message="Schlüssel werden generiert …"
+      hint="TFHE-Schlüsselgenerierung läuft. Bitte warten."
+      variant="crypto"
+    />
   }
 
   <!-- Step: enter list -->
   @if (currentStep() === 'enter-list') {
-    <div class="card">
+    <app-card>
       <div class="status-badge success">Schlüssel bereit</div>
       <h2>Schritt 2: Zahlen eingeben</h2>
       <p class="hint">
@@ -46,32 +43,27 @@
         (valueChange)="rawListInput.set($event)"
       />
       @if (validationError()) {
-        <p class="error-inline">{{ validationError() }}</p>
+        <app-alert [message]="validationError()" variant="error" />
       }
       <div class="actions">
         <app-button label="Statistiken berechnen" (clicked)="compute()" />
         <app-button label="Zurücksetzen" type="button" (clicked)="reset()" />
       </div>
-    </div>
+    </app-card>
   }
 
   <!-- Step: computing -->
   @if (currentStep() === 'computing') {
-    <div class="card loading-card">
-      <app-spinner />
-      <div>
-        <p class="loading-title">Berechnung läuft …</p>
-        <p class="hint">
-          Der Server führt alle Berechnungen homomorph auf den verschlüsselten
-          Daten aus. Dies kann einige Minuten dauern.
-        </p>
-      </div>
-    </div>
+    <app-loading-overlay
+      message="Berechnung läuft …"
+      hint="Der Server führt alle Berechnungen homomorph auf den verschlüsselten Daten aus. Dies kann einige Minuten dauern."
+      variant="spinner"
+    />
   }
 
   <!-- Step: result -->
   @if (currentStep() === 'result' && computationResult()) {
-    <div class="card">
+    <app-card>
       <h2>Ergebnis</h2>
       <p class="hint">
         Der Server hat alle Statistiken verschlüsselt berechnet und zurückgegeben.
@@ -120,15 +112,14 @@
         <app-button label="Neue Berechnung" (clicked)="computeAnother()" />
         <app-button label="Komplett zurücksetzen" type="button" (clicked)="reset()" />
       </div>
-    </div>
+    </app-card>
   }
 
   <!-- Step: error -->
   @if (currentStep() === 'error') {
-    <div class="card error-card">
-      <h2>Fehler</h2>
-      <p>{{ validationError() }}</p>
+    <app-card variant="error">
+      <app-alert [message]="validationError()" variant="error" />
       <app-button label="Zurücksetzen" (clicked)="reset()" />
-    </div>
+    </app-card>
   }
 </div>

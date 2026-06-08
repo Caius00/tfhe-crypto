@@ -148,7 +148,8 @@ fn test_statistics_functions_int16() {
         .collect();
 
     let encrypted_sum: FheInt32 = statistics::sum(&encrypted_input);
-    let encrypted_average: FheInt32 = statistics::average(&encrypted_input);
+    let encrypted_average: FheInt32 =
+        statistics::average_from_sum(encrypted_sum.clone(), encrypted_input.len());
 
     let decrypted_sum: i32 = encrypted_sum.decrypt(client_key);
     let decrypted_min: i16 = statistics::min(&encrypted_input).decrypt(client_key);
@@ -156,7 +157,7 @@ fn test_statistics_functions_int16() {
     let decrypted_average: i32 = encrypted_average.decrypt(client_key);
     let decrypted_median: i16 = statistics::median(&encrypted_input).decrypt(client_key);
 
-    assert_eq!(statistics::count(&encrypted_input), 5, "count");
+    assert_eq!(encrypted_input.len(), 5, "count");
     assert_eq!(decrypted_sum, 150, "sum");
     assert_eq!(decrypted_min, 10, "min");
     assert_eq!(decrypted_max, 50, "max");
@@ -176,7 +177,8 @@ fn test_statistics_single_element() {
     let encrypted_single_element = vec![FheInt16::encrypt(42i16, client_key)];
 
     let encrypted_sum: FheInt32 = statistics::sum(&encrypted_single_element);
-    let encrypted_average: FheInt32 = statistics::average(&encrypted_single_element);
+    let encrypted_average: FheInt32 =
+        statistics::average_from_sum(encrypted_sum.clone(), encrypted_single_element.len());
 
     let decrypted_sum: i32 = encrypted_sum.decrypt(client_key);
     let decrypted_min: i16 = statistics::min(&encrypted_single_element).decrypt(client_key);
@@ -184,7 +186,7 @@ fn test_statistics_single_element() {
     let decrypted_average: i32 = encrypted_average.decrypt(client_key);
     let decrypted_median: i16 = statistics::median(&encrypted_single_element).decrypt(client_key);
 
-    assert_eq!(statistics::count(&encrypted_single_element), 1, "count");
+    assert_eq!(encrypted_single_element.len(), 1, "count");
     assert_eq!(decrypted_sum, 42, "sum");
     assert_eq!(decrypted_min, 42, "min");
     assert_eq!(decrypted_max, 42, "max");
@@ -208,7 +210,9 @@ fn test_statistics_even_n_lower_median() {
         .map(|&value| FheInt16::encrypt(value, client_key))
         .collect();
 
-    let encrypted_average: FheInt32 = statistics::average(&encrypted_input);
+    let encrypted_sum: FheInt32 = statistics::sum(&encrypted_input);
+    let encrypted_average: FheInt32 =
+        statistics::average_from_sum(encrypted_sum, encrypted_input.len());
 
     let decrypted_median: i16 = statistics::median(&encrypted_input).decrypt(client_key);
     let decrypted_average: i32 = encrypted_average.decrypt(client_key);
@@ -234,7 +238,8 @@ fn test_statistics_negative_values() {
         .collect();
 
     let encrypted_sum: FheInt32 = statistics::sum(&encrypted_input);
-    let encrypted_average: FheInt32 = statistics::average(&encrypted_input);
+    let encrypted_average: FheInt32 =
+        statistics::average_from_sum(encrypted_sum.clone(), encrypted_input.len());
 
     let decrypted_sum: i32 = encrypted_sum.decrypt(client_key);
     let decrypted_min: i16 = statistics::min(&encrypted_input).decrypt(client_key);
@@ -264,7 +269,9 @@ fn test_average_truncation_toward_zero() {
         .map(|&value| FheInt16::encrypt(value, client_key))
         .collect();
 
-    let encrypted_average: FheInt32 = statistics::average(&encrypted_input);
+    let encrypted_sum: FheInt32 = statistics::sum(&encrypted_input);
+    let encrypted_average: FheInt32 =
+        statistics::average_from_sum(encrypted_sum, encrypted_input.len());
     let decrypted_average: i32 = encrypted_average.decrypt(client_key);
     assert_eq!(
         decrypted_average, -2,
