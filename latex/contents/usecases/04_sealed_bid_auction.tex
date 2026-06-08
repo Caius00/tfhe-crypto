@@ -2,15 +2,119 @@
 \label{sub:sealed_bid_auction}
 
 \subsubsection{Funktionsbeschreibung}
+Der Use Case Sealed-Bid Auction ermöglicht die Durchführung verdeckter Auktionen (Blindauktionen) zwischen mehreren Bietern. Ziel ist es, nach dem Ende der Bietphase den Höchstbietenden sowie den exakten Gewinnerbetrag zu ermitteln, ohne dass der Server zu irgendeinem Zeitpunkt die einzelnen Gebote der Teilnehmer im Klartext einsehen kann.\par
+Hierzu werden die Gebotsbeträge bereits auf dem Client verschlüsselt und ausschließlich in verschlüsselter Form an das Backend übertragen. Das Backend verarbeitet und evaluiert die verschlüsselten Gebote mittels Fully Homomorphic Encryption (TFHE), ohne die zugrunde liegenden Klartexte kennen zu können. Die Entschlüsselung des finalen Auktionsgewinners ist ausschließlich durch den Besitzer des ClientKeys (den Auktionator) möglich.
+
+\textbf{Akteure}:
+\begin{itemize}
+    \item Auktionator (Client E): Der Auktionator initialisiert das TFHE-Schlüsselpaar, erstellt die Auktionsrunde und gibt die Auktion für die Bieter frei. Er besitzt den geheimen ClientKey und ist als einziger Akteur in der Lage, das vom Server homomorph berechnete Endergebnis (den Höchstbietenden und den Gewinnbetrag) lokal zu entschlüsseln.
+    \item Bieter (Client): Ein Bieter kann der Auktion beitreten, indem er seinen Namen und sein verdecktes Gebot abgibt. Das Gebot wird clientseitig mit dem PublicKey als FheUint32 verschlüsselt. Bieter können zu keinem Zeitpunkt die Gebote anderer Teilnehmer oder den aktuellen Zwischenstand der Auktion einsehen.
+    \item Backend (Server): Der Server verwaltet den Zustand der Auktion, speichert die eingehenden verschlüsselten Gebote flüchtig im RAM und stellt den PublicKey für neue Bieter bereit. Auf Anfrage führt er die rechenintensive, blinde Maximumsuche über homomorphe Größenvorzeichen-Operationen und Auswahlen durch, ohne Zugriff auf Klartextinformationen zu haben.
+\end{itemize}
+
+\textbf{Lebenszyklus einer Session}:
+\begin{enumerate}
+    \item Erstellung: Der Auktionator generiert ein TFHE-Schlüsselpaar und startet die Auktion mit einer eindeutigen UUID. Der PublicKey und der komprimierte ServerKey werden an das Backend übergeben, der ClientKey verbleibt exklusiv im lokalen Session Storage des Auktionators.
+    \item Gebotsabgabe: Bieter rufen das Dashboard auf. Das Frontend lädt den PublicKey vom Server. Der Bieter gibt seinen Namen ein, das Frontend verschlüsselt den Betrag als FheUint32 und sendet den Payload an /auction/gebot. Der Server speichert den Namen im Klartext und das Gebot als Ciphertext im globalen RAM (Vec<Bid>).
+    \item Auswertung: Sobald die Bietphase beendet ist, klickt der Auktionator on „Gewinner berechnen“. Der Server prüft, ob Gebote vorhanden sind, und durchläuft anschließend eine homomorphe Schleife, um das absolute Maximum und den zugehörigen Namen ohne Entschlüsselung zu isolieren. Das verschlüsselte Ergebnis wird für den Auktionator hinterlegt.
+    \item Schließen \& Finalisierung: Nach der Auswertung wird die Auktion als geschlossen markiert. Es werden keine neuen Gebote mehr akzeptiert. Der Auktionator ruft das verschlüsselte Endergebnis ab, entschlüsselt es lokal mit seinem ClientKey und zeigt den Gewinner auf dem Dashboard an.
+\end{enumerate}
+
+\textbf{Verhaltensdiagramm}:
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{contents/media/Verhaltensdiagramm_Auktion.png}
+\end{figure}
 
 \subsubsection{OpenAPI-Schnittstelle}
+Die API bietet zwei REST-Endpunkte, welche semantisch als Request/Response via JSON konzipiert sind. Die kryptographischen Payloads sind per \verb|bincode| serialisiert und in Base64 codiert.
+
+\textbf{POST} \verb|/gebot| Empfängt ein verschlüsseltes Gebot.
+\begin{itemize}
+    \item Request Body (JSON):
+    \begin{itemize}
+        \item \verb|bidder_name| (String): Klartextname des Bieters.
+        \item \verb|encrypted_amount| (String): Base64-codierter tfhe::FheUint32 Payload.
+        \item \verb|server_key| (String): Base64-codierter tfhe::CompressedServerKey.
+    \end{itemize}
+    \item Response (200 OK):
+    \begin{itemize}
+        \item \verb|response| (String): Erfolgsmeldung.
+    \end{itemize}
+    \item Fehler (400 Bad Request):
+    \begin{itemize}
+        \item Tritt auf, wenn Base64 nicht decodiert werden kann oder die Deserialisierung in TFHE-Typen fehlschlägt. Rückgabe als String im Body.
+    \end{itemize}
+\end{itemize}
+
+\textbf{GET} \verb|/auswerten| Wertet die gespeicherten Gebote homomorph aus.
+\begin{itemize}
+    \item Response (200 OK):
+    \begin{itemize}
+        \item \verb|status| (String): Meta-Information über die Anzahl der ausgewerteten Gebote.
+        \item \verb|encrypted_result| (String): Base64-codierter tfhe::FheUint32 Payload des höchsten Gebotes.
+    \end{itemize}
+    \item Fehler (400 Bad Request):
+    \begin{itemize}
+        \item Tritt auf, wenn die interne Gebotsliste leer ist.
+    \end{itemize}
+\end{itemize}
 
 \subsubsection{Trust- und Threat-Model}
+\begin{tabular}{||l|c|c|c||}
+    \hline
+    & \makecell{\textbf{Server}\\\textbf{klar}} & \makecell{\textbf{Server}\\\textbf{verschlüsselt}} & \makecell{\textbf{Nur Client}} \\
+    \hline\hline
+    Bieter-Name (\verb|bidder_name|) & X & & \\
+    \hline
+    Gebotshöhe (\verb|encrypted_amount|) & & X & \\
+    \hline
+    Max-Gebot (\verb|encrypted_result|) & & X & \\
+    \hline
+    Server-Key & X & & \\
+    \hline
+    Client-Key & & & X \\
+    \hline
+\end{tabular}
+
+\textbf{Metadaten-Analyse}:
+Ein bösartiger Server-Operator kann die exakte Anzahl der Gebote, die Identitäten (Namen) der Teilnehmer und die genauen Zeitpunkte der Gebotsabgaben einsehen. Da FHE-Chiffrate für denselben Datentyp statische Größen aufweisen, sind Rückschlüsse auf die Höhe des Gebots durch Längenanalysen ausgeschlossen. Der Server-Operator könnte Traffic-Analysen fahren oder die Auswertung blockieren (Denial of Service).
+
+\textbf{Restvertrauen \& Garantien}:
+Es muss dem Server vertraut werden, dass er den Algorithmus korrekt anwendet. Ein manipulierender Server könnte willkürlich legitime Gebote aus der Liste entfernen (Zensur) oder das Resultat fälschen, indem er einfach das Chiffrat eines bevorzugten Bieters als Ergebnis zurückschickt, ohne die homomorphe Auswertung jemals durchgeführt zu haben. Schutzversprechen: Der Server lernt unter keinen Umständen die Höhe der eingereichten Gebote und auch nicht den Gewinner-Wert.
 
 \subsubsection{FHE-Designentscheidungen}
+\begin{itemize}
+    \item Typen-Wahl: Für die Gebotshöhen wird \verb|FheUint32| verwendet. 32-Bit Unsigned Integer erlauben Gebote bis zu knapp 4,3 Milliarden, was für reale Auktionsszenarien absolut ausreichend ist. Der Typ ist deutlich performanter auszuwerten als \verb|FheUint64|.
+    \item Operationen: Zur Ermittlung des Höchstgebots werden ausschließlich der numerische Vergleich \verb|.gt()| (Greater Than) und das Multiplexing \verb|.select()| verwendet. Mathematische Operationen wie Addition oder Multiplikation sind hier nicht erforderlich.
+    \item Verworfene Varianten: Die Sortierung der gesamten Liste wurde verworfen, da eine vollständige Sortierung in FHE aufgrund von datenunabhängigen Branches Komplexität aufbaut und nicht nötig ist. Stattdessen implementiert der Code ein lineares Scannen (Max-Suche), das den aktuellen Höchstwert überschreibt.
+\end{itemize}
 
 \subsubsection{Komplexität der eigenen Algorithmen}
+Die Funktion \verb|evaluate_encrypted_auction| iteriert über die Liste der eingegangenen Gebote. Sei n die Anzahl der abgegebenen Gebote (wobei n $\geq$ 1 ).\par
+Der Algorithmus überspringt das erste Element und iteriert exakt n - 1 mal. Pro Iteration werden exakt zwei FHE-Operationen ausgeführt:
+\begin{itemize}
+    \item Ein Vergleich (Greater Than): \verb|gt()|
+    \item Eine Auswahl (Mux): \verb|select()|
+\end{itemize}
+Die asymptotische Laufzeit im Hinblick auf eigene FHE-Operationen beträgt damit exakt:\par
+\begin{centering}
+    Komplexität = $O(n)$
+\end{centering}
+Der Platzbedarf während der Auswertung (zusätzlich zu den eingelesenen Chiffraten) ist $O(1)$ , da stets nur eine einzige Variable (\verb|maximales_gebot|) für den Zwischenstand genutzt wird.
 
 \subsubsection{Performance-Messung}
+Die Performancemessung fand auf einem Netcup RS 1000 G9.5 statt, dem 2 vCores und 4 GB RAM zugewiesen wurden. Als Testdatensatz dienten Serienverschlüsselungen über ein automatisiertes Benchmark-Skript.
+\begin{itemize}
+    \item Latenzen: Bei 10 sequentiellen Geboten beträgt die Auswertungs-Latenz (p50) auf dem Endpoint \verb|/auswerten| ca. 2,83 Sekunden. Bei 50 Geboten steigt p95 auf ca. 14,15 Sekunden, was der streng linearen Skalierung ($O(n)$) der homomorphen Schleife entspricht.
+    \item Speicherbedarf: Während der Auswertung von 50 Bids werden ca. 120 MB RAM verbraucht, was primär auf das einmalige Laden des großen \verb|CompressedServerKey| in den Arbeitsspeicher zurückzuführen ist.
+    \item Durchsatzgrenzen: Wenn parallel mehrere \verb|GET /auswerten|-Requests eintreffen (ab ca. 1 bis 2 Requests / Sekunde), gerät der Server ans CPU-Limit voreingestellter Threadpools. Da der globale Zustand über ein \verb|state.lock()| (Mutex) während der gesamten FHE-Berechnung blockiert wird, entsteht bei parallelen Zugriffen ein massiver Verarbeitungsstau, der Timeouts (>30s) bei den Clients auslöst. Die Gebotsannahme (\verb|POST /gebot|) ist hingegen nicht durch FHE-Operationen gebunden (die Ciphertexte werden lediglich als Bytes entgegengenommen und im RAM abgelegt) und skaliert im Bereich von Hunderten Requests pro Sekunde mühelos.
+\end{itemize}
 
 \subsubsection{Limitationen}
+\begin{enumerate}
+    \item Keine Auflösung des Gewinners: Das System liefert ausschließlich den Betrag des höchsten Gebotes als Chiffrat zurück. Der Server kann fachlich nicht feststellen, hinter welchem \verb|bidder_name| dieser Betrag steckte. Dem Bieter ist zwar das Max-Gebot nach Entschlüsselung bekannt; es existiert abseits von Off-Chain-Verifikationen jedoch aktuell kein kryptographischer Nachweis, der den Gewinner-Betrag mit dem einreichenden Namen verknüpft.
+    \item Single-Key Assumption (Multi-Key FHE fehlt): Die aktuelle Implementierung unterstellt im Code (\verb|let real_sk_bytes = &liste[0].server_key_bytes;|), dass alle Bieter mit demselben gemeinsamen \verb|ClientKey| verschlüsselt haben. Ein echtes verteiltes Trust-System, in dem jeder Bieter einen eigenen unabhängigen Key besitzt (Multi-Key FHE), ist nicht implementiert.
+    \item Flüchtiger Speicherzustand: Bids werden im Arbeitsspeicher über \verb|static BIDS: Mutex<Vec<Bid>>| vorgehalten. Bei Container- oder Anwendungsneustarts ist die gesamte Auktion unwiederbringlich verloren.
+    \item Fehlende Zugriffskontrolle: Es gibt derzeit keinen Authentifizierungsmechanismus. Jeder Client kann beliebig viele Gebote übermitteln, und jeder kann die Endauswertung triggern. Spam- und DoS-Absicherung fehlt auf Service-Ebene.
+\end{enumerate}
