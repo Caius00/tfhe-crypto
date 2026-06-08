@@ -247,6 +247,22 @@ export class TfheService {
     sessionStorage.removeItem('tfhe_public_key');
   }
 
+  /**
+   * Serialisiert nur den Client-Key. Nützlich für Features, deren Server-Key
+   * nach dem initialen Upload nicht mehr im Browser gebraucht wird (z.B.
+   * Key-Value-Store mit Session-ID am Server) — der Client-Key ist deutlich
+   * kleiner und passt in das ~5–10 MB sessionStorage-Quota, der Server-Key
+   * würde es sprengen.
+   */
+  serializeClientKey(clientKey: TfheClientKey): Uint8Array {
+    return clientKey.serialize();
+  }
+
+  /** Deserialisiert einen Client-Key aus Bytes (Gegenstück zu `serializeClientKey`). */
+  deserializeClientKey(bytes: Uint8Array): TfheClientKey {
+    return TfheClientKey.deserialize(bytes);
+  }
+
   // ---------------------------------------------------------------------------
   // Verschlüsselung – Vorzeichenlos (Unsigned)
   // Für Werte die nie negativ sind (Alter, Zähler, Scores, Pixelwerte, ...)
@@ -451,6 +467,52 @@ export class TfheService {
     const value = enc.decrypt(clientKey);
     enc.free();
     return value;
+  }
+
+  // ---------------------------------------------------------------------------
+  // String-Verschlüsselung mit dem Client-Key
+  // Im Key-Value-Store hat ein einzelner Nutzer sowohl Client- als auch
+  // Server-Key — er kann Strings direkt zeichenweise mit dem ClientKey
+  // verschlüsseln (kein Public-Key-Umweg nötig).
+  //
+  // Wire-Format: Array von Base64-Strings. Jeder Eintrag ist ein einzelner
+  // bincode-serialisierter FheUint8 (ASCII-Codepoint). Genau das Format, das
+  // Service 01 (encrypted-key-value-store) auf Backend-Seite erwartet.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Verschlüsselt einen String zeichenweise (ein FheUint8 pro ASCII-Byte) und
+   * liefert die Chunks als Base64. Bewusst eine pro-Zeichen-Schleife: das
+   * Backend deserialisiert genauso pro Zeichen und kann homomorph vergleichen.
+   *
+   * Hinweis: Multi-Byte-UTF-8-Zeichen werden zeichenweise (Codepoint) durch
+   * `String.prototype` iteriert; das Backend sieht dann zwar mehr Chunks als
+   * "visuelle" Zeichen, der Round-Trip bleibt korrekt, weil das Frontend beim
+   * Entschlüsseln dieselbe Schleife in Bytes wiederholt.
+   */
+  encryptStringWithClientKey(text: string, clientKey: TfheClientKey): string[] {
+    const chunks: string[] = [];
+    const bytes = new TextEncoder().encode(text); // UTF-8 byte-exakt
+    for (const byte of bytes) {
+      const enc = FheUint8.encrypt_with_client_key(byte, clientKey);
+      chunks.push(this.toBase64(enc.serialize()));
+      enc.free();
+    }
+    return chunks;
+  }
+
+  /**
+   * Entschlüsselt eine Liste von Base64-Chunks (jeweils ein bincode-FheUint8)
+   * und setzt sie wieder zu einem UTF-8-String zusammen.
+   */
+  decryptStringFromChunks(chunks: string[], clientKey: TfheClientKey): string {
+    const bytes = new Uint8Array(chunks.length);
+    for (let i = 0; i < chunks.length; i++) {
+      const enc = FheUint8.deserialize(this.fromBase64(chunks[i]));
+      bytes[i] = enc.decrypt(clientKey);
+      enc.free();
+    }
+    return new TextDecoder().decode(bytes);
   }
 
   // ---------------------------------------------------------------------------

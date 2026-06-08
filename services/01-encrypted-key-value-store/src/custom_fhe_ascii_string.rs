@@ -1,109 +1,110 @@
-use std::ops::{BitAnd, Not};
-use tfhe::prelude::{CiphertextList, FheDecrypt, FheEncrypt, FheEq, FheTrivialEncrypt, IfThenElse};
-use tfhe::{
-    ClientKey, CompressedCiphertextList, CompressedCiphertextListBuilder, FheBool, FheUint8,
-};
+//! Verschlüsselte ASCII-Strings für den Encrypted Key-Value Store.
+//!
+//! Wir repräsentieren einen String als `Vec<FheUint8>` — pro Zeichen ein
+//! homomorpher 8-Bit-Ciphertext. Damit lassen sich Strings zeichenweise
+//! homomorph vergleichen (`eq`) und konditional ersetzen (`if_then_else`),
+//! ohne dass der Server jemals den Klartext sieht.
+//!
+//! Wire-Format: ein String wird beim Transport als `Vec<Vec<u8>>` serialisiert,
+//! wobei jedes innere `Vec<u8>` genau ein `bincode::serialize::<FheUint8>(...)`
+//! ist. Das passt zum Format, das die TFHE-WASM-Bindings im Browser produzieren
+//! (es existiert kein WASM-Pendant zu `CompressedCiphertextList`), und ist
+//! konsistent mit den anderen Services (02, 08) im Repository.
 
+use crate::models::AppError;
+use std::ops::{BitAnd, Not};
+use tfhe::prelude::{FheDecrypt, FheEncrypt, FheEq, FheTrivialEncrypt, IfThenElse};
+use tfhe::{ClientKey, FheBool, FheUint8};
+
+/// Klartext-näher Typ: hält die homomorph operierbaren Ciphertexts im Speicher.
+/// Wird ausschließlich serverseitig nach dem Dekomprimieren verwendet.
 #[derive(Clone)]
 pub struct CustomFheAsciiString {
-    pub string: Vec<FheUint8>,
+    pub chars: Vec<FheUint8>,
 }
 
-impl From<&Vec<u8>> for CustomFheAsciiString {
-    fn from(string: &Vec<u8>) -> Self {
-        let serialized_string = SerializedCustomFheAsciiString::from(string);
-        serialized_string.deserialize()
-    }
-}
-
-#[derive(Clone)]
-pub struct SerializedCustomFheAsciiString {
-    pub string: Vec<u8>,
-}
-
-impl SerializedCustomFheAsciiString {
-    fn deserialize(&self) -> CustomFheAsciiString {
-        let string = bincode::deserialize(&self.string).unwrap();
-        CustomFheAsciiString { string }
-    }
-}
-
-impl From<&Vec<u8>> for SerializedCustomFheAsciiString {
-    fn from(string: &Vec<u8>) -> Self {
-        Self {
-            string: string.clone(),
-        }
-    }
-}
-
+/// Transport-/Storage-Form: ein Vektor mit pro-Zeichen bincode-Bytes eines
+/// `FheUint8`. Über die Leitung (HTTP, Redis) wandert ausschließlich dieser Typ.
 #[derive(Clone)]
 pub struct CompressedCustomFheAsciiString {
-    pub string: Vec<u8>,
+    pub chunks: Vec<Vec<u8>>,
 }
 
 impl CompressedCustomFheAsciiString {
-    pub fn new(compressed_string: Vec<u8>) -> Self {
-        CompressedCustomFheAsciiString {
-            string: compressed_string,
-        }
+    /// Erzeugt einen komprimierten String aus bereits gepackten Chunks.
+    /// Wird typischerweise nach Base64-Decoding der HTTP-Payload aufgerufen.
+    pub fn from_chunks(chunks: Vec<Vec<u8>>) -> Self {
+        Self { chunks }
     }
-    pub fn decompress(&self) -> CustomFheAsciiString {
-        let compressed_list: CompressedCiphertextList = bincode::deserialize(&self.string).unwrap();
-        let string = (0..compressed_list.len())
-            .map(|i| compressed_list.get(i).unwrap().unwrap())
-            .collect::<Vec<FheUint8>>();
 
-        CustomFheAsciiString { string }
+    /// Deserialisiert jeden Chunk zu einem `FheUint8` und gibt den
+    /// operationsfähigen `CustomFheAsciiString` zurück.
+    ///
+    /// Fehler: jeder Chunk kann beim bincode-Decoding scheitern (z.B. korrupte
+    /// Payload, falsches Format) — dann gibt es `AppError::BadRequest`.
+    pub fn decompress(&self) -> Result<CustomFheAsciiString, AppError> {
+        let chars = self
+            .chunks
+            .iter()
+            .map(|c| bincode::deserialize::<FheUint8>(c))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| AppError::BadRequest(format!("invalid encrypted char chunk: {e}")))?;
+
+        Ok(CustomFheAsciiString { chars })
     }
 }
 
 impl CustomFheAsciiString {
+    /// Testhilfe / clientseitige Initialisierung: verschlüsselt einen
+    /// Klartext-String Zeichen für Zeichen mit dem ClientKey.
+    /// Wird im Server-Binary nicht benutzt (der Server hat keinen ClientKey),
+    /// aber von den Integrationstests.
     pub fn new(str: &str, client_key: &ClientKey) -> CustomFheAsciiString {
-        let string = str
+        let chars = str
             .bytes()
-            .map(|char| FheUint8::encrypt(char, client_key))
+            .map(|byte| FheUint8::encrypt(byte, client_key))
             .collect();
-        CustomFheAsciiString { string }
-    }
-    pub fn serialize(&self) -> SerializedCustomFheAsciiString {
-        let string = bincode::serialize(&self.string).unwrap();
-        SerializedCustomFheAsciiString { string }
+        CustomFheAsciiString { chars }
     }
 
-    pub fn compress(&self) -> CompressedCustomFheAsciiString {
-        let compressed_list = self
-            .string
-            .clone()
-            .into_iter()
-            .fold(CompressedCiphertextListBuilder::new(), |mut builder, s| {
-                builder.push(s);
-                builder
-            })
-            .build()
-            .unwrap();
-        let serialized = bincode::serialize(&compressed_list).unwrap();
+    /// Serialisiert jeden Ciphertext einzeln per bincode — Ergebnis ist eine
+    /// Liste von Byte-Chunks, die JSON-/Base64-tauglich ist.
+    ///
+    /// Fehler hier sind in der Praxis nicht zu erwarten (`FheUint8` ist immer
+    /// serialisierbar), werden aber sauber durchgereicht, statt zu panicen.
+    pub fn compress(&self) -> Result<CompressedCustomFheAsciiString, AppError> {
+        let chunks = self
+            .chars
+            .iter()
+            .map(bincode::serialize)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| AppError::InternalError(format!("bincode serialize FheUint8: {e}")))?;
 
-        CompressedCustomFheAsciiString { string: serialized }
+        Ok(CompressedCustomFheAsciiString { chunks })
     }
 }
 
-impl From<&SerializedCustomFheAsciiString> for CustomFheAsciiString {
-    fn from(string: &SerializedCustomFheAsciiString) -> Self {
-        string.deserialize()
-    }
-}
-
+/// Homomorpher Gleichheits-Vergleich. Liefert einen `FheBool`, der genau dann
+/// "true" entschlüsselt, wenn beide Strings zeichenweise identisch sind.
+///
+/// Bei unterschiedlicher Länge gibt es einen trivial-verschlüsselten `false`.
+/// Wichtig: die Längen-Information ist nicht-geheim — der Server sieht ohnehin
+/// `chars.len()` als Metadatum, gleichmäßiges Padding wäre eine zusätzliche
+/// Härtung und ist im Threat-Model dokumentiert (siehe spec.md).
 impl FheEq for CustomFheAsciiString {
     fn eq(&self, other: Self) -> FheBool {
-        if self.string.len() != other.string.len() {
+        if self.chars.len() != other.chars.len() {
             return FheBool::encrypt_trivial(false);
         }
-        self.string
+        self.chars
             .iter()
-            .zip(other.string.iter())
+            .zip(other.chars.iter())
             .map(|(a, b)| a.eq(b))
             .reduce(|acc, x| acc.bitand(x))
-            .expect("Key must not be empty.")
+            // `chars` ist nie leer — leere Strings sollten der Eq-Check oben gar nicht
+            // erreichen; falls doch, ist trivial-true semantisch korrekt (zwei leere
+            // Strings sind gleich).
+            .unwrap_or_else(|| FheBool::encrypt_trivial(true))
     }
 
     fn ne(&self, other: Self) -> FheBool {
@@ -113,16 +114,14 @@ impl FheEq for CustomFheAsciiString {
 
 impl FheDecrypt<String> for CustomFheAsciiString {
     fn decrypt(&self, key: &ClientKey) -> String {
-        let bytes = self
-            .string
-            .iter()
-            .map(|char| char.decrypt(key))
-            .collect::<Vec<u8>>();
-
-        String::from_utf8(bytes).expect("Invalid UTF-8")
+        let bytes = self.chars.iter().map(|c| c.decrypt(key)).collect::<Vec<u8>>();
+        String::from_utf8(bytes).expect("encrypted string was not valid UTF-8")
     }
 }
 
+/// Konditionale Auswahl auf Strings: pro Zeichen `if cond then a else b`.
+/// Wird im `get`-Pfad benutzt, um homomorph genau den Wert "auszuwählen",
+/// dessen Schlüssel zur Anfrage passt.
 impl IfThenElse<CustomFheAsciiString> for FheBool {
     fn if_then_else(
         &self,
@@ -130,32 +129,33 @@ impl IfThenElse<CustomFheAsciiString> for FheBool {
         ct_else: &CustomFheAsciiString,
     ) -> CustomFheAsciiString {
         assert_eq!(
-            ct_then.string.len(),
-            ct_else.string.len(),
-            "Key length mismatch"
+            ct_then.chars.len(),
+            ct_else.chars.len(),
+            "if_then_else requires equal-length strings"
         );
 
-        let constructed_key = ct_then
-            .string
+        let chars = ct_then
+            .chars
             .iter()
-            .zip(ct_else.string.iter())
+            .zip(ct_else.chars.iter())
             .map(|(a, b)| self.if_then_else(a, b))
             .collect::<Vec<FheUint8>>();
 
-        CustomFheAsciiString {
-            string: constructed_key,
-        }
+        CustomFheAsciiString { chars }
     }
 }
 
 #[cfg(test)]
-mod test_custom_fhe_ascii_string {
+mod tests {
     use super::*;
     use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
     use tfhe::{set_server_key, CompressedServerKey};
 
-    #[test]
-    fn eq() {
+    /// Helper: passende TFHE-Parameter generieren und Keys auf den aktuellen
+    /// Thread setzen. Ist ein 1-zu-1-Klon der gleichlautenden Helfer in den
+    /// anderen Tests des Services — bewusst dupliziert, weil das Setup
+    /// minimal ist und keine geteilte Test-Crate existiert.
+    fn setup_keys() -> ClientKey {
         let parameters =
             MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
                 .with_compression(true)
@@ -165,50 +165,29 @@ mod test_custom_fhe_ascii_string {
         let client_key = ClientKey::generate(parameters);
         let compressed_server_key = CompressedServerKey::new(&client_key);
         set_server_key(compressed_server_key.decompress());
-
-        let str_a = "Hello World!";
-        let str_b = "Hello Earth!";
-
-        let enc_a = CustomFheAsciiString::new(str_a, &client_key);
-        let enc_a_2 = CustomFheAsciiString::new(str_a, &client_key);
-        let enc_b = CustomFheAsciiString::new(str_b, &client_key);
-
-        let enc_eq = enc_a.eq(enc_a_2);
-        let enc_ne = enc_a.eq(enc_b);
-
-        assert!(enc_eq.decrypt(&client_key));
-        assert!(!enc_ne.decrypt(&client_key));
+        client_key
     }
 
     #[test]
-    fn compress_decompress() {
-        let parameters =
-            MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
-                .with_compression(true)
-                .find()
-                .expect("Could not find suitable parameters");
+    fn eq_returns_true_for_identical_strings_and_false_for_different() {
+        let client_key = setup_keys();
 
-        let client_key = ClientKey::generate(parameters);
-        let compressed_server_key = CompressedServerKey::new(&client_key);
-        set_server_key(compressed_server_key.decompress());
+        let enc_a = CustomFheAsciiString::new("Hello World!", &client_key);
+        let enc_a_2 = CustomFheAsciiString::new("Hello World!", &client_key);
+        let enc_b = CustomFheAsciiString::new("Hello Earth!", &client_key);
 
-        let str_a = "Hello World!";
-        let str_b = "Hello Earth!";
+        assert!(enc_a.eq(enc_a_2).decrypt(&client_key));
+        assert!(!enc_a.eq(enc_b).decrypt(&client_key));
+    }
 
-        let enc_a = CustomFheAsciiString::new(str_a, &client_key);
-        let enc_b = CustomFheAsciiString::new(str_b, &client_key);
+    #[test]
+    fn compress_then_decompress_roundtrips_to_same_plaintext() {
+        let client_key = setup_keys();
 
-        let comp_decomp_a = enc_a.compress().decompress();
-        let comp_decomp_b = enc_b.compress().decompress();
-
-        let dec_a = enc_a.decrypt(&client_key);
-        let dec_b = enc_b.decrypt(&client_key);
-        let dec_comp_decomp_a = comp_decomp_a.decrypt(&client_key);
-        let dec_comp_decomp_b = comp_decomp_b.decrypt(&client_key);
-
-        assert_eq!(dec_a, dec_comp_decomp_a);
-        assert_eq!(dec_b, dec_comp_decomp_b);
-        assert_ne!(dec_a, dec_comp_decomp_b);
-        assert_ne!(dec_b, dec_comp_decomp_a);
+        for s in ["Hello World!", "Hello Earth!", "", "x", "你好世界"] {
+            let enc = CustomFheAsciiString::new(s, &client_key);
+            let roundtripped = enc.compress().unwrap().decompress().unwrap();
+            assert_eq!(roundtripped.decrypt(&client_key), s.to_string());
+        }
     }
 }

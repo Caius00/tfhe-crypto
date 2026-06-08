@@ -1,1 +1,173 @@
-<h1>01 – Encrypted Key-Value Store</h1>
+<div class="page">
+  <h1>01 – Encrypted Key-Value Store</h1>
+  <p class="subtitle">
+    Keys und Values werden lokal verschlüsselt. Der Server kennt weder Inhalte
+    noch welche Schlüssel abgefragt werden — er rechnet ausschließlich auf
+    Ciphertexts.
+  </p>
+
+  <!-- Step: init -->
+  @if (step() === 'init') {
+    <div class="card">
+      <h2>Schritt 1: Session starten</h2>
+      <p class="hint">
+        Es werden ein Client-Key (lokal) und ein Server-Key (für das Backend)
+        erzeugt. Der Server-Key wird ans Backend geschickt, der Client-Key bleibt
+        im Browser. Dies dauert <strong>30–90 Sekunden</strong>.
+      </p>
+      <app-button label="Session starten" (clicked)="startSession()" />
+    </div>
+  }
+
+  <!-- Step: generating / working -->
+  @if (step() === 'generating' || step() === 'working') {
+    <div class="card loading-card">
+      <app-spinner />
+      <div>
+        <p class="loading-title">Bitte warten …</p>
+        <p class="hint">{{ busyMessage() }}</p>
+      </div>
+    </div>
+  }
+
+  <!-- Step: ready — Session aktiv -->
+  @if (step() === 'ready') {
+    <div class="card session-card">
+      <div class="status-badge success">Session aktiv</div>
+      <p class="hint">
+        Session-ID: <code class="code-inline">{{ sessionId() }}</code>
+      </p>
+    </div>
+
+    <!-- Put -->
+    <div class="card">
+      <h2>Eintrag speichern (Put)</h2>
+      <p class="hint">
+        Key und Value werden zeichenweise mit dem Client-Key verschlüsselt.
+        TTL ist Klartext-Metadatum am Server (Sekunden bis zur automatischen
+        Löschung).
+      </p>
+      <app-input
+        label="Key"
+        placeholder="z.B. name"
+        [value]="putKey()"
+        (valueChange)="putKey.set($event)"
+      />
+      <app-input
+        label="Value"
+        placeholder="z.B. mein-wert"
+        [value]="putValue()"
+        (valueChange)="putValue.set($event)"
+      />
+      <app-input
+        label="TTL (Sekunden, leer = Server-Default)"
+        type="number"
+        placeholder="300"
+        [value]="putTtl()"
+        (valueChange)="putTtl.set($event)"
+      />
+      <div class="actions">
+        <app-button label="Speichern" (clicked)="runPut()" />
+      </div>
+    </div>
+
+    <!-- Get -->
+    <div class="card">
+      <h2>Wert lesen (Get)</h2>
+      <p class="hint">
+        Der Server vergleicht den gesuchten Key homomorph mit allen Einträgen
+        dieser Session und gibt den passenden verschlüsselten Wert zurück —
+        ohne zu erfahren, welcher Eintrag gemeint war.
+      </p>
+      <app-input
+        label="Key"
+        placeholder="z.B. name"
+        [value]="getKey()"
+        (valueChange)="getKey.set($event)"
+      />
+      <div class="actions">
+        <app-button label="Lesen" (clicked)="runGet()" />
+      </div>
+      @if (lastGetResult(); as r) {
+        <div class="result result--info">
+          <span><strong>{{ r.key }}</strong> → {{ r.value }}</span>
+        </div>
+      }
+    </div>
+
+    <!-- Exists -->
+    <div class="card">
+      <h2>Existenz prüfen (Exists)</h2>
+      <p class="hint">
+        Server liefert einen verschlüsselten <code class="code-inline">FheBool</code> —
+        der Browser entschlüsselt lokal zu <code class="code-inline">true</code>/<code class="code-inline">false</code>.
+      </p>
+      <app-input
+        label="Key"
+        placeholder="z.B. name"
+        [value]="existsKey()"
+        (valueChange)="existsKey.set($event)"
+      />
+      <div class="actions">
+        <app-button label="Prüfen" (clicked)="runExists()" />
+      </div>
+      @if (lastExistsResult(); as r) {
+        <div class="result" [class.result--yes]="r.exists" [class.result--no]="!r.exists">
+          <span class="result-icon">{{ r.exists ? '✓' : '✗' }}</span>
+          <span>
+            <strong>{{ r.key }}</strong>
+            existiert {{ r.exists ? 'in dieser Session' : 'nicht' }}.
+          </span>
+        </div>
+      }
+    </div>
+
+    <!-- Local mirror + Clear/Reset -->
+    <div class="card">
+      <h2>Eigene Einträge (lokaler Spiegel)</h2>
+      <p class="hint">
+        Diese Liste lebt nur im Browser — der Server kennt die Klartexte nicht.
+      </p>
+      @if (entries().length === 0) {
+        <p class="hint empty">Noch nichts gespeichert.</p>
+      } @else {
+        <table class="entries">
+          <thead>
+            <tr>
+              <th>Key</th>
+              <th>Value</th>
+              <th>TTL (s)</th>
+              <th>gespeichert</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (entry of entries(); track entry.storedAt + entry.key) {
+              <tr>
+                <td>{{ entry.key }}</td>
+                <td>{{ entry.value }}</td>
+                <td>{{ entry.ttlSeconds === -1 ? 'Server-Default' : entry.ttlSeconds }}</td>
+                <td>{{ entry.storedAt | date: 'shortTime' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+      <div class="actions">
+        <app-button label="Eigene Session leeren (Clear)" variant="danger" (clicked)="runClear()" />
+        <app-button label="Komplett zurücksetzen" variant="secondary" (clicked)="reset()" />
+      </div>
+    </div>
+  }
+
+  <!-- Step: error -->
+  @if (step() === 'error') {
+    <div class="card error-card">
+      <h2>Fehler</h2>
+      <p>{{ errorMessage() }}</p>
+      <div class="actions">
+        <app-button label="Weitermachen" (clicked)="dismissError()" />
+        <app-button label="Komplett zurücksetzen" variant="secondary" (clicked)="reset()" />
+      </div>
+    </div>
+  }
+</div>

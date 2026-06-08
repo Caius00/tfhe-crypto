@@ -43,6 +43,9 @@ redisRoute:
 
 redis:
   enabled: true
+  # Muss zum `fullnameOverride` des Sub-Charts passen — der erzeugte Redis-Service
+  # heißt `ekv-redis-master`. Wenn das Subchart umbenannt wird, hier mitziehen.
+  serviceName: ekv-redis-master
   auth:
     enabled: true
     password: "sCSm1$!s2XHQ2^Mp*#4P"

@@ -759,13 +759,13 @@ dependencies = [
  "aide",
  "axum 0.8.9",
  "axum-test",
+ "base64",
  "bincode",
  "dotenvy",
  "health",
  "metrics-exporter",
  "observability",
  "openapi-docs",
- "rayon",
  "redis",
  "schemars",
  "serde",
@@ -773,6 +773,7 @@ dependencies = [
  "serial_test",
  "tfhe",
  "tokio",
+ "tracing",
  "uuid",
 ]
 

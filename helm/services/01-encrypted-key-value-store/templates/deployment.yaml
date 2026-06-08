@@ -39,10 +39,14 @@ spec:
               value: "http://monitoring-tempo.monitoring.svc.cluster.local:4317"
             - name: RUST_LOG
               value: "info"
+            # Der Service-Name muss zum `fullnameOverride` des Redis-Subcharts
+            # passen (siehe `charts/redis/values.yaml`). Wir lesen ihn aus
+            # `redis.serviceName` in values.yaml; ein hartkodierter Release-Name
+            # hatte zuvor Connection-Errors verursacht.
             - name: REDIS_URL
-              value: "redis://:{{ .Values.redis.auth.password }}@{{ .Release.Name }}-redis-master:6379"
+              value: "redis://:{{ .Values.redis.auth.password }}@{{ .Values.redis.serviceName }}:6379"
             - name: REDIS_HOST
-              value: "{{ .Release.Name }}-redis-master"
+              value: {{ .Values.redis.serviceName | quote }}
             - name: REDIS_PORT
               value: "6379"
             - name: REDIS_PASSWORD
