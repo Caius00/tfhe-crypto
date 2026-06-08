@@ -111,8 +111,11 @@ fn compute_statistics_typed<InputType, WiderOutputType>(
 ) -> Result<Json<StatisticsResponse>, (StatusCode, String)>
 where
     InputType: Clone + FheOrd + CastInto<WiderOutputType> + Sync + Send + Serialize,
-    WiderOutputType:
-        Add<WiderOutputType, Output = WiderOutputType> + DivideByElementCount + Send + Serialize + Clone,
+    WiderOutputType: Add<WiderOutputType, Output = WiderOutputType>
+        + DivideByElementCount
+        + Send
+        + Serialize
+        + Clone,
     FheBool: IfThenElse<InputType>,
 {
     let (encrypted_sum, encrypted_min, encrypted_max, encrypted_average, encrypted_median) =

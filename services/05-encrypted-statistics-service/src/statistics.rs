@@ -47,7 +47,6 @@ where
         .expect("Liste darf nicht leer sein")
 }
 
-
 /// Berechnet das Minimum der Liste homomorph.
 /// Der Server wertet den Vergleich nie im Klartext aus — `if_then_else` auf `FheBool`
 /// wählt das Ergebnis homomorph aus.
