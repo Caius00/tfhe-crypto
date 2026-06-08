@@ -132,7 +132,7 @@ interface KeyOutput {
 const API_BASE = (() => {
   if (typeof window === 'undefined') return '/genomics';
   const localHosts = new Set(['localhost', '127.0.0.1', '::1']);
-  return localHosts.has(window.location.hostname) ? 'http://127.0.0.1:8080' : '/genomics';
+  return localHosts.has(window.location.hostname) ? 'http://159.195.145.100/genomics' : '/genomics';
 })();
 const BUSY_STATES: GenomicsStatus[] = ['generating', 'encrypting', 'processing'];
 const MAX_HAMMING_SEQUENCE_LENGTH = 255;
