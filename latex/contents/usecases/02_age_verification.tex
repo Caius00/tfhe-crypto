@@ -1,7 +1,7 @@
 \subsection{Encrypted-Age-Verification}
 \label{sub:encrypted_age_verification}
 
-\subsubsection*{Funktionsbeschreibung}
+\subsubsection{Funktionsbeschreibung}
 Der Use Case Encrypted Age Verification löst das Problem, das Alter einer Person serverseitig zu prüfen, ohne dass der Server den tatsächlichen Alterswert jemals im Klartext zu Gesicht bekommt. Das Ergebnis der Prüfung (volljährig: ja/nein) wird ebenfalls verschlüsselt zurückgegeben - der Server kennt weder Eingabe noch Ausgabe. \par
 Das Alter wird bereits auf dem Client mit dem ClientKey verschlüsselt und ausschließlich in verschlüsselter Form an das Backend übertragen. Das Backend führt die Altersüberprüfung mittels Fully Homomorphic Encryption (TFHE) durch, ohne den zugrunde liegenden Alterswert entschlüsseln zu können. Die Entschlüsselung des Ergebnisses ist ausschließlich durch den Besitzer des ClientKeys möglich.
 
@@ -22,12 +22,12 @@ Da dieser Use Case vollständig zustandslos ist, gibt es keine persistente Sessi
 \end{enumerate}
 
 \textbf{Verhaltensdiagramm}:
-\begin{figure}[h!]
+\begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{contents/media/Ablaufdiagramm_Age_Verification.png}
 \end{figure}
     
-\subsubsection*{OpenAPI-Schnittstelle}
+\subsubsection{OpenAPI-Schnittstelle}
 Der Service stellt eine einzelne verschlüsselte Verifikations-API bereit. Die OpenAPI-Definition wird automatisch generiert und ist unter \verb|/openapi.json| sowie \verb|/docs| (Swagger UI) erreichbar. \par
 Im gesamten Service wird der ServerKey als \verb|CompressedServerKey| übertragen (bincode-serialisiert, base64-kodiert).
 
@@ -58,7 +58,7 @@ Führt eine verschlüsselte Altersverifikation durch.
 \textbf{Body-Limit}: 
 2 GiB (notwendig wegen der Größe des CompressedServerKey)
 
-\subsubsection*{Trust- und Threat-Model}
+\subsubsection{Trust- und Threat-Model}
 \begin{tabular}{||l|c|c|c||}
     \hline
     & \makecell{\textbf{Server}\\\textbf{klar}} & \makecell{\textbf{Server}\\\textbf{verschlüsselt}} & \makecell{\textbf{Nur Client}} \\
@@ -119,7 +119,7 @@ Durch den Einsatz von TFHE wird garantiert:
 \textbf{Konkret bedeutet das}: 
 Der Server kennt nicht das Alter des Nutzers und kann nicht feststellen, ob das Ergebnis positiv oder negativ ausgefallen ist. Sichtbar bleiben ausschließlich Zeitpunkt, Herkunft und Häufigkeit der Anfragen.
 
-\subsubsection*{FHE-Designentscheidungen}
+\subsubsection{FHE-Designentscheidungen}
 \textbf{Verwendete TFHE-rs-Typen}:
 Für das Alter wird \verb|FheInt8| (vorzeichenbehaftetes 8-Bit-Integer, Wertebereich -128 bis 127) verwendet. Diese Wahl ergibt sich aus zwei Gründen:
 
@@ -148,7 +148,7 @@ Denkbar wäre, den Grenzwert (18) ebenfalls als \verb|FheInt8| zu übergeben, um
 \verb|FheInt32| oder größere Typen \par
 Größere Bitbreiten würden höhere Latenzen pro homomorpher Operation verursachen, ohne Mehrwert - Altersangaben benötigen keine mehr als 8 Bit.
 
-\subsubsection*{Komplexität der eigenen Algorithmen}
+\subsubsection{Komplexität der eigenen Algorithmen}
 Da der Use Case ausschließlich aus einer festen Anzahl homomorpher Operationen auf einem einzelnen Ciphertext besteht, gibt es keine parametrisierten Eingabegrößen. Die Komplexität aller Funktionen ist konstant. \par
 \begin{tabular}{||l|c|c||}
     \hline
@@ -169,7 +169,7 @@ Da der Use Case ausschließlich aus einer festen Anzahl homomorpher Operationen 
 Die Funktion führt genau zwei Vergleiche (\verb|gt(17)|, \verb|ge(0)|) und eine AND-Verknüpfung (\verb|&|) auf einem \verb|FheInt8|-Wert durch. Alle drei sind Operationen fester Bitbreite (8 Bit) auf einem einzelnen Ciphertext - unabhängig von jeder Eingabegröße. Gemäß der Konvention, homomorphe Operationen als O(1) zu zählen, ist \verb|age_check| $\in$ O(1). \par
 Die De- und Serialisierungsschritte (\verb|bincode|, \verb|base64|) operieren auf Byte-Arrays fester Länge (durch die TFHE-rs-Typen bestimmt) und sind ebenfalls O(1) bezüglich fachlicher Parameter.
 
-\subsubsection*{Performance-Messung}
+\subsubsection{Performance-Messung}
 \textit{Mess-Setup \& Methodik}\par
 Die Performance- und Stresstests wurden auf einem virtuellen KVM-Server von Netcup durchgeführt. Die Last wurde extern mittels k6 von einer lokalen Windows-Maschine über das Internet injiziert. \par
 Es wurde ein einziger relevanter Endpunkt getestet: \verb|POST /|. Alle anderen Endpunkte (\verb|/health|, \verb|/docs|) stellen nur Grundrauschen dar und wurden nicht gemessen.\par
@@ -233,7 +233,7 @@ Unter paralleler Last liegt die Fehlerrate im Mittel bei ~30\%. Die Fehler sind 
 Der p50 ist mit ~13,6 s über alle Läufe sehr stabil - das ist die reine Verarbeitungszeit eines einzelnen Requests ohne Mutex-Wartezeit. Die hohe Varianz bei p95 (30-52 s) und der Fehlerrate (26-35\%) ist dagegen direkt auf Netzwerkschwankungen bei der Übertragung des ~80 MB großen ServerKey zurückzuführen. Je nach Netzwerklast zum Messzeitpunkt verschiebt sich der Anteil der Requests, die den Proxy-Timeout überschreiten. \par
 Die Throughput-Grenze liegt bei einem parallelen Request. Jeder weitere gleichzeitige Request verlängert die Wartezeit linear, da \verb|tfhe::set_server_key| einen globalen Thread-Kontext setzt und die gesamte Verarbeitung (Übertragung + Dekomprimierung + FHE) serialisiert wird. Ab 2 VUs überschreitet p95 den Proxy-Timeout von 60 s regelmäßig.
 
-\subsubsection*{Limitationen}
+\subsubsection{Limitationen}
 \begin{itemize}
     \item Der Use Case ist vollständig zustandslos. Es gibt keine Session, keine Audit-Log und keine Möglichkeit, Ergebnisse serverseitig zu speichern oder abzurufen.
     \item Der \verb|CompressedServerKey| (~80 MB) wird bei jedem einzelnen Request vom Client mitgeschickt, deserialisiert und dekomprimiert.Dieses Design ist eine direkte Konsequenz der Zustandslosigkeit: Da jeder Client sein eigenes Schlüsselpaar generiert, kann kein globaler ServerKey serverseitig gespeichert werden, ohne das Sicherheitsmodell zu brechen. Ein gespeicherter ServerKey eines anderen Clients würde es diesem ermöglichen, fremde Ergebnisse zu entschlüsseln. Die Folge ist, dass Netzwerkübertragung und Dekomprimierung die Latenz dominieren und ein produktiver Einsatz über das Internet praktisch nicht skaliert.

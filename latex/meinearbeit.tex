@@ -23,6 +23,7 @@
 \usepackage{csquotes}
 \usepackage{makecell}
 \usepackage{tikz}
+\usepackage{float}
 
 \usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds}
 \tikzstyle{startstop} = [rectangle, rounded corners, minimum width=3cm, minimum height=1cm,text centered, draw=black, fill=red!30]
@@ -43,6 +44,9 @@
 
 % Titelseite und Erklaerung
 \usepackage{sethesis}
+
+\setcounter{tocdepth}{2}
+\setcounter{secnumdepth}{3}
 
 % Angaben Titelseite
 \unilogo{\includegraphics[scale=0.5]{FHDW-Logo.eps}}
@@ -88,15 +92,4 @@
     \clearpage
     \input{contents/usecases.tex}
     % Hier können weitere Kapitel oder Abschnitte eingefügt werden
-
-    \appendix
-    \clearpage
-    \setlength{\parskip}{0em}
-
-    \input{contents/anhang.tex}
-    \clearpage
-
-    \bibliographystyle{halpha-abbrv} % Support curstom abbreviation labels, see https://www.math.cmu.edu/~gautam/sj/blog/20171114-bibtex-doi.html
-    \bibliography{meinearbeit}
-
 \end{document}

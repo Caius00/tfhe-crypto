@@ -1,7 +1,7 @@
 \subsection{Encrypted-Statistics-Service}
 \label{sub:encrypted_statistics_service}
 
-\subsubsection*{Funktionsbeschreibung}
+\subsubsection{Funktionsbeschreibung}
 
 \textbf{Akteure}: 
 Client (Browser, Angular-Frontend), Server (Axum/Rust-Service). \par
@@ -13,7 +13,7 @@ UC5 berechnet statistische Kennzahlen (Summe, Anzahl, Minimum, Maximum, Durchsch
     \includegraphics[width=\textwidth]{contents/media/Ablaufsdiagramm_Statistics.png}
 \end{figure}
 
-\subsubsection*{OpenAPI-Schnittstelle}
+\subsubsection{OpenAPI-Schnittstelle}
 
 \textbf{POST /}:
 Berechnet alle Statistiken für eine verschlüsselte Ganzzahlen-Liste.
@@ -104,7 +104,7 @@ Berechnet alle Statistiken für eine verschlüsselte Ganzzahlen-Liste.
     \hline
 \end{tabular}
 
-\subsubsection*{Trust- und Threat-Model}
+\subsubsection{Trust- und Threat-Model}
 \textbf{Was am Server bekannt ist}:\par
 \begin{tabular}{||p{4cm}|p{4cm}|l|p{4cm}||}
     \hline
@@ -163,10 +163,113 @@ Der Server muss die Berechnungen korrekt ausführen. Ein böswilliger Server kö
 \textbf{Sicherheitsgarantie}:
 Der Server kennt die statistischen Kennzahlen der Eingabewerte nicht — er berechnet sie, ohne sie je zu sehen. Bekannt sind ihm nur die Anzahl der Werte und der grobe Wertebereich (über \verb|bit_width|). Keine ZKP-Verifikation der Ciphertexte und keine Client-Authentifizierung — beides ist im Rahmen dieses Use Cases nicht vorgesehen.
 
-\subsubsection*{FHE-Designentscheidungen}
+\subsubsection{FHE-Designentscheidungen}
+\textbf{Verwendete TFHE-rs-Typen}:\par
+\begin{tabular}{||c|c|c|p{5cm}||}
+    \hline
+    \textbf{Eingabe-Bitbreite} & \textbf{Eingabe-Typ} & \textbf{Summe/Avg-Typ} & \textbf{Begründung} \\
+    \hline\hline
+    8 & FheInt8 & FheInt16 & Overflow-Schutz: n * 127 muss in den Output-Typ passen \\
+    \hline
+    16 & FheInt16 & FheInt32 & Gleiche Logik, nächste Ebene \\
+    \hline
+    32 & FheInt32 & FheInt64 & Int64 deckt alle realistischen Summen ab \\
+    \hline
+\end{tabular}
 
-\subsubsection*{Komplexität der eigenen Algorithmen}
+\textbf{Auto-Bitbreiten-Wahl}:
+Der Client bestimmt anhand von \verb|min| und \verb|max| der Eingabe die kleinste ausreichende Bitbreite:
+\begin{itemize}
+    \item Int8 wenn min $\geq$ -128 und max $\leq$ 127
+    \item Int16 wenn min $\geq$ -32.768 und max $\leq$ 32.767
+    \item Int32 sonst
+\end{itemize}
+Der Server benötigt \verb|bit_width| zwingend, um den richtigen FHE-Typ für die Deserialisierung zu wählen - \verb|FheInt8|, \verb|FheInt16| und \verb|FheInt32| sind binär inkompatibel. Das Feld ist daher keine optionale Optimierung, sondern technisch notwendig.\par
+Kleinere Bitbreiten reduzieren die Berechnungszeit deutlich, da die TFHE-Kosten mit der Bitbreite skalieren.
 
-\subsubsection*{Performance-Messung}
+\textbf{Verwendete FHE-Operationen}:\par
+\begin{tabular}{||p{4cm}||p{7cm}|p{4cm}||}
+    \hline
+    \textbf{Operation} & \textbf{Verwendet für} & \textbf{Kosten} \\
+    \hline\hline
+    \verb|CastInto| & Up-Cast InputType $\rightarrow$ WiderOutputType vor Summation & günstig \\
+    \hline
+    \verb|Add| & Summation (parallel via rayon) & moderat \\
+    \hline
+    \verb|FheOrd| (lt/gt) & Vergleich in min/max und compare\_and\_swap & teuer (Bootstrapping) \\
+    \hline
+    \verb|IfThenElse| auf FheBool & Wählt das Ergebnis homomorph aus, ohne den Wert zu kennen & moderat \\
+    \hline
+    Division durch Klartextskalar & Durchschnitt: \verb|sum / (n as i16/i32/i64)| & deutlich günstiger als FHE-Division \\
+    \hline
+\end{tabular}
 
-\subsubsection*{Limitationen}
+\textbf{Verworfene Varianten}:
+\begin{itemize}
+    \item Float (f32/f64): Semantisch passend für Durchschnitt, aber TFHE-rs bietet keine Float-Typen.
+    \item Vollständig homomorphe Division: TFHE-rs hat keine generische \verb|Div<FheInt>|-Implementierung. Division durch einen Klartextwert ist hier ausreichend, weil die Listenlänge dem Server ohnehin bekannt ist.
+    \item Naiver sequentieller Sortieralgorithmus für Median: Bubblesort wäre $O(n^2)$ Komparatoren und vollständig sequentiell - auf FHE-Niveau unakzeptabel. Das Batcher-Netzwerk ist datenunabhängig (keine Branches auf Plaintext-Vergleichsergebnissen) und hat $O(log^2n)$ Tiefe.
+    \item Partielles Sortiernetz (Median-optimiert): Ein Netz, das nur den Median-Index isoliert berechnet, würde weniger Komparatoren brauchen. Nicht umgesetzt, weil der Aufwand für das UC-Projekt nicht gerechtfertigt ist.
+\end{itemize}
+
+\subsubsection{Komplexität der eigenen Algorithmen}
+Parameter: n = Anzahl der Eingabeelemente. Jede einzelne FHE-Operation zählt als $O(1)$.
+\textbf{sum}: 
+Paralleles Reduce (rayon) auf n Elementen.
+\begin{itemize}
+    \item Tiefe: $O(log n)$ sequentielle Schritte (binärer Reduktionsbaum)
+    \item Gesamtoperationen: n-1 Additionen
+    \item Speicher: $O(n)$
+\end{itemize}
+
+\textbf{count}: 
+$O(1)$ — nur \verb|slice::len()|.
+
+\textbf{min / max}: 
+Identisch zu sum (Reduce mit Vergleich statt Addition).
+\begin{itemize}
+    \item Tiefe: $O(log n)$
+    \item Gesamtoperationen: n-1 Vergleiche + n-1 \verb|if_then_else|
+\end{itemize}
+
+\textbf{average}: 
+$O(log n)$ - identisch zu sum, plus eine $O(1)$-Division durch Klartextskalar.
+
+\textbf{median (Batcher Odd-Even Mergesort)}:
+Das Batcher-Netzwerk für n Elemente hat (Herleitung: Knuth TAOCP Vol. 3, \S5.3.4):
+\begin{itemize}
+    \item Tiefe (Anzahl sequentieller Runden): $O(log^2n)$, exakt $\frac{1}{2} \cdot log_2(n) \cdot (log_2(n)+1)$ für $n = 2^k$
+    \item Gesamtanzahl Komparatoren: $O(n log^2n)$
+\end{itemize}\par
+Innerhalb einer Runde laufen alle Komparatoren parallel (rayon). Die Wandzeit entspricht der Netzwerk-Tiefe: O(log²n) sequentielle FHE-Runden.\par
+Jeder Komparator besteht aus: 1 * FheOrd-Vergleich + 2 * IfThenElse = $O(1)$ homomorphe Operationen.\par
+Gesamtspeicher: $O(n)$ (der \verb|partially_sorted|-Vektor als Arbeitspuffer).
+
+\subsubsection{Performance-Messung}
+Messbedingungen: lokaler Entwicklungs-PC (Windows/WSL2), Rust release build, 1 Client, keine parallelen Requests.\par
+\begin{tabular}{||c|l|l|c||}
+    \hline
+    \textbf{n} & \textbf{bit\_width} & \textbf{Gesamtlatenz (Einzelmessung)} & \textbf{Anmerkung} \\
+    \hline\hline
+    6 & 8 & ~18,9 s & Werte: -5, 3, 7, 5, 33, 10 \\
+    \hline
+\end{tabular}\par
+Netcup-Server-Messungen (p50/p95 unter Last): ausstehend. Mess-Setup, Lastkurve und Throughput-Grenze sind für die finale Ausarbeitung noch zu erheben.
+
+\textbf{Bekannte Performance-Treiber}:
+\begin{itemize}
+    \item ServerKey-Dekomprimierung: \verb|CompressedServerKey::decompress()| wird bei jedem Request neu durchgeführt - kein Caching. Das ist der größte einzelne Overhead neben der eigentlichen FHE-Berechnung.
+    \item FheOrd-Vergleiche sind die teuersten Einzeloperationen (Bootstrapping-Kosten).
+    \item Rayon-Parallelisierung innerhalb einer Batcher-Runde skaliert mit den CPU-Kernen des Servers.
+    \item Skalierung mit n: Verdopplung von n erhöht die Batcher-Tiefe um ca. $2 \cdot log_2n$ Runden. Der Sprung von n=6 auf n=12 erhöht die Tiefe von ~9 auf ~16 Runden.
+\end{itemize}
+
+\subsubsection{Limitationen}
+\textbf{Typsystem}: 
+TFHE-rs unterstützt keine Float-Typen — alle Berechnungen sind auf i8/i16/i32 beschränkt. Der Durchschnitt ist ganzzahlig — Nachkommastellen werden abgeschnitten (\verb|[1, 2]| $\rightarrow$ 1, nicht \verb|1,5|).
+
+\textbf{Privacy-Einschränkungen}: Die Listenlänge ist aus dem Request direkt ablesbar; \verb|bit_width| verrät zusätzlich die Größenordnung der Werte (\verb|bit_width=8| $\rightarrow$ alle Werte in [-128, 127]). Beides lässt sich durch Padding bzw. uniforme Bitbreite abmildern - für diesen Use Case nicht umgesetzt, da der Mehraufwand die Performance deutlich verschlechtern würde.
+
+\textbf{Keine Verifikation der Eingaben}: Der Server kann nicht prüfen, ob der Client korrekte FHE-Ciphertexte schickt - kein ZKP, keine Authentifizierung. Bei öffentlicher Erreichbarkeit sind Missbrauch durch Masse-Requests (teurer Rechenaufwand) und manipulierte Ciphertexte möglich.
+
+\textbf{Performance}: Kein Session-Caching - \verb|CompressedServerKey::decompress()| läuft bei jedem Request neu. Bei n > ~20 mit Int32 übersteigt die Rechenzeit mehrere Minuten; der Service ist für kleine Listen (n $\leq$ ~15) konzipiert. Der Batcher-Algorithmus sortiert außerdem die gesamte Liste, statt nur den Median-Index zu isolieren.
