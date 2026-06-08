@@ -39,3 +39,9 @@ body {
   background: var(--c-bg);
   margin: 0;
 }
+
+.error-inline {
+  font-size: 0.85rem;
+  color: var(--c-error);
+  margin: 0;
+}
