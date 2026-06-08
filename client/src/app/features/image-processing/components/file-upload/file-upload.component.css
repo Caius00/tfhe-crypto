@@ -1,0 +1,6 @@
+.preview-image {
+  max-width: 50px;
+  max-height: 50;
+  border-radius: 8px;
+  object-fit: contain;
+}
