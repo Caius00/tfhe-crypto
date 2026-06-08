@@ -9,5 +9,3 @@ type: Opaque
 stringData:
   type: git
   url: https://github.com/Caius00/tfhe-crypto
-  username: Caius00
-  password: "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"
