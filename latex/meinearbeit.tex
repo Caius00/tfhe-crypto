@@ -1,6 +1,6 @@
 % !TEX root = ../meinearbeit.tex
 
-\documentclass[12pt]{article}
+\documentclass[11pt]{article}
 
 \usepackage[a4paper,margin=3cm]{geometry}
 
@@ -18,9 +18,10 @@
 \usepackage{graphicx}
 \usepackage{url}
 \def\UrlBreaks{\do\/\do-} % Zeilenumbrüche in URLs bei Bindestrich oder Schrägstrich
-\usepackage[colorlinks=true, color=black]{hyperref}
+\usepackage[colorlinks=true,linkcolor=black]{hyperref}
 \usepackage{xspace}
 \usepackage{csquotes}
+\usepackage{makecell}
 
 
 %avoid overfull hbox problem
@@ -66,7 +67,7 @@
 
     \maketitle
     \clearpage
-    \setlength{\parskip}{1em}
+    \setlength{\parskip}{0.5em}
 
     \input{contents/notice.tex}
     \clearpage
@@ -74,7 +75,7 @@
 
     \tableofcontents
     \clearpage
-    \setlength{\parskip}{1em}
+    \setlength{\parskip}{0.5em}
 
     \input{contents/einleitung.tex}
     \clearpage
