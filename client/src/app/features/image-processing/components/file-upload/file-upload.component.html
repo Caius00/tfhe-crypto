@@ -1,0 +1,11 @@
+<input 
+    type="file" 
+    accept=".png,image/png"
+    (change)="onFileSelected($event)" 
+    #fileInput hidden>
+<div>
+    <app-button label="PNG-Datei hochladen" [fullWidth]="false" (clicked)="fileInput.click()"/>
+    {{imageService.imageName() || "Keine Datei hochgeladen."}}
+</div>
+
+

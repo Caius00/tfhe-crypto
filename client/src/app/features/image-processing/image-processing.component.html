@@ -1,1 +1,17 @@
-<h1>07 – Encrypted Image Processing</h1>
+<app-page-header
+    title="07 - Encrypted Image Processing"
+    subtitle="Führe mehrere Bildbearbeitungsschritte auf einem Graustufenbild durch und lasse dir das Ergebnis visuell darstellen." />
+
+<div class="action-grid">
+  <app-card variant="elevated">
+    <div class="action">
+      <div class="action-icon">🖼️</div>
+      <h2 class="action-title">Bild hochladen</h2>
+      <p class="action-desc">
+        Lade ein neues Bild hoch, welches du dann mithilfe mehrerer Effekte bearbeiten kannst.
+      </p>
+      <app-file-upload/>
+      <app-button label="Editor öffnen" [fullWidth]="true" (clicked)="goEditor()" [disabled]="!fileService.imageFile()" />
+    </div>
+  </app-card>
+</div>
