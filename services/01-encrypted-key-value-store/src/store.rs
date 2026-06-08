@@ -248,6 +248,7 @@ impl Default for AppState {
 
 #[cfg(test)]
 mod test_exists {
+    use std::thread;
     use super::*;
     use redis::Commands;
     use tfhe::prelude::FheDecrypt;

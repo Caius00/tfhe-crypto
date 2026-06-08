@@ -50,9 +50,9 @@ pub async fn put_route(
     let decompressed_key = parsed_key.decompress();
     let decompressed_value = parsed_value.decompress();
 
-    if decompressed_value.string.len() != VALUE_LENGTH {
-        Err(AppError::ValueLength(decompressed_value.string.len()))?
-    }
+    // if decompressed_value.string.len() != VALUE_LENGTH {
+    //     Err(AppError::ValueLength(decompressed_value.string.len()))?
+    // }
 
     state
         .put(&decompressed_key, &decompressed_value, &body.session_id)

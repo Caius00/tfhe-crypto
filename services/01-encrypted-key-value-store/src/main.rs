@@ -66,7 +66,7 @@ async fn main() {
          keys and values are FHE-encrypted ASCII strings. Entries expire after TTL_MINUTES.",
         env!("CARGO_PKG_VERSION"),
     )
-    .layer(DefaultBodyLimit::max(2 * 1024 * 1024 * 1024)) // TODO() this is huge; find better solution
+    .layer(DefaultBodyLimit::max(2 * 1024 * 1024 * 1024))
     .merge(health::router(env!("CARGO_PKG_VERSION")));
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));
