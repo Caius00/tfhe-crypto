@@ -10,9 +10,7 @@ use base64::{engine::general_purpose, Engine as _};
 use serde_json::{json, Value};
 use serial_test::serial;
 use std::sync::OnceLock;
-use tfhe::{
-    generate_keys, prelude::*, ClientKey, CompressedServerKey, ConfigBuilder, FheUint32,
-};
+use tfhe::{generate_keys, prelude::*, ClientKey, CompressedServerKey, ConfigBuilder, FheUint32};
 use tower::util::ServiceExt;
 
 // ── Gecachter ServerKey für die Testumgebung ──────────────────────────────
