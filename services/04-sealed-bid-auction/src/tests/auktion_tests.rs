@@ -107,7 +107,7 @@ async fn test_auction_successful_flow() {
     assert!(body_a["response"].as_str().unwrap().contains("erfolgreich"));
 
     //  Gebot B senden
-    let (status_b, body_b) = post_json(&app, "/gebot", payload_b).await;
+    let (status_b, _body_b) = post_json(&app, "/gebot", payload_b).await;
     assert_eq!(status_b, StatusCode::OK);
 
     // Blinde Auswertung starten

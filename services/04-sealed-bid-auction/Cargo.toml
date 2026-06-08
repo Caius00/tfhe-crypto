@@ -20,3 +20,5 @@ tower = { version = "0.5.3", features = ["util"] }
 aide.workspace = true
 tower-http = { version = "0.6.11", features = ["cors"] }
 openapi_docs = { package = "openapi-docs", path = "../../shared/openapi-docs" }
+metrics-exporter.workspace = true
+observability.workspace = true

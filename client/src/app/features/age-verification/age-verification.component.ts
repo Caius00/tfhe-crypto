@@ -24,7 +24,7 @@ export class AgeVerificationComponent {
 
   constructor(
     private tfhe: TfheService,
-    private api: AgeVerificationApiService
+    private api: AgeVerificationApiService,
   ) {}
 
   async generateKeys(): Promise<void> {
