@@ -3,17 +3,51 @@
 
 \subsubsection{Funktionsbeschreibung}
 
-\textbf{Akteure}: 
-Client (Browser, Angular-Frontend), Server (Axum/Rust-Service). \par
 UC5 berechnet statistische Kennzahlen (Summe, Anzahl, Minimum, Maximum, Durchschnitt, Median) über eine Ganzzahlen-Liste, ohne dass der Server die Eingabewerte oder Ergebnisse jemals im Klartext sieht. Alle Berechnungen laufen vollständig auf verschlüsselten Daten.
 
-\textbf{Ablauf eines Requests} (UC5 ist zustandslos — jeder Request ist in sich abgeschlossen):
-\begin{figure}[h!]
-    \centering
-    \includegraphics[width=\textwidth]{contents/media/Ablaufsdiagramm_Statistics.png}
-\end{figure}
+Der ServerKey ($\sim$80\,MB) wird einmalig via \verb|POST /session| hochgeladen und einer Session-UUID zugewiesen. Alle weiteren Requests (\verb|POST /|) senden nur die UUID — kein Key-Overhead pro Request.
+
+\textbf{Akteure}:
+\begin{itemize}
+    \item \textbf{Client} (Browser, Angular-Frontend): Generiert das TFHE-Schlüsselpaar, verschlüsselt die Eingabewerte mit dem \verb|ClientKey| und lädt den \verb|ServerKey| einmalig via \verb|POST /session| hoch. Der \verb|ClientKey| verlässt den Browser nie — nur der Client kann die Ergebnisse entschlüsseln.
+    \item \textbf{Server} (Axum/Rust-Service): Empfängt den \verb|ServerKey| einmalig, dekomprimiert ihn und speichert ihn pro Session. Alle weiteren Requests nutzen die gecachte Engine. Der Server sieht zu keinem Zeitpunkt Eingabewerte oder Ergebnisse im Klartext.
+\end{itemize}
+
+\textbf{Ablauf}:
+\begin{enumerate}
+    \item Client generiert TFHE-Schlüsselpaar (\verb|ClientKey| + \verb|ServerKey|).
+    \item \verb|POST /session \{ server_key \}| → Server dekomprimiert, speichert, vergibt Session-UUID.
+    \item Client wählt Bitbreite anhand von min/max der Eingabe (Int8 / Int16 / Int32).
+    \item Client verschlüsselt Werte und base64-kodiert sie.
+    \item \verb|POST / \{ session_id, encrypted_list, bit_width \}| → Server lädt die Session per UUID und berechnet alle Statistiken verschlüsselt.
+    \item Client entschlüsselt Ergebnisse mit \verb|ClientKey|.
+\end{enumerate}
 
 \subsubsection{OpenAPI-Schnittstelle}
+
+\textbf{POST /session}:
+Lädt den ServerKey einmalig hoch und gibt eine Session-UUID zurück. Alle weiteren Requests nutzen nur noch die UUID.
+
+\textbf{Request-Schema}:
+\begin{lstlisting}
+{
+  "server_key": "<Base64-String>"
+}
+\end{lstlisting}\par
+\begin{tabular}{||l|l|p{9cm}||}
+    \hline
+    \textbf{Feld} & \textbf{Typ} & \textbf{Beschreibung} \\
+    \hline\hline
+    \verb|server_key| & \verb|string| & Base64(bincode(CompressedServerKey)) — vom Client generiert, enthält kein Geheimnis. \\
+    \hline
+\end{tabular}
+
+\textbf{Response-Schema (200 OK)}:
+\begin{lstlisting}
+{
+  "session_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+\end{lstlisting}
 
 \textbf{POST /}:
 Berechnet alle Statistiken für eine verschlüsselte Ganzzahlen-Liste.
@@ -21,21 +55,18 @@ Berechnet alle Statistiken für eine verschlüsselte Ganzzahlen-Liste.
 \textbf{Request-Schema}:
 \begin{lstlisting}
 {
-  "encrypted_list": [
-    "<Base64-String>",
-    "..."
-  ],
-  "server_key": "<Base64-String>",
-  "bit_width": 8
+  "session_id":     "550e8400-e29b-41d4-a716-446655440000",
+  "encrypted_list": ["<Base64-String>", "..."],
+  "bit_width":      8
 }
 \end{lstlisting}\par
 \begin{tabular}{||l|l|p{9cm}||}
     \hline
     \textbf{Feld} & \textbf{Typ} & \textbf{Beschreibung} \\
     \hline\hline
-    \verb|encrypted_list| & \verb|string[]| & Jedes Element: Base64(bincode(FheInt\verb|N|)), wobei N = \verb|bit_width|. Mindestens 1 Element. \\
+    \verb|session_id| & \verb|string| & UUID aus \verb|POST /session|. \\
     \hline
-    \verb|server_key| & \verb|string| & Base64(bincode(CompressedServerKey)) - vom Client generiert, enthält kein Geheimnis. \\
+    \verb|encrypted_list| & \verb|string[]| & Jedes Element: Base64(bincode(FheInt\verb|N|)), wobei N = \verb|bit_width|. Mindestens 1 Element. \\
     \hline
     \verb|bit_width| & \verb|number| & Muss 8, 16 oder 32 sein. Wird vom Client automatisch aus dem Wertebereich der Eingabe gewählt. \\
     \hline
@@ -81,6 +112,8 @@ Berechnet alle Statistiken für eine verschlüsselte Ganzzahlen-Liste.
     \hline\hline
     400 Bad Request & Leere Liste, ungültiger Base64, falscher Ciphertext-Typ, ungültige \verb|bit_width| \\
     \hline
+    404 Not Found & Session nicht gefunden oder abgelaufen (Idle-Timeout 10 min) \\
+    \hline
     500 Internal Server Error & Serialisierungsfehler beim Zusammenstellen der Response \\
     \hline
 \end{tabular}
@@ -110,25 +143,25 @@ Berechnet alle Statistiken für eine verschlüsselte Ganzzahlen-Liste.
     \hline
     \textbf{Datum} & \textbf{am Server klar} & \makecell{\textbf{am Server}\\\textbf{verschlüsselt}} & \textbf{nur am Client} \\
     \hline\hline
-    Eingabewerte (die eigentlichen Zahlen) & \makecell{X} & FheInt8/16/32 & Klartext vor Verschlüsselung \\
+    Eingabewerte (die eigentlichen Zahlen) & \makecell{-} & FheInt8/16/32 & Klartext vor Verschlüsselung \\
     \hline
     Anzahl der Elemente (n) & (Array-Länge im Request) & \makecell{-} & \makecell{-} \\
     \hline
     Wertebereich-Klasse & (über \verb|bit_width|: Int8 $\rightarrow$ Werte in [-128, 127]) & \makecell{-} & \makecell{-} \\
     \hline
-    Summe & \makecell{X} & FheInt16/32/64 & nach Entschlüsselung \\
+    Summe & \makecell{-} & FheInt16/32/64 & nach Entschlüsselung \\
     \hline
-    Minimum & \makecell{X} & FheInt8/16/32 & nach Entschlüsselung \\
+    Minimum & \makecell{-} & FheInt8/16/32 & nach Entschlüsselung \\
     \hline
-    Maximum & \makecell{X} & FheInt8/16/32 & nach Entschlüsselung \\
+    Maximum & \makecell{-} & FheInt8/16/32 & nach Entschlüsselung \\
     \hline
-    Durchschnitt & \makecell{X} & FheInt16/32/64 & nach Entschlüsselung \\
+    Durchschnitt & \makecell{-} & FheInt16/32/64 & nach Entschlüsselung \\
     \hline
-    Median & \makecell{X} & FheInt8/16/32 & nach Entschlüsselung \\
+    Median & \makecell{-} & FheInt8/16/32 & nach Entschlüsselung \\
     \hline
-    ServerKey & (aus Request) & \makecell{-} & \makecell{-} \\
+    ServerKey & (einmalig via \verb|POST /session|) & \makecell{-} & \makecell{-} \\
     \hline
-    ClientKey & \makecell{X} & - & verlässt den Browser nie \\
+    ClientKey & \makecell{-} & - & verlässt den Browser nie \\
     \hline
     Anfragezeitpunkt & (HTTP-Timestamp) & \makecell{-} & \makecell{-} \\
     \hline
@@ -136,32 +169,48 @@ Berechnet alle Statistiken für eine verschlüsselte Ganzzahlen-Liste.
     \hline
 \end{tabular}
 
-\textbf{Beobachtbare Metadaten und möglicher Missbrauch}:
+\textbf{Analyse: Beobachtbare Metadaten}:
+TFHE schützt ausschließlich den Inhalt der Eingabewerte und Ergebnisse. Für den Server bleiben weiterhin verschiedene Metadaten sichtbar:
 \begin{itemize}
     \item Anzahl n ist vollständig sichtbar. Ein Angreifer kann daraus schließen, wie viele Werte analysiert werden (z.B. \enquote{der Client hat genau 3 Werte geschickt} $\rightarrow$ möglicherweise 3 Messwerte eines Sensors).
-    \item \verb|bit_width| verrät die Größenordnung: \verb|bit_width=8| bedeutet, alle Werte liegen in [-128, 127]. Das schränkt den möglichen Werteraum erheblich ein - bei kleinen Eingabelisten und bekanntem Kontext könnten Werte erraten werden.
-    \item Request-Timing ist bei bekannten n-Werten korrelierbar. Die Berechnungsdauer hängt von n und \verb|bit_width| ab, nicht von den konkreten Werten - es gibt kein datenwertabhängiges Timing-Leak.
-    \item Payload-Größe ist deterministisch aus n und \verb|bit_width| ableitbar (alle FHE-Ciphertexte haben bei gleichen TFHE-Parametern konstante Größe). Kein zusätzlicher Informationsgewinn.
+    \item \verb|bit_width| verrät den Wertebereich: \verb|bit_width=8| bedeutet, alle Werte liegen in [-128, 127]. Bei kleinen Listen und bekanntem Kontext könnten Werte erraten werden.
+    \item Request-Timing hängt von n und \verb|bit_width| ab, nicht von den konkreten Werten — kein datenwertabhängiges Timing-Leak.
+    \item Payload-Größe lässt sich direkt aus n und \verb|bit_width| berechnen (alle FHE-Ciphertexte haben konstante Größe). Kein zusätzlicher Informationsgewinn.
 \end{itemize}
 
-\textbf{Restvertrauen in den Server-Operator}:
-Der Server muss die Berechnungen korrekt ausführen. Ein böswilliger Server könnte:
+\textbf{Restvertrauen in den Server}:
+Der Server kann die Eingabewerte nicht entschlüsseln, muss aber trotzdem korrekt handeln. Der Use Case vertraut darauf, dass der Server:
 \begin{itemize}
-    \item Falsche verschlüsselte Ergebnisse zurückgeben (der Client kann das nicht verifizieren - kein ZKP).
-    \item Die Ciphertexte dauerhaft speichern (für einen hypothetischen späteren Kryptangriff).
-    \item Den Request einfach ablehnen (Denial of Service).
+    \item alle Statistiken korrekt berechnet und keine manipulierten Ergebnisse zurückgibt,
+    \item die korrekten verschlüsselten Ergebnisse zurücksendet und sie nicht durch manipulierte Ciphertexte ersetzt,
+    \item den ServerKey nicht persistiert oder weitergibt,
+    \item Sessions voneinander trennt.
 \end{itemize}
 
-\textbf{Annahmen außerhalb von FHE}:
+\textbf{Annahmen außerhalb von TFHE}:
 \begin{itemize}
     \item TLS zwischen Client und Server (kein Mitlesen im Transit).
     \item Das Angular-Frontend und der Browser sind nicht kompromittiert (ClientKey liegt im WASM-Speicher).
-    \item TFHE-rs wird als korrekte Blackbox behandelt - keine eigene Kryptanalyse.
-    \item Kein Auth-Gateway: jeder kann beliebige Requests an \verb|POST /| schicken.
+    \item TFHE-rs wird als kryptographisch korrekt implementierte Black Box betrachtet.
+    \item Es gibt keine Authentifizierung am Endpunkt: jeder kann Requests an \verb|POST /session| und \verb|POST /| schicken.
 \end{itemize}
 
-\textbf{Sicherheitsgarantie}:
-Der Server kennt die statistischen Kennzahlen der Eingabewerte nicht — er berechnet sie, ohne sie je zu sehen. Bekannt sind ihm nur die Anzahl der Werte und der grobe Wertebereich (über \verb|bit_width|). Keine ZKP-Verifikation der Ciphertexte und keine Client-Authentifizierung — beides ist im Rahmen dieses Use Cases nicht vorgesehen.
+\textbf{Schutzversprechen}:
+Durch den Einsatz von TFHE wird garantiert:
+\begin{itemize}
+    \item Der Server kann die Eingabewerte nicht im Klartext lesen.
+    \item Der Server kann die berechneten Statistiken nicht im Klartext lesen.
+    \item Alle Berechnungen werden ausschließlich auf verschlüsselten Daten durchgeführt.
+\end{itemize}
+Nicht garantiert werden:
+\begin{itemize}
+    \item Schutz vor einem Server, der korrekte Berechnungen durch manipulierte Ergebnisse ersetzt.
+    \item Vertraulichkeit von Metadaten (Listenlänge n, Wertebereich über \verb|bit_width|, Request-Timing).
+    \item Authentizität der Ciphertexte (kein ZKP, keine Client-Authentifizierung).
+\end{itemize}
+\begin{quote}
+\textit{„Der Server kennt die Eingabewerte nicht. Er sieht nur Ciphertexte, addiert und vergleicht sie ohne je einen Klartext zu sehen, und gibt alle Statistiken verschlüsselt zurück. Nur der Client kann die Ergebnisse mit seinem ClientKey entschlüsseln."}
+\end{quote}
 
 \subsubsection{FHE-Designentscheidungen}
 \textbf{Verwendete TFHE-rs-Typen}:\par
@@ -187,7 +236,7 @@ Der Client bestimmt anhand von \verb|min| und \verb|max| der Eingabe die kleinst
 Der Server benötigt \verb|bit_width| zwingend, um den richtigen FHE-Typ für die Deserialisierung zu wählen - \verb|FheInt8|, \verb|FheInt16| und \verb|FheInt32| sind binär inkompatibel. Das Feld ist daher keine optionale Optimierung, sondern technisch notwendig.\par
 Kleinere Bitbreiten reduzieren die Berechnungszeit deutlich, da die TFHE-Kosten mit der Bitbreite skalieren.
 
-\textbf{Verwendete FHE-Operationen}:\par
+\textbf{Verwendete homomorphe Operationen}:\par
 \begin{tabular}{||p{4cm}||p{7cm}|p{4cm}||}
     \hline
     \textbf{Operation} & \textbf{Verwendet für} & \textbf{Kosten} \\
@@ -204,12 +253,13 @@ Kleinere Bitbreiten reduzieren die Berechnungszeit deutlich, da die TFHE-Kosten 
     \hline
 \end{tabular}
 
-\textbf{Verworfene Varianten}:
+\textbf{Verworfene Alternativen}:
 \begin{itemize}
     \item Float (f32/f64): Semantisch passend für Durchschnitt, aber TFHE-rs bietet keine Float-Typen.
     \item Vollständig homomorphe Division: TFHE-rs hat keine generische \verb|Div<FheInt>|-Implementierung. Division durch einen Klartextwert ist hier ausreichend, weil die Listenlänge dem Server ohnehin bekannt ist.
-    \item Naiver sequentieller Sortieralgorithmus für Median: Bubblesort wäre $O(n^2)$ Komparatoren und vollständig sequentiell - auf FHE-Niveau unakzeptabel. Das Batcher-Netzwerk ist datenunabhängig (keine Branches auf Plaintext-Vergleichsergebnissen) und hat $O(log^2n)$ Tiefe.
+    \item Naiver sequentieller Sortieralgorithmus für Median: Bubblesort wäre $O(n^2)$ Komparatoren und vollständig sequentiell — auf FHE-Niveau unakzeptabel. Das Batcher-Netzwerk ist datenunabhängig (keine Branches auf Plaintext-Vergleichsergebnissen) und hat $O(log^2n)$ Tiefe.
     \item Partielles Sortiernetz (Median-optimiert): Ein Netz, das nur den Median-Index isoliert berechnet, würde weniger Komparatoren brauchen. Nicht umgesetzt, weil der Aufwand für das UC-Projekt nicht gerechtfertigt ist.
+    \item Key pro Request (zustandsloses Design): Das ursprüngliche Design sendete den $\sim$80\,MB ServerKey mit jedem Request. Bei 15 Requests waren das $\sim$1,2\,GB Traffic und 50\,\% Fehlerrate unter Last, weil Nginx nach 60\,s abbricht. Ersetzt durch Session-Caching via \verb|POST /session|.
 \end{itemize}
 
 \subsubsection{Komplexität der eigenen Algorithmen}
@@ -246,30 +296,69 @@ Jeder Komparator besteht aus: 1 * FheOrd-Vergleich + 2 * IfThenElse = $O(1)$ hom
 Gesamtspeicher: $O(n)$ (der \verb|partially_sorted|-Vektor als Arbeitspuffer).
 
 \subsubsection{Performance-Messung}
-Messbedingungen: lokaler Entwicklungs-PC (Windows/WSL2), Rust release build, 1 Client, keine parallelen Requests.\par
-\begin{tabular}{||c|l|l|c||}
+Mess-Setup: k6 v2.0.0, \verb|ConfigBuilder::default()|, Server: Netcup KVM, Last injiziert von lokaler Windows-Maschine über das Internet, Datum: 09.06.2026.\par
+
+\textbf{Test 1 — Baseline (1 VU, 5 Iterationen, alle Bitbreiten)}:\par
+\begin{tabular}{||l|l|c||}
     \hline
-    \textbf{n} & \textbf{bit\_width} & \textbf{Gesamtlatenz (Einzelmessung)} & \textbf{Anmerkung} \\
+    \textbf{Konfiguration} & \textbf{p95 Latenz} & \textbf{Fehlerrate} \\
     \hline\hline
-    6 & 8 & ~18,9 s & Werte: -5, 3, 7, 5, 33, 10 \\
+    n=5, bit\_width=8 & 2,23 s & 0\,\% \\
+    \hline
+    n=10, bit\_width=8 & 4,46 s & 0\,\% \\
+    \hline
+    n=10, bit\_width=16 & 7,95 s & 0\,\% \\
+    \hline
+    n=10, bit\_width=32 & 16,16 s & 0\,\% \\
+    \hline
+    \textbf{Gesamt} & — & \textbf{0\,\% (20/20)} \\
     \hline
 \end{tabular}\par
-Netcup-Server-Messungen (p50/p95 unter Last): ausstehend. Mess-Setup, Lastkurve und Throughput-Grenze sind für die finale Ausarbeitung noch zu erheben.
+Gesendete Datenmenge: 113\,MB — der ServerKey wird einmalig hochgeladen, alle weiteren Requests enthalten nur die verschlüsselten Werte. Ohne Session-Caching wären für dieselbe Anzahl Requests $\sim$1,2\,GB übertragen worden.\par
+\textit{Fazit}: Bei einem Client läuft der Service fehlerfrei über alle Bitbreiten. Die Latenz hängt ausschließlich von der FHE-Berechnung ab.\par
+
+\textbf{Test 2 — Stresstest (ramping bis 10 VUs, 6 Minuten)}:\par
+Lastkurve: 60\,s $\rightarrow$ 1\,VU, 90\,s $\rightarrow$ 3\,VUs, 90\,s $\rightarrow$ 6\,VUs, 90\,s $\rightarrow$ 10\,VUs, 30\,s $\rightarrow$ 0\,VUs.\par
+\begin{tabular}{||l|l||}
+    \hline
+    \textbf{Metrik} & \textbf{Wert} \\
+    \hline\hline
+    Fehlerrate gesamt & 52\,\% (77/149 Requests) \\
+    \hline
+    p95 Latenz (erfolgreiche Requests) & 18,77 s \\
+    \hline
+    Fehler starten ab & $\sim$108\,s ($\approx$ 2–3 parallele VUs) \\
+    \hline
+    Fehlertyp & HTTP 502 Bad Gateway (Nginx-Timeout nach 60\,s) \\
+    \hline
+\end{tabular}\par
+\textit{Fazit}: Ab ca. 2–3 parallelen Clients reicht die CPU nicht mehr aus, um alle Requests innerhalb des Nginx-Timeouts zu beantworten. Der Engpass ist rein CPU-seitig — nicht mehr der Netzwerk-Overhead wie im alten Design.\par
 
 \textbf{Bekannte Performance-Treiber}:
 \begin{itemize}
-    \item ServerKey-Dekomprimierung: \verb|CompressedServerKey::decompress()| wird bei jedem Request neu durchgeführt - kein Caching. Das ist der größte einzelne Overhead neben der eigentlichen FHE-Berechnung.
-    \item FheOrd-Vergleiche sind die teuersten Einzeloperationen (Bootstrapping-Kosten).
+    \item FheOrd-Vergleiche sind die teuersten Einzeloperationen (Bootstrapping-Kosten) — sie dominieren Median, min und max.
     \item Rayon-Parallelisierung innerhalb einer Batcher-Runde skaliert mit den CPU-Kernen des Servers.
-    \item Skalierung mit n: Verdopplung von n erhöht die Batcher-Tiefe um ca. $2 \cdot log_2n$ Runden. Der Sprung von n=6 auf n=12 erhöht die Tiefe von ~9 auf ~16 Runden.
+    \item Skalierung mit n: Verdopplung von n erhöht die Batcher-Tiefe um ca. $2 \cdot log_2n$ Runden. Der Sprung von n=6 auf n=12 erhöht die Tiefe von $\sim$9 auf $\sim$16 Runden.
+    \item Session-Caching: Der ServerKey wird einmalig pro Session dekomprimiert. Nicht genutzte Sessions werden nach 10 Minuten automatisch gelöscht.
 \end{itemize}
 
+\textbf{Reproduzierbarkeit}:
+Die k6-Skripte liegen unter \verb|services/05-encrypted-statistics-service/src/Load-Tests/|. Vor dem ersten Lauf muss ein Payload generiert werden:
+\begin{lstlisting}
+# Payload generieren (einmalig, aus Repo-Root)
+cargo run --release -p encrypted-statistics-service --bin gen_payload
+
+# Tests ausfuehren (Windows PowerShell, aus Repo-Root)
+cd services\05-encrypted-statistics-service\src\Load-Tests
+k6 run baseline_load_test.js
+k6 run stress_load_test.js
+\end{lstlisting}
+
 \subsubsection{Limitationen}
-\textbf{Typsystem}: 
-TFHE-rs unterstützt keine Float-Typen — alle Berechnungen sind auf i8/i16/i32 beschränkt. Der Durchschnitt ist ganzzahlig — Nachkommastellen werden abgeschnitten (\verb|[1, 2]| $\rightarrow$ 1, nicht \verb|1,5|).
-
-\textbf{Privacy-Einschränkungen}: Die Listenlänge ist aus dem Request direkt ablesbar; \verb|bit_width| verrät zusätzlich die Größenordnung der Werte (\verb|bit_width=8| $\rightarrow$ alle Werte in [-128, 127]). Beides lässt sich durch Padding bzw. uniforme Bitbreite abmildern - für diesen Use Case nicht umgesetzt, da der Mehraufwand die Performance deutlich verschlechtern würde.
-
-\textbf{Keine Verifikation der Eingaben}: Der Server kann nicht prüfen, ob der Client korrekte FHE-Ciphertexte schickt - kein ZKP, keine Authentifizierung. Bei öffentlicher Erreichbarkeit sind Missbrauch durch Masse-Requests (teurer Rechenaufwand) und manipulierte Ciphertexte möglich.
-
-\textbf{Performance}: Kein Session-Caching - \verb|CompressedServerKey::decompress()| läuft bei jedem Request neu. Bei n > ~20 mit Int32 übersteigt die Rechenzeit mehrere Minuten; der Service ist für kleine Listen (n $\leq$ ~15) konzipiert. Der Batcher-Algorithmus sortiert außerdem die gesamte Liste, statt nur den Median-Index zu isolieren.
+\begin{itemize}
+    \item Kein Float-Support: TFHE-rs unterstützt keine Float-Typen — alle Berechnungen sind auf ganzzahlige Typen beschränkt. Der Durchschnitt wird ganzzahlig ausgegeben — Nachkommastellen werden abgeschnitten (\verb|[1, 2]| $\rightarrow$ 1, nicht \verb|1,5|).
+    \item Sichtbare Metadaten: Die Listenlänge ist direkt aus dem Request ablesbar. \verb|bit_width| verrät zusätzlich den Wertebereich der Eingabe. Beides ließe sich durch Padding oder eine feste Bitbreite verstecken — für diesen Use Case nicht umgesetzt, da es die Performance deutlich verschlechtern würde.
+    \item Keine Eingabevalidierung: Der Server kann nicht prüfen, ob der Client korrekte FHE-Ciphertexte schickt — kein ZKP, keine Authentifizierung. Bei öffentlichem Zugang sind viele Anfragen möglich, die teure Rechenzeit binden.
+    \item Listengröße: Bei n > $\sim$20 mit Int32 dauert die Berechnung mehrere Minuten. Der Service ist für kleine Listen (n $\leq$ $\sim$15) ausgelegt. Der Batcher-Algorithmus sortiert außerdem die gesamte Liste, statt nur den Median zu isolieren — das ist mehr Arbeit als nötig, wurde aber nicht optimiert.
+    \item Session-Lebensdauer: Sessions laufen nach 10 Minuten Inaktivität ab. Wer danach einen Request schickt, erhält 404 und muss den ServerKey erneut hochladen.
+\end{itemize}
