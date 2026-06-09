@@ -11,7 +11,7 @@ Independent Rust binaries in `services/<name>/`, all exposing health endpoints o
 | | Service | Version | API |
 |--|---------|---------|-----|
 | [01](services/01-encrypted-key-value-store/README.md) | Encrypted Key-Value Store | ![version](https://img.shields.io/badge/version-0.1.20-blue) | `http://159.195.145.100/kv` |
-| [02](services/02-encrypted-age-verification/README.md) | Encrypted Age Verification | ![version](https://img.shields.io/badge/version-0.1.24-blue) | `http://159.195.145.100/age-verification` |
+| [02](services/02-encrypted-age-verification/README.md) | Encrypted Age Verification | ![version](https://img.shields.io/badge/version-0.1.25-blue) | `http://159.195.145.100/age-verification` |
 | [03](services/03-encrypted-voting-polling/README.md) | Encrypted Voting & Polling | ![version](https://img.shields.io/badge/version-0.1.32-blue) | `http://159.195.145.100/voting` |
 | [04](services/04-sealed-bid-auction/README.md) | Sealed Bid Auction | ![version](https://img.shields.io/badge/version-0.1.24-blue) | `http://159.195.145.100/auction` |
 | [05](services/05-encrypted-statistics-service/README.md) | Encrypted Statistics Service | ![version](https://img.shields.io/badge/version-0.1.25-blue) | `http://159.195.145.100/statistics` |
