@@ -6,7 +6,7 @@ use crate::models::{
 use crate::store::SharedState;
 use axum::extract::State;
 use axum::Json;
-use tfhe::{CompressedServerKey};
+use tfhe::CompressedServerKey;
 use uuid::Uuid;
 
 // pub const VALUE_LENGTH: usize = 200;

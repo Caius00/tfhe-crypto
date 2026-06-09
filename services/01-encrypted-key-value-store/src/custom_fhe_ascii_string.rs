@@ -2,7 +2,8 @@ use std::ops::{BitAnd, Not};
 use tfhe::prelude::{CiphertextList, FheDecrypt, FheEncrypt, FheEq, FheTrivialEncrypt, IfThenElse};
 use tfhe::{
     ClientKey, CompactCiphertextList, CompressedCiphertextList,
-    CompressedCiphertextListBuilder, FheBool, FheUint8,
+    CompressedCiphertextListBuilder,
+    FheBool, FheUint8,
 };
 
 #[derive(Clone)]
