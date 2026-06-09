@@ -1,6 +1,6 @@
 # 🧬 06 · Encrypted Genomics
 
-![version](https://img.shields.io/badge/version-0.1.20-blue)
+![version](https://img.shields.io/badge/version-0.1.25-blue)
 
 Run genomic queries on encrypted sequences without exposing raw genetic data.
 

@@ -1,0 +1,76 @@
+.image-preview {
+    width: 45%;
+    height: auto;
+    object-fit: contain;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+}
+
+.page-split {
+    display: grid;
+    grid-template-columns: 45% 45%;
+    column-gap: 2cm;
+    height: 90%;
+}
+
+.image-row {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.alert-row { margin-bottom: 1rem; }
+
+app-card { display: block; margin-bottom: 1.25rem; }
+
+.step-title {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0 0 1rem 0;
+    color: var(--c-text);
+}
+
+.step-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    background: var(--c-primary);
+    color: #fff;
+    border-radius: 50%;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.arrow {
+    border: solid black;
+    border-width: 0 5px 5px 0;
+    display: inline-block;
+    padding: 10px;
+    margin: 20px;
+}
+
+.down {
+    transform: rotate(45deg);
+    -webkit-transform: rotate(45deg);
+}
+
+.button-row {
+    display: grid;
+    grid-template-columns: 20% 20% 20% 20%;
+    row-gap: 1vh;
+    column-gap: 1vh;
+}
+
+.grid-header {
+    border-bottom: 1px dotted black;
+}
+
+.scrollable-area {
+    height: 100%;
+    overflow: auto;
+}

@@ -2,5 +2,5 @@
   "nr": "04",
   "service": "sealed-bid-auction",
   "dir": "04-sealed-bid-auction",
-  "version": "0.1.20"
+  "version": "0.1.24"
 }

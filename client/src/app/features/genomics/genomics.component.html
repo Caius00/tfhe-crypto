@@ -1,1 +1,380 @@
-<h1>06 – Encrypted Genomics</h1>
+@if (!hasSession()) {
+  <section class="genomics-page session-lobby">
+    <header class="page-header">
+      <div>
+        <h1>06 - Encrypted Genomics</h1>
+        <p>Create or join session</p>
+      </div>
+      <div class="key-actions">
+        <button type="button" class="primary-button" (click)="createSession()" [disabled]="isBusy()">
+          New session
+        </button>
+        <button type="button" class="ghost-button" (click)="loadSessions(true)" [disabled]="isBusy()">
+          Refresh
+        </button>
+      </div>
+    </header>
+
+    <div class="status-row" [class.status-error]="status() === 'error'">
+      <span class="status-dot"></span>
+      <span>
+        @if (status() === 'generating') {
+          Creating session...
+        } @else {
+          No active session
+        }
+      </span>
+    </div>
+
+    @if (infoMessage()) {
+      <p class="message info">{{ infoMessage() }}</p>
+    }
+    @if (errorMessage()) {
+      <p class="message error">{{ errorMessage() }}</p>
+    }
+
+    <section class="fifo-panel" [class.fifo-locked]="fifoLocked()">
+      <div class="card-heading">
+        <h2>FIFO</h2>
+        <span>{{ fifoStatus().used }}/{{ fifoStatus().capacity }} jobs</span>
+      </div>
+      @if (fifoLocked()) {
+        <div class="fifo-lock">Fifo full, no capacities left</div>
+      }
+      <div class="fifo-list">
+        @for (job of fifoStatus().jobs; track job.id) {
+          <article class="fifo-row" [class.running]="job.state === 'running'" [class.own-session]="isOwnSessionJob(job)">
+            <div class="fifo-position">#{{ job.position }}</div>
+            <div class="fifo-job-main">
+              <strong>{{ job.job_type }}</strong>
+              <span>Session {{ job.session_id }}</span>
+            </div>
+            <span class="fifo-state">{{ fifoStateLabel(job) }}</span>
+          </article>
+        } @empty {
+          <div class="empty-state">This fifo is jobless</div>
+        }
+      </div>
+    </section>
+
+    <section class="action-card session-list-card">
+      <div class="card-heading">
+        <h2>Sessions</h2>
+        <span>{{ sessions().length }} available</span>
+      </div>
+      <div class="session-list">
+        @for (session of sessions(); track session.id) {
+          <article class="session-row">
+            <div>
+              <h3>{{ session.id }}</h3>
+              <span>{{ session.created_at }}</span>
+            </div>
+            <button type="button" class="ghost-button" (click)="joinSession(session)" [disabled]="isBusy()">
+              Join
+            </button>
+          </article>
+        } @empty {
+          <div class="empty-state">No active session</div>
+        }
+      </div>
+    </section>
+  </section>
+} @else {
+<section class="genomics-page">
+  <header class="page-header">
+    <div>
+      <h1>06 - Encrypted Genomics</h1>
+      <p>Session {{ activeSession()?.id }} - {{ sessionRole() === 'creator' ? 'Creator' : 'Joined' }}</p>
+    </div>
+    <div class="key-actions">
+      <button type="button" class="primary-button" (click)="leaveSession()" [disabled]="isBusy()">
+        Leave session
+      </button>
+      @if (hasKeys()) {
+        <button type="button" class="ghost-button" (click)="toggleKeys()" [disabled]="isBusy()">
+          Keys
+        </button>
+      }
+      <button type="button" class="ghost-button" (click)="reset()" [disabled]="isBusy() && status() !== 'generating'">
+        Reset
+      </button>
+    </div>
+  </header>
+
+  <div class="status-row" [class.status-error]="status() === 'error'">
+    <span class="status-dot" [class.ready]="hasKeys()"></span>
+    <span>
+      @if (status() === 'generating') {
+        Generate keys...
+      } @else if (status() === 'encrypting') {
+        Encrypting sequence...
+      } @else if (status() === 'processing') {
+        Calculating on server...
+      } @else if (hasPrivateKeys()) {
+        Client-Key rdy
+      } @else if (hasSession()) {
+        Public-Key rdy
+      } @else {
+        No keyset
+      }
+    </span>
+  </div>
+
+  @if (infoMessage()) {
+    <p class="message info">{{ infoMessage() }}</p>
+  }
+  @if (errorMessage()) {
+    <p class="message error">{{ errorMessage() }}</p>
+  }
+
+  <section class="fifo-panel" [class.fifo-locked]="fifoLocked()">
+    <div class="card-heading">
+      <h2>FIFO</h2>
+      <span>{{ fifoStatus().used }}/{{ fifoStatus().capacity }} Jobs</span>
+    </div>
+    @if (fifoLocked()) {
+      <div class="fifo-lock">Fifo full - no capacities left</div>
+    }
+    <div class="fifo-list">
+      @for (job of fifoStatus().jobs; track job.id) {
+        <article class="fifo-row" [class.running]="job.state === 'running'" [class.own-session]="isOwnSessionJob(job)">
+          <div class="fifo-position">#{{ job.position }}</div>
+          <div class="fifo-job-main">
+            <strong>{{ job.job_type }}</strong>
+            <span>Session {{ job.session_id }}</span>
+          </div>
+          <span class="fifo-state">{{ fifoStateLabel(job) }}</span>
+        </article>
+      } @empty {
+        <div class="empty-state">This fifo is jobless</div>
+      }
+    </div>
+  </section>
+
+  @if (keyOutputItems().length) {
+    <section class="key-output">
+      <div class="result-heading">
+        <h2>Keys</h2>
+        <span>Base64</span>
+      </div>
+      <div class="key-list">
+        @for (item of keyOutputItems(); track item.label) {
+          <div class="key-item">
+            <label>{{ item.label }}</label>
+            <textarea class="output-textarea" rows="5" readonly [ngModel]="item.value"></textarea>
+          </div>
+        }
+      </div>
+    </section>
+  }
+
+  <div class="action-grid">
+    <section class="action-card">
+      <div class="card-heading">
+        <h2>DNA-Sequenz</h2>
+        <span>{{ encryptedLength() }} encoded bases</span>
+      </div>
+      <textarea
+        rows="7"
+        [ngModel]="sequenceInput()"
+        (ngModelChange)="updateSequenceInput($event)"
+        maxlength="255"
+        spellcheck="false"
+      ></textarea>
+      <div class="button-row">
+        <button type="button" class="primary-button" (click)="encryptSequenceLocal()" [disabled]="!hasKeys()">
+          Encrypt locally
+        </button>
+        <button type="button" class="ghost-button" (click)="showEncryptedSequence()" [disabled]="!hasEncryptedSequence()">
+          Encrypted
+        </button>
+      </div>
+
+      @if (sequenceOutputValue()) {
+        <div class="sequence-output">
+          <div class="result-heading compact">
+            <h2>{{ sequenceOutputTitle() }}</h2>
+            <span>Base64</span>
+          </div>
+          <textarea class="output-textarea" rows="6" readonly [ngModel]="sequenceOutputValue()"></textarea>
+        </div>
+      }
+    </section>
+
+    <section class="action-card">
+      <div class="card-heading">
+        <h2>Risk pattern DB</h2>
+        <span>{{ riskPatterns().length }} Patterns</span>
+      </div>
+      <label class="field-label" for="risk-pattern-input">Add risk pattern</label>
+      <textarea
+        id="risk-pattern-input"
+        rows="3"
+        [ngModel]="newPatternInput()"
+        (ngModelChange)="newPatternInput.set($event)"
+        spellcheck="false"
+      ></textarea>
+      <div class="button-row">
+        <button type="button" class="primary-button" (click)="addRiskPattern()" [disabled]="!hasKeys()  || fifoLocked() || !hasNewPatternInput()">
+          Save pattern
+        </button>
+      </div>
+      <label class="field-label" for="risk-pattern-select">Pattern</label>
+      <select
+        id="risk-pattern-select"
+        [ngModel]="selectedPatternId()"
+        (ngModelChange)="selectedPatternId.set($event)"
+        [disabled]="isBusy() || !hasRiskPatterns()"
+      >
+        <option value="all">All patterns</option>
+        @for (pattern of riskPatterns(); track pattern.id) {
+          <option [value]="pattern.id">{{ pattern.sequence }}</option>
+        }
+      </select>
+      <div class="db-action-grid">
+        <button type="button" class="primary-button" (click)="compareDatabaseHamming()" [disabled]="!hasKeys() || isBusy() || !hasRiskPatterns() || fifoLocked()">
+          Hamming
+        </button>
+        <button type="button" class="ghost-button" (click)="loadRiskPatterns(true)" [disabled]="isBusy()">
+          Refresh
+        </button>
+        <button type="button" class="primary-button" (click)="compareDatabaseLevenshtein()" [disabled]="!hasKeys() || isBusy() || !hasRiskPatterns() || fifoLocked()">
+          Levenshtein
+        </button>
+        <button type="button" class="ghost-button" (click)="showResult()" [disabled]="!hasRiskDatabaseResult()">
+          Result
+        </button>
+      </div>
+    </section>
+
+    <section class="action-card">
+      <div class="card-heading">
+        <h2>Session-Sequences</h2>
+        <span>{{ sessionSequenceGroups().length }} Sessions</span>
+      </div>
+      <div class="button-row">
+        <button type="button" class="primary-button" (click)="storeSessionSequence()" [disabled]="!hasKeys() || fifoLocked()">
+          save sequence
+        </button>
+      </div>
+      <label class="field-label" for="session-sequence-select">SessionID</label>
+      <select
+        id="session-sequence-select"
+        [ngModel]="selectedSequenceSessionId()"
+        (ngModelChange)="selectedSequenceSessionId.set($event)"
+        [disabled]="isBusy() || !hasSessionSequenceGroups()"
+      >
+        @for (group of sessionSequenceGroups(); track group.session_id) {
+          <option [value]="group.session_id">{{ group.session_id }} ({{ group.sequence_count }})</option>
+        }
+      </select>
+      <div class="db-action-grid">
+        <button type="button" class="primary-button" (click)="compareSessionSequencesHamming()" [disabled]="!hasKeys() || isBusy() || !hasSessionSequenceGroups() || fifoLocked()">
+          Hamming
+        </button>
+        <button type="button" class="ghost-button" (click)="loadSessionSequenceGroups(true)" [disabled]="isBusy()">
+          Refresh
+        </button>
+        <button type="button" class="primary-button" (click)="compareSessionSequencesLevenshtein()" [disabled]="!hasKeys() || isBusy() || !hasSessionSequenceGroups() || fifoLocked()">
+          Levenshtein
+        </button>
+        <button type="button" class="ghost-button" (click)="showResult()" [disabled]="!hasSessionSequenceResult()">
+          Result
+        </button>
+      </div>
+    </section>
+  </div>
+
+  @if (showResultPanel() && resultKind() !== 'none') {
+    <section class="results-panel">
+      @if (resultKind() === 'hamming') {
+        <div class="result-heading">
+          <h2>Hamming-Distanzen</h2>
+          <span>{{ hammingResults().length }} Window</span>
+        </div>
+        <div class="match-indicator" [class.match]="hasHammingMatch()" [class.no-match]="!hasHammingMatch()">
+          {{ hasHammingMatch() ? 'MATCH' : 'NO MATCH' }}
+        </div>
+        <div class="result-list">
+          @for (item of hammingResults(); track item.index) {
+            <div class="result-row" [class.match-window]="item.distance === 0" [class.no-match-window]="item.distance > 0">
+              <span>Window {{ item.index }}</span>
+              <strong>{{ item.distance }}</strong>
+            </div>
+          }
+        </div>
+      }
+
+      @if (resultKind() === 'levenshtein') {
+        <div class="result-heading">
+          <h2>Levenshtein-Distanz</h2>
+          <strong>{{ levenshteinResult() }}</strong>
+        </div>
+        <div class="match-indicator" [class.match]="levenshteinResult() === 0" [class.no-match]="levenshteinResult() !== 0">
+          {{ levenshteinResult() === 0 ? 'MATCH' : 'NO MATCH' }}
+        </div>
+        <div class="result-list">
+          <div class="result-row" [class.match-window]="levenshteinResult() === 0" [class.no-match-window]="levenshteinResult() !== 0">
+            <span>Distanz</span>
+            <strong>{{ levenshteinResult() }}</strong>
+          </div>
+        </div>
+      }
+
+      @if (resultKind() === 'db-hamming' || resultKind() === 'db-levenshtein' || resultKind() === 'session-hamming' || resultKind() === 'session-levenshtein') {
+        <div class="result-heading">
+          <h2>Database results</h2>
+          <span>{{ databaseResults().length }} hits</span>
+        </div>
+        <div class="db-match-summary" [class.match]="databaseMatchCount() > 0" [class.no-match]="databaseMatchCount() === 0">
+          <strong>{{ databaseMatchCount() }} MATCHES</strong>
+          <span>{{ databaseResults().length - databaseMatchCount() }} NO MATCH</span>
+        </div>
+        <div class="db-grid">
+          @for (entry of sortedDatabaseResults(); track entry.label) {
+            <article class="db-result" [class.match-entry]="entryHasMatch(entry)" [class.no-match-entry]="!entryHasMatch(entry)">
+              <div class="db-result-heading">
+                <h3>{{ entry.label }}</h3>
+                <span>{{ entry.skippedReason ? 'Skipped' : 'Min value: ' + (entry.bestDistance ?? '-') }}</span>
+              </div>
+              <div class="match-indicator compact" [class.match]="entryHasMatch(entry)" [class.no-match]="!entryHasMatch(entry)">
+                {{ entryHasMatch(entry) ? 'MATCH' : 'NO MATCH' }}
+              </div>
+              <div class="result-list compact">
+                @if (entry.skippedReason) {
+                  <div class="result-row no-match-window">
+                    <span>Skipped</span>
+                    <strong>{{ entry.skippedReason }}</strong>
+                  </div>
+                } @else {
+                  @for (distance of entry.distances; track $index) {
+                    <div class="result-row" [class.match-window]="distance === 0" [class.no-match-window]="distance > 0">
+                      <span>{{ resultKind() === 'db-hamming' || resultKind() === 'session-hamming' ? 'Window ' + $index : 'Distanz' }}</span>
+                      <strong>{{ distance }}</strong>
+                    </div>
+                  }
+                }
+              </div>
+            </article>
+          }
+        </div>
+      }
+
+      @if (resultKind() === 'encrypted') {
+        <div class="result-heading">
+          <h2>{{ encryptedResultTitle() }}</h2>
+          <span>Cannot decrypt</span>
+        </div>
+        <div class="key-list">
+          @for (item of encryptedResultItems(); track item.label) {
+            <div class="key-item">
+              <label>{{ item.label }}</label>
+              <textarea class="output-textarea" rows="5" readonly [ngModel]="item.value"></textarea>
+            </div>
+          }
+        </div>
+      }
+    </section>
+  }
+</section>
+}

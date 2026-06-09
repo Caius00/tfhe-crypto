@@ -44,8 +44,7 @@ fn test_decode_server_key_corrupt_bytes() {
 }
 
 /// Gleiche Logik wie beim ServerKey: ungültiges base64 im encrypted_age-Feld
-/// muss als BAD_REQUEST zurückkommen. Die Fehlerbehandlung beider Felder ist
-/// unabhängig und muss separat getestet werden.
+/// muss als BAD_REQUEST zurückkommen.
 #[test]
 fn test_decode_encrypted_age_invalid_base64() {
     let result = decode_encrypted_age("not-valid-base64!!!");
@@ -53,9 +52,7 @@ fn test_decode_encrypted_age_invalid_base64() {
     assert_eq!(result.err().unwrap().0, StatusCode::BAD_REQUEST);
 }
 
-/// Gültiges base64, aber kein serialisierter FheInt8. Stellt sicher, dass ein
-/// Client der z.B. den falschen Wert base64-kodiert hat einen verständlichen
-/// Fehler bekommt und der Server stabil bleibt.
+/// Gültiges base64, aber kein serialisierter FheInt8.
 #[test]
 fn test_decode_encrypted_age_corrupt_bytes() {
     let corrupt = general_purpose::STANDARD.encode(vec![1, 2, 3, 4, 5]);
@@ -64,19 +61,7 @@ fn test_decode_encrypted_age_corrupt_bytes() {
     assert_eq!(result.err().unwrap().0, StatusCode::BAD_REQUEST);
 }
 
-// FHE Unit-Tests (FHE-Logik direkt, kein HTTP)
-
 /// Alle Grenzwerte der age_check()-Funktion in einem FHE-Kontext.
-/// Ein einziger Test statt mehrerer, um Key-Generierung nur einmal zu zahlen.
-///
-/// Grenzwerte:
-///   17  → false  (unter 18)
-///   18  → true   (exakter Grenzwert von gt(17))
-///   20  → true   (normaler positiver Fall)
-///   0   → false  (Nullwert: ge(0) ist true, aber gt(17) ist false)
-///   -1  → false  (negativer Grenzwert: ge(0) schlägt fehl)
-///   -17 → false  (negativer Wert)
-///   127 → true   (i8::MAX)
 #[test]
 #[serial]
 fn test_age_check_boundary_values() {
@@ -100,11 +85,7 @@ fn test_age_check_boundary_values() {
     }
 }
 
-// Der einzige Test der den kompletten Pfad von Ende zu Ende prüft:
-// Client-seitige Verschlüsselung → base64/bincode Serialisierung → HTTP POST
-// → FHE-Berechnung auf dem Server → Deserialisierung → Client-seitige
-// Entschlüsselung. Fängt Integrationsfehler die in den Unit-Tests unsichtbar
-// wären, z.B. wenn encode_result() und decode_encrypted_age() inkompatible
+/// End-to-End-Test des zustandslosen Endpunkts (POST /).
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_verify_age_full_roundtrip() {
@@ -151,4 +132,130 @@ async fn test_verify_age_full_roundtrip() {
         enc_result.decrypt(client_key),
         "User (20) sollte als volljährig erkannt werden"
     );
+}
+
+/// Setup mit ungültigem ServerKey muss 400 zurückgeben.
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_setup_session_invalid_server_key() {
+    let app = create_app();
+
+    let payload = serde_json::json!({ "server_key": "not-valid-base64!!!" });
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/session")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+/// Verify mit unbekannter session_id muss 404 zurückgeben.
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_verify_age_session_not_found() {
+    let app = create_app();
+
+    let payload = serde_json::json!({ "encrypted_age": "dGVzdA==" });
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/verify/nicht-existierende-session-id")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+/// End-to-End-Test des session-basierten Flows:
+/// POST /session → POST /verify/:id → DELETE /session/:id
+#[tokio::test(flavor = "multi_thread")]
+#[serial]
+async fn test_session_based_roundtrip() {
+    let (client_key, server_key) = get_test_setup();
+
+    let age: i8 = 20;
+    let encrypted_age = FheInt8::encrypt(age, client_key);
+
+    let sk_payload = general_purpose::STANDARD.encode(bincode::serialize(server_key).unwrap());
+    let age_payload = general_purpose::STANDARD.encode(bincode::serialize(&encrypted_age).unwrap());
+
+    let app = create_app();
+
+    // 1. Session aufbauen
+    let setup_payload = serde_json::json!({ "server_key": sk_payload });
+    let setup_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/session")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_vec(&setup_payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(setup_response.status(), StatusCode::OK);
+
+    let setup_bytes = axum::body::to_bytes(setup_response.into_body(), 1024)
+        .await
+        .unwrap();
+    let setup_body: serde_json::Value = serde_json::from_slice(&setup_bytes).unwrap();
+    let session_id = setup_body["session_id"].as_str().unwrap().to_string();
+
+    // 2. Altersverifikation
+    let verify_payload = serde_json::json!({ "encrypted_age": age_payload });
+    let verify_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/verify/{}", session_id))
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_vec(&verify_payload).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(verify_response.status(), StatusCode::OK);
+
+    let verify_bytes = axum::body::to_bytes(verify_response.into_body(), 10 * 1024 * 1024)
+        .await
+        .unwrap();
+    let age_res: AgeResponse = serde_json::from_slice(&verify_bytes).unwrap();
+    let res_bytes = general_purpose::STANDARD.decode(&age_res.is_adult).unwrap();
+    let enc_result: FheBool = bincode::deserialize(&res_bytes).unwrap();
+
+    assert!(
+        enc_result.decrypt(client_key),
+        "User (20) sollte als volljährig erkannt werden"
+    );
+
+    // 3. Session löschen
+    let delete_response = app
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/session/{}", session_id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(delete_response.status(), StatusCode::OK);
 }

@@ -12,6 +12,7 @@ export class InputComponent {
   @Input() placeholder = '';
   @Input() type: 'text' | 'number' | 'password' = 'text';
   @Input() value = '';
+  @Input() disabled = false;
   @Output() valueChange = new EventEmitter<string>();
 
   onInput(val: string): void {

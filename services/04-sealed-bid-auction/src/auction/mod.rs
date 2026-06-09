@@ -87,10 +87,3 @@ pub async fn auktion_auswerten() -> ApiResult<AuctionResponse> {
         encrypted_result: general_purpose::STANDARD.encode(gewinner_nachricht),
     }))
 }
-
-/// GET /hallo
-pub async fn hallo_test() -> Json<StringResponse> {
-    Json(StringResponse {
-        response: "Hallo aus der FHE-Auktion!".to_string(),
-    })
-}

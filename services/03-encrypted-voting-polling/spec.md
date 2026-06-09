@@ -44,7 +44,10 @@ Mit der Finalisierung wird die Session vollständig geschlossen. Ab diesem Zeitp
 
 Der Service stellt eine fachliche Voting-/Polling-API bereit, mit der Sessions erstellt, Teilnehmer verwaltet und verschlüsselte Stimmen abgegeben werden können. Die OpenAPI-Definition wird automatisch generiert und ist unter `/openapi.json` sowie `/docs` (Swagger UI) verfügbar.
 
-Im gesamten Service wird der PublicKey als CompressedPublicKey verwendet. Dieser ermöglicht eine Batch-Verschlüsselung.
+Im gesamten Service werden die TFHE-Schlüssel in serialisierter Form übertragen und gespeichert (Base64 kodiert). Für die Verschlüsselung von Teilnehmernamen und Stimmen wird ein CompactPublicKey verwendet. Diese kompakte Repräsentation des PublicKeys reduziert die Größe des öffentlichen Schlüssels und ermöglicht eine effiziente Batch-Verschlüsselung.
+Für die homomorphe Auswertung wird ein CompressedServerKey verwendet. Dieser wird ebenfalls aus dem ClientKey abgeleitet und bei der Erstellung einer Session an das Backend übertragen. Der Server speichert den Schlüssel ausschließlich in seiner komprimierten, serialisierten Form. Erst unmittelbar vor der Durchführung homomorpher Operationen wird der Schlüssel deserialisiert und zu einem regulären ServerKey dekomprimiert. Dadurch wird der Speicherbedarf des Backend-Zustands reduziert, während die vollständige Funktionalität der TFHE-Auswertung erhalten bleibt.
+Der geheime ClientKey verbleibt ausschließlich beim Session-Ersteller und wird zu keinem Zeitpunkt an das Backend übertragen. Nur mit diesem Schlüssel können verschlüsselte Namen und aggregierte Abstimmungsergebnisse wieder entschlüsselt werden.
+
 ### POST /session
 
 Legt eine neue Voting-Session an.
@@ -432,25 +435,26 @@ Die Performance- und Stresstests wurden auf einem virtuellen KVM-Server von Netc
 
 Es wurden zwei Testszenarien mit unterschiedlichen funktionalen Schwerpunkten untersucht:
 
-1. Teilnehmer-Anfragen: Analyse der Endpunkte (POST /join und GET /status), um das Systemverhalten bei einem synchronen Anstieg von Join-Anfragen und hochfrequentem Polling durch die Teilnehmer zu evaluieren.
+1. Teilnehmer-Anfragen: Analyse der Endpunkte (POST /join und GET /status), um das Systemverhalten bei einem Anstieg von Join-Anfragen und hochfrequentem Polling durch die Teilnehmer zu evaluieren.
 2. Ergebnisauswertung: Dedizierte Stressprüfung des Endpunkts (GET /results/{session_id}/{creator_id}) unter einer Dauerlast von konstant 10 parallelen VUs. Um für diesen k6-Test die mathematische Auslastung der CPU zu erzwingen, wurde das System vorab in einen Zustand versetzt, in dem die Bedingung voted_count >= approved_count dauerhaft erfüllt ist. Dadurch wurde sichergestellt, dass jeder eingehende Request unweigerlich die rechenintensive kryptografische Funktion aggregate_votes_ciphertext_only durchläuft. Dieses Szenario wurde in zwei separaten Durchläufen evaluiert, einmal mit einer Basis von 2 Teilnehmern und im Anschluss mit 10 Teilnehmern.
 
-*Test 1-Lasttest (Join und Polling) (03.06.2026)*
+*Performancetest 1 (Join und Polling) (08.06.2026)*
 
-In diesem Szenario wurde der Beginn des Lebenszyklus einer Sitzung simuliert. Nach der Erstellung einer Session versuchen Clients kontinuierlich, dieser beizutreten (POST /join). Direkt nach der erfolgreichen Join-Anfrage folgt ein hochfrequentes Abfragen des Sitzungsstatus (GET /status). Die Last wurde über k6 mit einer ansteigenden Kurve auf bis zu 10 parallele VUs skaliert.
+Im ersten Testszenario wurde ein plötzlicher Anstieg der Teilnehmeraktivität simuliert. Die Anzahl der virtuellen Nutzer wurde innerhalb von zwei Sekunden von fünf auf 500 erhöht. Jeder Teilnehmer führte genau eine Join-Anfrage aus und wechselte anschließend in ein hochfrequentes Polling des Sitzungsstatus mit einem Intervall von 200 ms.
 
-|Metrik            | Wert                             |
-|------------------|----------------------------------|
-|p50               | 12,40 ms                         |
-|p90               | 42,10 ms                         |
-|p95               | 28,15 ms                         |
-|Maximum           | 42,80 ms                         |
-|Fehlerrate        | 0%  <br/>(340/340 Checks erfolgreich) |
-*Fazit von Lasttest 1:*
+|Metrik            | join                                  |  status |
+|------------------|---------------------------------------|--------------|
+|p50               | 17,48 ms                              |17,16 ms|
+|p90               | 21,92 ms                              |21,32 ms|
+|p95               | 24,45 ms                              |25,02 ms|
+|Maximum           | 41,86 ms                              | 95,06 ms|
+| Fehlerrate| 0%|0%|
 
-Die Messergebnisse zeigen eine fehlerfreie Performance im optimalen Bereich. Die unverschlüsselten Standard-Endpunkte weisen keinerlei Skalierungsprobleme oder Engpässe auf. Unabhängig von der Anzahl der parallelen virtuellen Nutzer bleibt die Antwortzeit stabil im niedrigen zweistelligen Millisekunden Bereich. Es gibt keine nennenswerten Ausschläge oder Treppeneffekte.
+*Fazit von Performancetest 1:*
 
-*Test 2-Stresstest der FHE-Ergebnisauswertung (03.06.2026)*
+Während des gesamten Tests wurden insgesamt 105.675 HTTP-Anfragen verarbeitet. Dabei konnten keine fehlgeschlagenen Requests beobachtet werden. Sowohl die Join- als auch die Status-Endpunkte zeigten stabile Antwortzeiten im niedrigen zweistelligen Millisekundenbereich (Join: p95 = 24,45 ms; Status: p95 = 25,02 ms), sodass im untersuchten Lastbereich keine Hinweise auf Engpässe oder Skalierungsprobleme festgestellt werden konnten.
+
+*Performancetest 2: FHE-Ergebnisauswertung (03.06.2026)*
 
 Hierbei wurde die mathematisch rechenintensive homomorphe Aggregation evaluiert. Um den direkten Einfluss der Kryptographischen Komplexität zu untersuchen, wurde derselbe Stresstest bei dauerhaft 10 parallelen VUs in zwei getrennten Konfigurationen durchgeführt, einmal mit 2 hinterlegten Stimmen und einmal mit 10 hinterlegten Stimmen. Die Auswahl von genau 2 bzw. 10 Teilnehmern erfolgte, um einerseits die mathematische Grundlatenz zu bestimmen und andererseits die Skalierung der FHE-Operation unter moderater Gruppenlast zu überprüfen.
 

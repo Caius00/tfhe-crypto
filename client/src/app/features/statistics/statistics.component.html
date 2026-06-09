@@ -1,104 +1,110 @@
 <div class="page">
-  <h1>05 – Encrypted Statistics Service</h1>
-  <p class="subtitle">
-    Die Zahlen werden lokal verschlüsselt. Der Server berechnet alle Statistiken
-    homomorph, ohne die Klartextwerte zu kennen.
-  </p>
+  <app-page-header
+    title="05 – Encrypted Statistics Service"
+    subtitle="Die Zahlen werden lokal verschlüsselt. Der Server berechnet alle Statistiken homomorph, ohne die Klartextwerte zu kennen."
+  />
 
   <!-- Step: init -->
-  @if (step() === 'init') {
-    <div class="card">
+  @if (currentStep() === 'init') {
+    <app-card>
       <h2>Schritt 1: Schlüssel generieren</h2>
       <p class="hint">
         Es werden ein Client-Key (lokal) und ein Server-Key (für das Backend)
         erzeugt. Dies dauert <strong>30–90 Sekunden</strong>.
       </p>
       <app-button label="Schlüssel generieren" (clicked)="generateKeys()" />
-    </div>
+    </app-card>
   }
 
   <!-- Step: generating keys -->
-  @if (step() === 'generating') {
-    <div class="card loading-card">
-      <app-spinner />
-      <div>
-        <p class="loading-title">Schlüssel werden generiert …</p>
-        <p class="hint">TFHE-Schlüsselgenerierung läuft. Bitte warten.</p>
-      </div>
-    </div>
+  @if (currentStep() === 'generating') {
+    <app-loading-overlay
+      message="Schlüssel werden generiert …"
+      hint="TFHE-Schlüsselgenerierung läuft. Bitte warten."
+      variant="crypto"
+    />
   }
 
   <!-- Step: enter list -->
-  @if (step() === 'enter-list') {
-    <div class="card">
+  @if (currentStep() === 'enter-list') {
+    <app-card>
       <div class="status-badge success">Schlüssel bereit</div>
       <h2>Schritt 2: Zahlen eingeben</h2>
       <p class="hint">
-        Komma-getrennte Ganzzahlen eingeben (z.B. <code>-5, 3, -10, 7, 2</code>).
-        Die Werte werden mit dem Client-Key verschlüsselt und nur verschlüsselt
-        an den Server gesendet.
+        Komma-getrennte Ganzzahlen im Bereich <strong>−2.147.483.648 bis 2.147.483.647</strong>
+        (Int32). Die Bitbreite wird automatisch optimiert — kleine Werte (bis 127) laufen
+        als Int8, mittlere (bis 32.767) als Int16, große als Int32.
       </p>
       <app-input
         label="Zahlen (komma-getrennt)"
         type="text"
-        placeholder="z.B. -5000, 3200, -10800, 7500"
-        [value]="listInput()"
-        (valueChange)="listInput.set($event)"
+        placeholder="z.B. -5, 3, -10, 7, 2"
+        [value]="rawListInput()"
+        (valueChange)="rawListInput.set($event)"
       />
+      @if (validationError()) {
+        <app-alert [message]="validationError()" variant="error" />
+      }
       <div class="actions">
         <app-button label="Statistiken berechnen" (clicked)="compute()" />
         <app-button label="Zurücksetzen" type="button" (clicked)="reset()" />
       </div>
-    </div>
+    </app-card>
   }
 
   <!-- Step: computing -->
-  @if (step() === 'computing') {
-    <div class="card loading-card">
-      <app-spinner />
-      <div>
-        <p class="loading-title">Berechnung läuft …</p>
-        <p class="hint">
-          Der Server führt alle Berechnungen homomorph auf den verschlüsselten
-          Daten aus. Dies kann einige Minuten dauern.
-        </p>
-      </div>
-    </div>
+  @if (currentStep() === 'computing') {
+    <app-loading-overlay
+      message="Berechnung läuft …"
+      hint="Der Server führt alle Berechnungen homomorph auf den verschlüsselten Daten aus. Dies kann einige Minuten dauern."
+      variant="spinner"
+    />
   }
 
   <!-- Step: result -->
-  @if (step() === 'result' && result()) {
-    <div class="card">
+  @if (currentStep() === 'result' && computationResult()) {
+    <app-card>
       <h2>Ergebnis</h2>
       <p class="hint">
         Der Server hat alle Statistiken verschlüsselt berechnet und zurückgegeben.
         Die Entschlüsselung erfolgte lokal mit dem Client-Key.
+        @if (computeDurationMs() !== null) {
+          Berechnungszeit: <strong>{{ (computeDurationMs()! / 1000).toFixed(1) }} s</strong>
+        }
       </p>
       <table class="result-table">
         <tbody>
           <tr>
+            <td class="label">Eingabe</td>
+            <td class="value">{{ displayedInputNumbers().join(', ') }}</td>
+          </tr>
+          <tr>
             <td class="label">Summe</td>
-            <td class="value">{{ result()!.sum }}</td>
+            <td class="value">{{ computationResult()!.sum }}</td>
           </tr>
           <tr>
             <td class="label">Anzahl</td>
-            <td class="value">{{ result()!.count }}</td>
+            <td class="value">{{ computationResult()!.count }}</td>
           </tr>
           <tr>
             <td class="label">Minimum</td>
-            <td class="value">{{ result()!.min }}</td>
+            <td class="value">{{ computationResult()!.min }}</td>
           </tr>
           <tr>
             <td class="label">Maximum</td>
-            <td class="value">{{ result()!.max }}</td>
+            <td class="value">{{ computationResult()!.max }}</td>
           </tr>
           <tr>
             <td class="label">Durchschnitt</td>
-            <td class="value">{{ result()!.average }}</td>
+            <td class="value">{{ computationResult()!.average }}</td>
           </tr>
           <tr>
             <td class="label">Median</td>
-            <td class="value">{{ result()!.median }}</td>
+            <td class="value">{{ computationResult()!.median }}</td>
+          </tr>
+          <tr>
+            <td class="label">Verwendete Bitbreite</td>
+            <td class="value">Int{{ computationResult()!.bitWidth }}</td>
           </tr>
         </tbody>
       </table>
@@ -106,15 +112,14 @@
         <app-button label="Neue Berechnung" (clicked)="computeAnother()" />
         <app-button label="Komplett zurücksetzen" type="button" (clicked)="reset()" />
       </div>
-    </div>
+    </app-card>
   }
 
   <!-- Step: error -->
-  @if (step() === 'error') {
-    <div class="card error-card">
-      <h2>Fehler</h2>
-      <p>{{ errorMessage() }}</p>
+  @if (currentStep() === 'error') {
+    <app-card variant="error">
+      <app-alert [message]="validationError()" variant="error" />
       <app-button label="Zurücksetzen" (clicked)="reset()" />
-    </div>
+    </app-card>
   }
 </div>

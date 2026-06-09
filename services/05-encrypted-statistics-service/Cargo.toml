@@ -1,6 +1,6 @@
 [package]
 name = "encrypted-statistics-service"
-version = "0.1.21"
+version = "0.1.27"
 edition = "2021"
 publish = false
 description = "Encrypted Statistics Service"
@@ -9,12 +9,19 @@ description = "Encrypted Statistics Service"
 tfhe = { workspace = true, features = ["software-prng"] }
 axum.workspace = true
 health.workspace = true
+openapi-docs.workspace = true
+metrics-exporter.workspace = true
+observability.workspace = true
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+aide.workspace = true
+schemars.workspace = true
 rayon = "1"
 bincode = "1"
 base64 = "0.22"
+uuid = { version = "1", features = ["v4"] }
+tracing = "0.1"
 
 [dev-dependencies]
 serial_test = "3"

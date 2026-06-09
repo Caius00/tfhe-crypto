@@ -15,7 +15,7 @@ function isLocalRunning() {
   try {
     execSync(
       `node -e "var n=require('net').createConnection(8080,'localhost');n.on('connect',()=>{n.destroy();process.exit(0)});n.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),1000)"`,
-      { stdio: 'ignore', timeout: 2000 }
+      { stdio: 'ignore', timeout: 2000 },
     );
     return true;
   } catch {
@@ -26,7 +26,7 @@ function isLocalRunning() {
 const target = isLocalRunning() ? LOCAL : REMOTE;
 
 console.log(
-  `\n[Proxy] → ${target === LOCAL ? 'Lokal (localhost:8080)' : 'Remote (159.195.145.100)'}\n`
+  `\n[Proxy] → ${target === LOCAL ? 'Lokal (localhost:8080)' : 'Remote (159.195.145.100)'}\n`,
 );
 
 const paths = [
@@ -65,5 +65,5 @@ module.exports = Object.fromEntries(
         rewrite: (p) => p.replace(new RegExp(`^${path}`), '') || '/',
       }),
     },
-  ])
+  ]),
 );

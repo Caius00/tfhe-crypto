@@ -6,65 +6,137 @@
 ---
 
 ### Funktionsbeschreibung
-
+ 
 Der Use Case Encrypted Age Verification löst das Problem, das Alter einer Person serverseitig zu prüfen, ohne dass der Server den tatsächlichen Alterswert jemals im Klartext zu Gesicht bekommt. Das Ergebnis der Prüfung (volljährig: ja/nein) wird ebenfalls verschlüsselt zurückgegeben – der Server kennt weder Eingabe noch Ausgabe.
-
+ 
 Das Alter wird bereits auf dem Client mit dem ClientKey verschlüsselt und ausschließlich in verschlüsselter Form an das Backend übertragen. Das Backend führt die Altersüberprüfung mittels Fully Homomorphic Encryption (TFHE) durch, ohne den zugrunde liegenden Alterswert entschlüsseln zu können. Die Entschlüsselung des Ergebnisses ist ausschließlich durch den Besitzer des ClientKeys möglich.
-
+ 
+Der Service ist session-basiert, denn der ServerKey wird einmalig hochgeladen und gecacht. Danach kann der Client beliebig viele Altersverifikationen durchführen. 
+ 
 #### Akteure
-
-- **Client:** Generiert das TFHE-Schlüsselpaar, verschlüsselt das Alter mit dem `ClientKey`, sendet `encrypted_age` und `server_key` an den Server, empfängt das verschlüsselte Ergebnis und entschlüsselt es lokal. Der Client besitzt den `ClientKey` und ist der einzige Akteur, der das Ergebnis entschlüsseln kann.
-
-- **Backend (Server):** Empfängt `encrypted_age` und `CompressedServerKey`, setzt den ServerKey, führt die homomorphe Altersüberprüfung (`age_check`) durch und gibt das verschlüsselte Ergebnis (`FheBool`) zurück. Der Server sieht zu keinem Zeitpunkt das Alter oder das Ergebnis im Klartext.
+ 
+- **Client:** Generiert das TFHE-Schlüsselpaar, verschlüsselt das Alter mit dem `ClientKey`, kommuniziert mit dem Server und entschlüsselt das Ergebnis lokal. Der Client besitzt den `ClientKey` und ist der einzige Akteur, der das Ergebnis entschlüsseln kann.
+- **Backend (Server):** Empfängt den `CompressedServerKey` (einmalig beim Session-Setup), cacht den dekomprimierten `ServerKey` im `AppState`, führt bei jedem Verify-Request die homomorphe Altersüberprüfung (`age_check`) durch und gibt das verschlüsselte Ergebnis (`FheBool`) zurück. Der Server sieht zu keinem Zeitpunkt das Alter oder das Ergebnis im Klartext.
 
 #### Lebenszyklus einer Session
+ 
+**Phase 1 – Session-Setup (einmalig):**
 
-Da dieser Use Case vollständig zustandslos ist, gibt es keine persistente Session. Der gesamte Ablauf findet innerhalb eines einzelnen HTTP-Requests statt:
+1. Client generiert `ClientKey` und `CompressedServerKey` lokal. Das Alter wird als `FheInt8` mit dem `ClientKey` verschlüsselt.
+2. Client sendet `POST /session` mit dem `CompressedServerKey` (~80 MB) als JSON-Body.
+3. Server dekomprimiert den Key einmalig (`CompressedServerKey::decompress()`), speichert den `ServerKey` im `AppState` und gibt eine `session_id` (UUID) zurück.
 
-1. **Vorbereitung (Client):** Client generiert `ClientKey` und `CompressedServerKey` lokal. Das Alter wird als `FheInt8` mit dem `ClientKey` verschlüsselt. Beide Werte werden bincode-serialisiert und base64-kodiert.
-2. **Request:** Client sendet `POST /` mit `encrypted_age` und `server_key` als JSON-Body.
-3. **Verarbeitung (Server):** Server dekodiert und deserialisiert beide Felder, setzt den ServerKey im globalen Thread-Kontext und führt `age_check` aus: `enc_age.gt(17) & enc_age.ge(0)`.
-4. **Response:** Server serialisiert das `FheBool`-Ergebnis, base64-kodiert es und gibt es als `is_adult` zurück.
-5. **Auswertung (Client):** Client dekodiert und deserialisiert `is_adult`, entschlüsselt das `FheBool` mit dem `ClientKey` und erhält das boolesche Ergebnis.
+**Phase 2 – Verifikation:**
 
-#### Verhaltensdiagramm
+4. Client sendet `POST /verify/{session_id}` mit ausschließlich `encrypted_age` im Body.
+5. Server liest den gecachten `ServerKey` aus dem `AppState`, führt `age_check` aus (`enc_age.gt(17) & enc_age.ge(0)`) und gibt das verschlüsselte `FheBool`-Ergebnis zurück.
+6. Client entschlüsselt das `FheBool` mit dem `ClientKey` und erhält das boolesche Ergebnis.
+ 
+**Phase 3 – Cleanup:**
 
-![Verhaltensdiagramm](./Ablaufdiagramm_Age_Verification.png)
+7. Client sendet `DELETE /session/{session_id}` um die Session zu beenden und den serverseitigen RAM freizugeben.
 
 ---
 
+#### Verhaltensdiagramm
+
+```mermaid
+
+sequenceDiagram
+    participant C as Client
+    participant S as Server
+
+    Note over C,S: Phase 1 – Session-Setup (einmalig)
+
+    C->>C: Schlüsselpaar generieren
+    C->>C: Alter verschlüsseln FheInt8::encrypt(age, client_key)
+    C->>S: POST /session {server_key}
+    activate S
+    S->>S: Dekomprimieren + cachen ServerKey im AppState
+    S-->>C: 200 OK {session_id: uuid}
+    deactivate S
+
+    Note over C,S: Phase 2 – Verifikation (wiederholbar)
+
+    C->>S: POST /verify/{session_id} {encrypted_age}
+    activate S
+    S->>S: age_check(enc_age) gt(17) & ge(0) → FheBool
+    S-->>C: 200 OK {is_adult: base64(FheBool)}
+    deactivate S
+    C->>C: FheBool::decrypt(client_key) → bool
+
+    Note over C,S: Phase 3 – Cleanup (optional)
+
+    C-->>S: DELETE /session/{session_id}
+    S-->>C: 200 OK {status: deleted}
+```
+---
+
 ### OpenAPI-Schnittstelle
-
-Der Service stellt eine einzelne verschlüsselte Verifikations-API bereit. Die OpenAPI-Definition wird automatisch generiert und ist unter `/openapi.json` sowie `/docs` (Swagger UI) erreichbar.
-
+ 
+Der Service stellt eine session-basierte verschlüsselte Verifikations-API bereit. Die OpenAPI-Definition wird automatisch generiert und ist unter `/openapi.json` sowie `/docs` (Swagger UI) erreichbar.
+ 
 Im gesamten Service wird der ServerKey als `CompressedServerKey` übertragen (bincode-serialisiert, base64-kodiert).
-
-### POST /
-
-Führt eine verschlüsselte Altersverifikation durch.
-
+ 
+### POST /session
+ 
+Lädt den `CompressedServerKey` einmalig hoch, dekomprimiert ihn und gibt eine `session_id` zurück.
+ 
 #### Request
 ```json
 {
-  "encrypted_age": "string",
   "server_key": "string"
 }
 ```
-
+ 
+#### Response 200
+```json
+{
+  "session_id": "uuid"
+}
+```
+ 
+#### Fehlercodes
+- 400 – Ungültiges Base64 oder beschädigtes bincode in `server_key`
+**Body-Limit:** 2 GiB (notwendig wegen der Größe des `CompressedServerKey`)
+ 
+### POST /verify/{session_id}
+ 
+Führt eine verschlüsselte Altersverifikation durch.
+ 
+#### Request
+```json
+{
+  "encrypted_age": "string"
+}
+```
+ 
 #### Response 200
 ```json
 {
   "is_adult": "string"
 }
 ```
-
+ 
 `is_adult` ist ein base64-kodierter, bincode-serialisierter `FheBool` — `true` wenn Alter ≥ 18 und ≥ 0.
-
+ 
 #### Fehlercodes
-- 400 – Ungültiges Base64 oder beschädigtes bincode in `server_key` oder `encrypted_age`
+- 400 – Ungültiges Base64 oder beschädigtes bincode in `encrypted_age`
+- 404 – Session nicht gefunden
 - 500 – Serialisierungsfehler beim Kodieren des Ergebnisses
-
-**Body-Limit:** 2 GiB (notwendig wegen der Größe des `CompressedServerKey`)
+### DELETE /session/{session_id}
+ 
+Löscht die Session und gibt den serverseitigen RAM frei.
+ 
+#### Response 200
+```json
+{
+  "status": "deleted"
+}
+```
+ 
+#### Fehlercodes
+- 404 – Session nicht gefunden
 
 ---
 
@@ -102,7 +174,6 @@ TFHE reduziert somit die Vertrauensabhängigkeit hinsichtlich der Inhaltsvertrau
 
 Die Sicherheitsbetrachtung basiert auf folgenden Annahmen:
 
-- Die Kommunikation zwischen Client und Server erfolgt über TLS.
 - Der Client führt Verschlüsselung und Entschlüsselung korrekt aus.
 - Die verwendete TFHE-rs-Bibliothek wird als kryptographisch korrekt implementierte Black Box betrachtet.
 - Es gibt keine Authentifizierung am Endpunkt: Jeder, der einen gültigen `CompressedServerKey` besitzt, kann Anfragen stellen.
@@ -157,7 +228,7 @@ Denkbar wäre, den Grenzwert (18) ebenfalls als `FheInt8` zu übergeben, um ihn 
 
 <u>`FheInt32` oder größere Typen</u>
 
-Größere Bitbreiten würden höhere Latenzen pro homomorpher Operation verursachen, ohne Mehrwert – Altersangaben benötigen keine mehr als 8 Bit.
+Größere Bitbreiten würden höhere Latenzen pro homomorpher Operation verursachen, denn Altersangaben benötigen nicht mehr als 8 Bit.
 
 ---
 
@@ -175,86 +246,73 @@ Da der Use Case ausschließlich aus einer festen Anzahl homomorpher Operationen 
 
 *verify_age – O(1), O(1)*
 
-Die Funktion führt genau zwei Vergleiche (`gt(17)`, `ge(0)`) und eine AND-Verknüpfung (`&`) auf einem `FheInt8`-Wert durch. Alle drei sind Operationen fester Bitbreite (8 Bit) auf einem einzelnen Ciphertext – unabhängig von jeder Eingabegröße. Gemäß der Konvention, homomorphe Operationen als O(1) zu zählen, ist `age_check` ∈ O(1).
+Die Funktion führt genau zwei Vergleiche (`gt(17)`, `ge(0)`) und eine AND-Verknüpfung (`&`) auf einem `FheInt8`-Wert durch. Alle drei sind Operationen fester Bitbreite (8 Bit) auf einem einzelnen Ciphertext. Gemäß der Konvention, homomorphe Operationen als O(1) zu zählen, ist `age_check` ∈ O(1).
 
 Die De- und Serialisierungsschritte (`bincode`, `base64`) operieren auf Byte-Arrays fester Länge (durch die TFHE-rs-Typen bestimmt) und sind ebenfalls O(1) bezüglich fachlicher Parameter.
 
 ---
 
 ### Performance-Messung
-
+ 
 *Mess-Setup & Methodik*
-
+ 
 Die Performance- und Stresstests wurden auf einem virtuellen KVM-Server von Netcup durchgeführt. Die Last wurde extern mittels k6 von einer lokalen Windows-Maschine über das Internet injiziert.
+ 
+Getestet wurde `POST /verify/{session_id}` – der rechenintensive Endpunkt. `POST /session` (einmaliger Setup) und `DELETE /session/{id}` (Cleanup) wurden nicht separat belastet, da sie nicht im kritischen Pfad der Verifikation liegen.
+ 
+Die Gesamtlatenz setzt sich jetzt aus zwei Anteilen zusammen:
+ 
+1. Netzwerkübertragung von `encrypted_age` – vernachlässigbar
+2. `age_check()` – zwei FHE-Vergleiche + AND-Verknüpfung auf dem gecachten `ServerKey`
 
-Es wurde ein einziger relevanter Endpunkt getestet: `POST /`. Alle anderen Endpunkte (`/health`, `/docs`) stellen nur Grundrauschen dar und wurden nicht gemessen.
-
-Die gemessene Gesamtlatenz setzt sich daher aus drei Anteilen zusammen:
-
-1. Netzwerkübertragung des ~80 MB ServerKey (dominanter Anteil bei Remote-Messung)
-2. `CompressedServerKey::decompress()` – rechenintensive Dekomprimierung
-3. `age_check()` – zwei FHE-Vergleiche + AND-Verknüpfung
-
-Die gemessenen Latenzen spiegeln den realistischen End-to-End-Overhead des zustandslosen Designs wider.
-
-- Tool: k6 v2.0.0
-- TFHE: `ConfigBuilder::default()`
-- Datum: 05.06.2026
-- Server: Netcup KVM
-
-*Test 1 – Baseline (1 VU, 10 sequentielle Requests) (05.06.2026)*
-
+*Test 1 – Baseline (1 VU, 10 sequentielle Requests, session-basiert) (09.06.2026)*
+ 
 |Metrik       | Wert        |
 |-------------|-------------|
-|p50          | 13,65 s     |
-|p90          | 29,26 s     |
-|p95          | 43,51 s     |
-|Maximum      | 60,00 s     |
+|p50          | 114,17 ms   |
+|p90          | 126,44 ms   |
+|p95          | 132,74 ms   |
+|Maximum      | 176,31 ms   |
 |Fehlerrate   | 0 %         |
-|Durchsatz    | ~0,05 req/s |
-
+|Durchsatz    | 1,47 req/s  |
+ 
 *Fazit von Test 1:*
-
-Bereits bei einem einzelnen sequentiellen Client ist die Latenz hoch. Der dominierende Faktor ist die Übertragung des ~80 MB ServerKey über das Internet sowie dessen Dekomprimierung. Die hohe Varianz zwischen p50 (13,65 s) und p95 (43,51 s) deutet darauf hin, dass Netzwerkschwankungen einen erheblichen Einfluss haben.
-
-*Test 2 – Stresstest (ramping bis 10 VUs) (05.06.2026, 3 Durchläufe)*
  
-Der Test wurde dreimal unabhängig voneinander ausgeführt. Die Tabelle zeigt Mittelwerte sowie die beobachtete Spanne zur Einordnung der Varianz.
+Im session-basierten Modus entfällt der 80 MB ServerKey-Transfer pro Request. Die eigentliche FHE-Operation (`age_check`) dauert ~114 ms. p50 und p95 liegen eng beieinander (114 ms vs. 133 ms), was auf ein stabiles und vorhersehbares Systemverhalten hinweist.
  
-|Metrik       | Lauf 1   | Lauf 2   | Lauf 3   | Mittelwert |
-|-------------|----------|----------|----------|------------|
-|p50          | 13,65 s  | 13,70 s  | 13,59 s  | **13,65 s** |
-|p90          | 37,23 s  | 39,76 s  | 27,02 s  | **34,67 s** |
-|p95          | 43,51 s  | 52,74 s  | 30,69 s  | **42,31 s** |
-|Maximum      | 60,00 s  | 54,56 s  | 42,78 s  | **52,45 s** |
-|Fehlerrate   | 30 %     | 26 %     | 35 %     | **~30 %**  |
-|Durchsatz    | ~0,05 req/s | ~0,05 req/s | ~0,05 req/s | **~0,05 req/s** |
+*Test 2 – Stresstest (ramping bis 10 VUs, pro-VU Schlüsselpaar) (09.06.2026)*
+ 
+**Methodik:** `setup()` baut alle 10 Sessions sequentiell auf bevor der erste VU startet – jede Session mit eigenem Schlüsselpaar (`payload_vu{N}_sk.txt`, `payload_vu{N}_age.txt`). Erst wenn alle 10 Sessions bereit sind, beginnt die Lastphase. Jede VU greift ausschließlich auf ihre eigene Session zu (`__VU % 10`). Dadurch wird der ServerKey-Upload vollständig aus der Latenzbetrachtung herausgehalten und 10 echte parallele Clients simuliert.
+ 
+|Metrik       | Wert        |
+|-------------|-------------|
+|p50          | 114,06 ms   |
+|p90          | 126,71 ms   |
+|p95          | 130,43 ms   |
+|Maximum      | 174,62 ms   |
+|Fehlerrate   | 0 %         |
+|Durchsatz    | 2,27 req/s  |
  
 *Fazit von Test 2:*
  
-Unter paralleler Last liegt die Fehlerrate im Mittel bei ~30 %. Die Fehler sind ausschließlich HTTP 499 (Client Closed Request) und HTTP 504 (Gateway Timeout) – der vorgelagerte Nginx-Proxy trennt Verbindungen nach 60 s, bevor der Server die Verarbeitung abschließen kann. Der Server selbst lief in allen drei Durchläufen vollständig stabil und verarbeitete alle Anfragen ohne eigene Fehler.
+Unter 10 parallelen Clients mit je eigenem Schlüsselpaar und eigener Session bleibt die Verifikationslatenz nahezu identisch zur Baseline (p50: 114 ms, p95: 130 ms). Es treten keine Timeouts oder Fehler auf. Der `set_server_key`-Mutex wirkt sich nicht messbar aus, weil die FHE-Operation mit ~114 ms kurz genug ist, dass parallele Requests keine nennenswerte Wartezeit verursachen.
  
-Der p50 ist mit ~13,6 s über alle Läufe sehr stabil – das ist die reine Verarbeitungszeit eines einzelnen Requests ohne Mutex-Wartezeit. Die hohe Varianz bei p95 (30–52 s) und der Fehlerrate (26–35 %) ist dagegen direkt auf Netzwerkschwankungen bei der Übertragung des ~80 MB großen ServerKey zurückzuführen. Je nach Netzwerklast zum Messzeitpunkt verschiebt sich der Anteil der Requests, die den Proxy-Timeout überschreiten.
- 
-Die Throughput-Grenze liegt bei einem parallelen Request. Jeder weitere gleichzeitige Request verlängert die Wartezeit linear, da `tfhe::set_server_key` einen globalen Thread-Kontext setzt und die gesamte Verarbeitung (Übertragung + Dekomprimierung + FHE) serialisiert wird. Ab 2 VUs überschreitet p95 den Proxy-Timeout von 60 s regelmäßig.
 ---
 
 ### Limitationen
 
-- Der Use Case ist vollständig zustandslos. Es gibt keine Session, keine Audit-Log und keine Möglichkeit, Ergebnisse serverseitig zu speichern oder abzurufen.
+- Der `CompressedServerKey` (~80 MB) wird einmalig beim Session-Setup übertragen und dekomprimiert gecacht. Folgende Verify-Requests enthalten nur noch `encrypted_age`. Der gecachte `ServerKey` verbleibt im RAM des Servers bis die Session per `DELETE /session/{id}` beendet wird – es gibt keine automatische Ablaufzeit.
 
-- Der `CompressedServerKey` (~80 MB) wird bei jedem einzelnen Request vom Client mitgeschickt, deserialisiert und dekomprimiert.Dieses Design ist eine direkte Konsequenz der Zustandslosigkeit: Da jeder Client sein eigenes Schlüsselpaar generiert, kann kein globaler ServerKey serverseitig gespeichert werden, ohne das Sicherheitsmodell zu brechen. Ein gespeicherter ServerKey eines anderen Clients würde es diesem ermöglichen, fremde Ergebnisse zu entschlüsseln. Die Folge ist, dass Netzwerkübertragung und Dekomprimierung die Latenz dominieren und ein produktiver Einsatz über das Internet praktisch nicht skaliert.
+- Sessions haben keine Authentifizierung: Jeder, der eine `session_id` kennt, kann Verify-Requests gegen diese Session stellen. In einer produktiven Umgebung müsste die Session an eine authentifizierte Identität gebunden sein.
 
 - Der Server prüft nicht, ob ein `encrypted_age`-Ciphertext bereits zuvor verwendet wurde. Ein Angreifer, der einen Ciphertext abfängt, kann ihn beliebig oft einreichen.
 
 - Der Client übergibt den `CompressedServerKey` selbst. Ein bösartiger Client könnte einen manipulierten Key einreichen. In einer produktiven Umgebung müsste der ServerKey serverseitig fest hinterlegt sein.
 
-- Der Client könnte einen beliebigen `FheInt8`-Wert übermitteln – der Server kann nicht verifizieren, dass die verschlüsselte Eingabe tatsächlich ein Alter darstellt oder aus einer vertrauenswürdigen Quelle stammt (kein Zero-Knowledge-Beweis).
+- Der Client könnte einen beliebigen `FheInt8`-Wert übermitteln – der Server kann nicht verifizieren, dass die verschlüsselte Eingabe tatsächlich ein Alter darstellt oder aus einer vertrauenswürdigen Quelle stammt.
 
 - Maximal darstellbarer Alterswert ist 127 Jahre (`i8::MAX`). Dies ist für den Anwendungsfall ausreichend, aber die Wahl von `FheInt8` schließt größere Ganzzahlen strukturell aus.
 
-- Es gibt keine Authentifizierung am Endpunkt. Jeder, der die API kennt, kann Anfragen stellen. Ein Gateway-Layer (z. B. API-Key, mTLS) ist in der aktuellen Implementierung nicht vorhanden.
-
-- Durch den globalen `set_server_key`-Aufruf ist echte Parallelverarbeitung nicht möglich. Der Durchsatz skaliert nicht mit der Anzahl der CPU-Kerne.
+- Es gibt keine Authentifizierung am Endpunkt. Jeder, der die API kennt, kann Anfragen stellen.
 
 ---

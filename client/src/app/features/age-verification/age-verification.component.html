@@ -28,6 +28,20 @@
     </div>
   }
 
+  <!-- Step: uploading server key -->
+  @if (step() === 'uploading') {
+    <div class="card loading-card">
+      <app-spinner />
+      <div>
+        <p class="loading-title">Server-Key wird hochgeladen …</p>
+        <p class="hint">
+          Der Server-Key (~80 MB) wird einmalig übertragen und serverseitig
+          gecacht. Folgende Anfragen senden nur noch das verschlüsselte Alter.
+        </p>
+      </div>
+    </div>
+  }
+
   <!-- Step: enter age -->
   @if (step() === 'enter-age') {
     <div class="card">
@@ -69,6 +83,9 @@
   @if (step() === 'result') {
     <div class="card">
       <h2>Ergebnis</h2>
+      @if (verifyDuration() !== null) {
+      <p class="hint">Verifikation dauerte {{ verifyDuration() }} s</p>
+      }
       @if (isAdult()) {
         <div class="result result--yes">
           <span class="result-icon">✓</span>

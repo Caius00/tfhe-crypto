@@ -1,6 +1,6 @@
 [package]
 name = "sealed-bid-auction"
-version = "0.1.20"
+version = "0.1.24"
 edition = "2021"
 publish = false
 description = "Sealed-Bid Auction"
@@ -20,3 +20,5 @@ tower = { version = "0.5.3", features = ["util"] }
 aide.workspace = true
 tower-http = { version = "0.6.11", features = ["cors"] }
 openapi_docs = { package = "openapi-docs", path = "../../shared/openapi-docs" }
+metrics-exporter.workspace = true
+observability.workspace = true

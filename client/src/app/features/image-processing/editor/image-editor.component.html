@@ -1,0 +1,105 @@
+<app-page-header
+	title="Image Editor"
+	subtitle="Führe mehrere Bildbearbeitungsschritte auf einem Graustufenbild durch und lasse dir das Ergebnis visuell darstellen." />
+
+@if (isLoading()) {
+<app-loading-overlay
+	[fullscreen]="true"
+	message={{loadingMessage()}}
+	hint="Das kann 30-90 Sekunden dauern. Bitte Browser-Tab nicht schließen." />
+}
+
+@if (errorMessage()) {
+<div class="alert-row">
+	<app-alert variant="error" [message]="errorMessage()!" />
+</div>
+}
+
+@if (successMessage()) {
+<div class="alert-row">
+	<app-alert variant="success" [message]="this.successMessage()!" />
+</div>
+}
+
+<div class="page-split">
+	<div class="scrollable-area">
+		<app-card>
+			<h2 class="step-title">
+				<span class="step-num">1</span> Keys generieren
+			</h2>
+			<p>
+				Generiere Keys, um das Bild verschlüsselt an den Server senden zu können.
+			</p>
+			<app-button label="Erstelle Keys" [fullWidth]="true" [disabled]="(!image || hasKeys())" (clicked)="generateKeys()"/>
+		</app-card>
+
+		<app-card>
+			<h2 class="step-title">
+				<span class="step-num">2</span> Session erstellen
+			</h2>
+			<p>
+				Sende das Bild an den Server und erstelle deine Bearbeitungs-Session.
+			</p>
+			<app-button label="Erstelle Session" [fullWidth]="true" [disabled]="(!hasKeys() || hasSession())" (clicked)="createSession()"/>
+		</app-card>
+
+		<app-card>
+			<h2 class="step-title">
+				<span class="step-num">3</span> Bild bearbeiten
+			</h2>
+			<p>
+				Nutze die Server-Operationen, um das Bild zu verändern.
+			</p>
+			<div class="button-row">
+				<div class="grid-header"><h4>Per Pixel:</h4></div>
+				<div class="grid-header"><h4>Drehen:</h4></div>
+				<div class="grid-header"><h4>Spiegeln:</h4></div>
+				<div class="grid-header"><h4>Effekte:</h4></div>
+				<app-button label="Invertieren" [fullWidth]="true" [disabled]="!hasSession()" (clicked)="invert()"/>
+				<app-button label="90°" [fullWidth]="true" [disabled]="!hasSession()" (clicked)="rotate90()"/>
+				<app-button label="Vertikal" [fullWidth]="true" [disabled]="!hasSession()" (clicked)="flipVertical()"/>
+				<app-button label="Blurring" [fullWidth]="true" [disabled]="!hasSession()" (clicked)="blur()"/>
+				<app-button label="Weiß-Filter" [fullWidth]="true" [disabled]="!hasSession()" (clicked)="whiteThreshhold()"/>
+				<app-button label="180°" [fullWidth]="true" [disabled]="!hasSession()" (clicked)="rotate180()"/>
+				<app-button label="Horizontal" [fullWidth]="true" [disabled]="!hasSession()" (clicked)="flipHorizontal()"/>
+				<app-button label="Blooming" [fullWidth]="true" [disabled]="!hasSession()" (clicked)="bloom()"/>
+				<app-button label="Schwarz-Filter" [fullWidth]="true" [disabled]="!hasSession()" (clicked)="blackThreshhold()"/>
+				<app-button label="270°" [fullWidth]="true" [disabled]="!hasSession()" (clicked)="rotate270()"/>
+			</div>
+		</app-card>
+
+		<app-card>
+			<h2 class="step-title">
+				<span class="step-num">4</span> Session finalisieren
+			</h2>
+			<p>
+				Schließe das Bearbeiten ab und betrachte das Ergebnis.
+			</p>
+			<app-button label="Finalisiere Session" [fullWidth]="true" [disabled]="!hasSession()" (clicked)="finalizeSession()"/>
+		</app-card>
+
+		<app-card>
+			<h2 class="step-title">
+				<span class="step-num">5</span> Neues Bild hochladen
+			</h2>
+			<p>
+				Kehre zur Übersicht zurück, um weitere Bilder zu bearbeiten oder andere Services zu nutzen.
+			</p>
+			<app-button label="Zurück zur Übersicht" [fullWidth]="true" [disabled]="hasSession()" (clicked)="exitEditor()"/>
+		</app-card>
+	</div>
+
+	<div class="scrollable-area">
+		<app-card>
+			<div class="image-row">
+				<h2>{{imageName}}</h2>
+				@if (image) {
+					<img class="image-preview" [src]="image.previewUrl">
+				}
+				@if (editedImage()) {
+					<i class="arrow down"></i>
+					<img class="image-preview" [src]="editedImage()">
+				}
+			</div>
+		</app-card>
+</div>

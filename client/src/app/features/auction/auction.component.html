@@ -33,8 +33,8 @@
     >
       Gebot absenden
     </button>
-    <p *ngIf="statusMessage" style="margin-top: 10px; color: green; font-weight: bold">
-      {{ statusMessage }}
+    <p *ngIf="statusMessage()" style="margin-top: 10px; color: green; font-weight: bold">
+      {{ statusMessage() }}
     </p>
   </div>
 
@@ -60,7 +60,7 @@
       *ngIf="evaluationResult"
       style="margin-top: 10px; background: #e2e3e5; padding: 10px; border-radius: 3px"
     >
-      <strong>Ergebnis:</strong> {{ evaluationResult }}
+      <strong>Ergebnis:</strong> {{ evaluationResult() }}
     </p>
   </div>
 </div>
