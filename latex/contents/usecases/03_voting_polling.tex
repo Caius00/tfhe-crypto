@@ -86,9 +86,9 @@ Session:}\label{lebenszyklus-einer-session}
   vollständig geschlossen. Ab diesem Zeitpunkt:
   \begin{itemize}
     \item
-    Können keine neuen Teilnehmer mehr beitreten\\
+    Können keine neuen Teilnehmer mehr beitreten
   \item
-    Können keine weiteren Stimmen abgegeben werden\\
+    Können keine weiteren Stimmen abgegeben werden
   \item
     Wird der Client aus der Manage-Session-Ansicht heraus zur Startseite
     weitergeleitet
@@ -395,8 +395,6 @@ Aggregierte Ergebnisse (entschlüsselt) & & & X \\
 Client Key & & & X \\
 \hline
 
-\caption{Datenhaltung im Voting-Service}
-\label{tab:voting-datenhaltung}
 \end{longtable}
 
 \textbf{Analyse: Beobachtbare Metadaten}
@@ -537,8 +535,6 @@ get\_session & $O(n)$ & $O(n)$ \\
 get\_participants & $O(k)$ & $O(k)$ \\
 \hline
 \end{tabular}
-\caption{Big-O-Komplexitäten des Encrypted-Voting-Service}
-\label{tab:voting-komplexitaet}
 \end{table}
 
 Create\_session -- $O(n)$, $O(n)$
@@ -593,7 +589,7 @@ Es wurden zwei Testszenarien mit unterschiedlichen funktionalen Schwerpunkten un
 
 \begin{itemize}
     \item Teilnehmer-Anfragen: Analyse der Endpunkte (POST /join und GET /status), um das Systemverhalten bei einem Anstieg von Join-Anfragen und hochfrequentem Polling durch die Teilnehmer zu evaluieren.
-    \item \item Ergebnisauswertung: Dedizierte Stressprüfung des Endpunkts \texttt{GET /results/\{session\_id\}/\{creator\_id\}} unter einer Dauerlast von konstant zehn parallelen Virtual Users (VUs). Um die CPU-Auslastung durch die kryptografischen Berechnungen gezielt zu maximieren, wurde das System vorab in einen Zustand versetzt, in dem die Bedingung \texttt{voted\_count >= approved\_count} dauerhaft erfüllt war. Dadurch wurde sichergestellt, dass jeder eingehende Request die rechenintensive homomorphe Aggregationsfunktion \texttt{aggregate\_votes\_ciphertext\_only} vollständig durchläuft. Das Szenario wurde in zwei separaten Testläufen durchgeführt: zunächst mit zwei Teilnehmern und anschließend mit zehn Teilnehmern pro Session.
+    \item Ergebnisauswertung: Dedizierte Stressprüfung des Endpunkts \texttt{GET /results/\{session\_id\}/\{creator\_id\}} unter einer Dauerlast von konstant zehn parallelen Virtual Users (VUs). Um die CPU-Auslastung durch die kryptografischen Berechnungen gezielt zu maximieren, wurde das System vorab in einen Zustand versetzt, in dem die Bedingung \texttt{voted\_count >= approved\_count} dauerhaft erfüllt war. Dadurch wurde sichergestellt, dass jeder eingehende Request die rechenintensive homomorphe Aggregationsfunktion \texttt{aggregate\_votes\_ciphertext\_only} vollständig durchläuft. Das Szenario wurde in zwei separaten Testläufen durchgeführt: zunächst mit zwei Teilnehmern und anschließend mit zehn Teilnehmern pro Session.
 \end{itemize}
 
 Performancetest 1 (Join und Polling) (08.06.2026)
@@ -617,8 +613,6 @@ Maximum & 41,86 ms & 95,06 ms \\
 Fehlerrate & 0\,\% & 0\,\% \\
 \hline
 \end{tabular}
-\caption{Latenzkennzahlen der Endpunkte \texttt{join} und \texttt{status}}
-\label{tab:join-status-metriken}
 \end{table}
 
 Fazit von Performancetest 1:
@@ -648,8 +642,6 @@ Fehlerrate & 0\,\% & 0\,\% \\
 Durchsatz & 1,49 Request/s & 0,90 Request/s \\
 \hline
 \end{tabular}
-\caption{Ergebnisse des zweiten Stresstests für die Ergebnisauswertung mit zwei bzw. zehn Stimmen}
-\label{tab:stresstest-ergebnisse}
 \end{table}
 
 Während das System bei 2 Stimmen sehr schnell reagiert, führt die rechenintensive kryptografische Funktion aggregate\_votes\_ciphertext\_only bei 10 Stimmen zu einer massiven Latenz von über 11 Sekunden im p95-Bereich. Diese Verzögerung resultiert aus der globalen Zustandssperre $(state.lock())$. Da dieser Mutex während der gesamten FHE-Berechnung gehalten wird, blockiert er die parallele Verarbeitung des Axum-Servers und führt zu einer sequenziellen Abarbeitung aller eingehenden Anfragen. Trotz dieser intensiven CPU-Auslastung arbeitet das Backend vollständig stabil und verarbeitet alle Anfragen ohne Fehlerraten.

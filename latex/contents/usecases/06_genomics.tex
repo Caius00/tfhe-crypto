@@ -20,7 +20,6 @@ Cytosin & C & 2 \\
 Guanin & G & 3 \\
 \hline
 \end{tabular}
-\caption{Basenkodierung}
 \end{table}
 
 Die Rechendarstellung der Zahlen erfolgt als 8-Bit Integer. Das vereinfacht die Umwandlung in Tfhe- und Handlerformate, die hier weitestgehend 8-Bit sind. 
@@ -48,7 +47,6 @@ Implementiert wurden frei wählbare Verarbeitung mit der Hammingdistanz oder der
     sessionsequences & session\_id, public\_key, encrypted\_bases & Sessionsequenzen\\
     \hline
     \end{tabular}
-    \caption{Datenbanken UC4-Server}
     \end{table}
 \end{itemize}
 
@@ -114,7 +112,6 @@ Textantworten mit HTTP-Statuscode. Folgende Antworten sind definiert:
     500 & Serialisierung- oder Lockfehler \\
     \hline
     \end{tabular}
-    \caption{Statuscodes}
     \end{table}
 
 
@@ -162,8 +159,6 @@ FIFO & x & x & x \\
 \hline
 Datenbank & x & per GET & per GET \\
 \hline
-\caption{Trust- und Threat-Model des Encrypted-Genomics-Service}
-\label{tab:genomics-trust-threat-model}
 \end{longtable}
 
 
@@ -409,8 +404,6 @@ Levenshtein Riskmarker-DB & $O(\sum_i n \cdot m_i)$ & $O(\max_i(n \cdot m_i) + p
 Levenshtein Sessionsequenzen & $O(\sum_i n \cdot l_i)$ & $O(\max_i(n \cdot l_i) + s)$ \\
 \hline
 \end{tabular}
-\caption{Big-O-Komplexitaeten des Encrypted-Genomics-Service}
-\label{tab:genomics-komplexitaet}
 \end{table}
 
 
@@ -454,8 +447,6 @@ p95 & 45,96 ms & 844,57 ms & 47,93 ms & 383,22 ms \\
 max & 12,95 s & 1,74 s & 128,90 ms & 771,80 ms \\
 \hline
 \end{tabular}
-\caption{Normalbetrieb: Latenzen der Genomics-Metadata-Endpunkte}
-\label{tab:genomics-normal-flow-latenzen}
 \end{table}
 
 \begin{table}[h]
@@ -487,8 +478,6 @@ Daten empfangen & 4,3 GB \\
 Daten gesendet & 523 kB \\
 \hline
 \end{tabular}
-\caption{Normalbetrieb: Gesamtmetriken}
-\label{tab:genomics-normal-flow-gesamt}
 \end{table}
 
 \textbf{Ergebnis Test 1:}
@@ -516,8 +505,6 @@ p95 & 260,22 ms & 13,68 s \\
 max & 2,08 s & 16,69 s \\
 \hline
 \end{tabular}
-\caption{FIFO-/Session-Spike: Latenzen}
-\label{tab:genomics-spike-latenzen}
 \end{table}
 
 \begin{table}[h]
@@ -549,8 +536,6 @@ Daten empfangen & 2,5 GB \\
 Daten gesendet & 221 kB \\
 \hline
 \end{tabular}
-\caption{FIFO-/Session-Spike: Gesamtmetriken}
-\label{tab:genomics-spike-gesamt}
 \end{table}
 
 \textbf{Fazit Test 2:}
