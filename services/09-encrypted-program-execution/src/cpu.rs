@@ -299,35 +299,208 @@ impl CPU {
         let trigger_branch = take_jmp.bitor(&take_jmz).bitor(&take_jmc).bitor(&take_djnz);
         let branch_target = operand;
 
-        let mut next_a = self.a.clone();
-        next_a = is_lda_d.cmux(&loaded_mem_val, &next_a);
-        next_a = is_lda_i.cmux(operand, &next_a);
-        next_a = is_swp.cmux(&self.b, &next_a);
-        next_a = is_djnz.cmux(&res_dec, &next_a);
-        next_a = is_add.cmux(&res_add, &next_a);
-        next_a = is_addc.cmux(&res_addc, &next_a);
-        next_a = is_add_i.cmux(&res_add_i, &next_a);
-        next_a = is_addc_i.cmux(&res_addc_i, &next_a);
-        next_a = is_sub.cmux(&res_sub, &next_a);
-        next_a = is_subc.cmux(&res_subc, &next_a);
-        next_a = is_sub_i.cmux(&res_sub_i, &next_a);
-        next_a = is_subc_i.cmux(&res_subc_i, &next_a);
-        next_a = is_mul.cmux(&res_mul_upper, &next_a);
-        next_a = is_mul_i.cmux(&res_mul_i, &next_a);
-        next_a = is_div.cmux(&res_div, &next_a);
-        next_a = is_div_i.cmux(&res_div_i, &next_a);
-        next_a = is_sla.cmux(&res_sla, &next_a);
-        next_a = is_sra.cmux(&res_sra, &next_a);
-        next_a = is_rla.cmux(&res_rla, &next_a);
-        next_a = is_rlc.cmux(&res_rlc, &next_a);
-        next_a = is_rra.cmux(&res_rra, &next_a);
-        next_a = is_rrc.cmux(&res_rrc, &next_a);
-        next_a = is_cca.cmux(&res_cca, &next_a);
-        next_a = is_and.cmux(&res_and, &next_a);
-        next_a = is_or.cmux(&res_or, &next_a);
-        next_a = is_xor.cmux(&res_xor, &next_a);
-        next_a = is_dec.cmux(&res_dec, &next_a);
-        next_a = is_inc.cmux(&res_inc, &next_a);
+        let mut next_a_final = None;
+        let next_a = self.a.clone();
+
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(4)
+            .build_scoped(
+                |thread| {
+                    tfhe::set_server_key(sk.clone());
+                    thread.run();
+                },
+                |pool| {
+                    pool.install(|| {
+                        let ((m1, m2), (m3, m4)) = rayon::join(
+                            || {
+                                rayon::join(
+                                    || is_lda_d.cmux(&loaded_mem_val, &self.a),
+                                    || is_lda_i.cmux(operand, (&is_swp.cmux(&self.b, &next_a))),
+                                )
+                            },
+                            || {
+                                rayon::join(
+                                    || is_djnz.cmux(&res_dec, (&is_add.cmux(&res_add, &next_a))),
+                                    || {
+                                        is_addc
+                                            .cmux(&res_addc, (&is_add_i.cmux(&res_add_i, &next_a)))
+                                    },
+                                )
+                            },
+                        );
+
+                        let ((m5, m6), (m7, m8)) = rayon::join(
+                            || {
+                                rayon::join(
+                                    || {
+                                        is_addc_i
+                                            .cmux(&res_addc_i, (&is_sub.cmux(&res_sub, &next_a)))
+                                    },
+                                    || {
+                                        is_subc
+                                            .cmux(&res_subc, (&is_sub_i.cmux(&res_sub_i, &next_a)))
+                                    },
+                                )
+                            },
+                            || {
+                                rayon::join(
+                                    || {
+                                        is_subc_i.cmux(
+                                            &res_subc_i,
+                                            (&is_mul.cmux(&res_mul_upper, &next_a)),
+                                        )
+                                    },
+                                    || is_mul_i.cmux(&res_mul_i, (&is_div.cmux(&res_div, &next_a))),
+                                )
+                            },
+                        );
+
+                        let ((m9, m10), (m11, m12)) = rayon::join(
+                            || {
+                                rayon::join(
+                                    || is_div_i.cmux(&res_div_i, (&is_sla.cmux(&res_sla, &next_a))),
+                                    || is_sra.cmux(&res_sra, (&is_rla.cmux(&res_rla, &next_a))),
+                                )
+                            },
+                            || {
+                                rayon::join(
+                                    || is_rlc.cmux(&res_rlc, (&is_rra.cmux(&res_rra, &next_a))),
+                                    || is_rrc.cmux(&res_rrc, (&is_cca.cmux(&res_cca, &next_a))),
+                                )
+                            },
+                        );
+
+                        let (m13, m14) = rayon::join(
+                            || is_and.cmux(&res_and, &is_or.cmux(&res_or, &next_a)),
+                            || {
+                                is_xor.cmux(
+                                    &res_xor,
+                                    &is_dec.cmux(&res_dec, (&is_inc.cmux(&res_inc, &next_a))),
+                                )
+                            },
+                        );
+
+                        let ((r1, r2), (r3, r4)): ((FheUint8, FheUint8), (FheUint8, FheUint8)) =
+                            rayon::join(
+                                || {
+                                    rayon::join(
+                                        || (&is_lda_d | &is_lda_i | &is_swp).cmux(&m1, &m2),
+                                        || {
+                                            (&is_djnz | &is_add | &is_addc | &is_add_i)
+                                                .cmux(&m3, &m4)
+                                        },
+                                    )
+                                },
+                                || {
+                                    rayon::join(
+                                        || {
+                                            (&is_addc_i | &is_sub | &is_subc | &is_sub_i)
+                                                .cmux(&m5, &m6)
+                                        },
+                                        || {
+                                            (&is_subc_i | &is_mul | &is_mul_i | &is_div)
+                                                .cmux(&m7, &m8)
+                                        },
+                                    )
+                                },
+                            );
+
+                        let ((r5, r6), r7) = rayon::join(
+                            || {
+                                rayon::join(
+                                    || (&is_div_i | &is_sla | &is_sra | &is_rla).cmux(&m9, &m10),
+                                    || (&is_rlc | &is_rra | &is_rrc | &is_cca).cmux(&m11, &m12),
+                                )
+                            },
+                            || (&is_and | &is_or).cmux(&m13, &m14),
+                        );
+
+                        let ((f1, f2), (f3, f4)) = rayon::join(
+                            || {
+                                rayon::join(
+                                    || {
+                                        (&is_lda_d
+                                            | &is_lda_i
+                                            | &is_swp
+                                            | &is_djnz
+                                            | &is_add
+                                            | &is_addc
+                                            | &is_add_i)
+                                            .cmux(&r1, &r2)
+                                    },
+                                    || {
+                                        (&is_addc_i
+                                            | &is_sub
+                                            | &is_subc
+                                            | &is_sub_i
+                                            | &is_subc_i
+                                            | &is_mul
+                                            | &is_mul_i
+                                            | &is_div)
+                                            .cmux(&r3, &r4)
+                                    },
+                                )
+                            },
+                            || {
+                                rayon::join(
+                                    || {
+                                        (&is_div_i
+                                            | &is_sla
+                                            | &is_sra
+                                            | &is_rla
+                                            | &is_rlc
+                                            | &is_rra
+                                            | &is_rrc
+                                            | &is_cca)
+                                            .cmux(&r5, &r6)
+                                    },
+                                    || r7,
+                                )
+                            },
+                        );
+
+                        let (final_left, final_right) = rayon::join(
+                            || {
+                                (&is_lda_d
+                                    | &is_lda_i
+                                    | &is_swp
+                                    | &is_djnz
+                                    | &is_add
+                                    | &is_addc
+                                    | &is_add_i
+                                    | &is_addc_i
+                                    | &is_sub
+                                    | &is_subc
+                                    | &is_sub_i
+                                    | &is_subc_i
+                                    | &is_mul
+                                    | &is_mul_i
+                                    | &is_div)
+                                    .cmux(&f1, &f2)
+                            },
+                            || {
+                                (&is_div_i
+                                    | &is_sla
+                                    | &is_sra
+                                    | &is_rla
+                                    | &is_rlc
+                                    | &is_rra
+                                    | &is_rrc
+                                    | &is_cca
+                                    | &is_and
+                                    | &is_or)
+                                    .cmux(&f3, &f4)
+                            },
+                        );
+
+                        next_a_final =
+                            Some((&is_xor | &is_dec | &is_inc).cmux(&final_right, &final_left));
+                    });
+                },
+            )
+            .expect("");
+
+        let next_a = next_a_final.unwrap();
 
         let mut next_b = self.b.clone();
         next_b = is_swp.cmux(&self.a, &next_b);
