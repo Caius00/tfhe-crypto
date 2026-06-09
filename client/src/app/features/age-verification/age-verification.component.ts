@@ -69,8 +69,8 @@ export class AgeVerificationComponent implements OnDestroy {
    */
   async verify(): Promise<void> {
     const ageValue = parseInt(this.ageInput(), 10);
-    if (isNaN(ageValue) || ageValue < 0 || ageValue > 255) {
-      this.errorMessage.set('Bitte ein gültiges Alter (0–255) eingeben.');
+    if (isNaN(ageValue) || ageValue < 0 || ageValue > 127) {
+      this.errorMessage.set('Bitte ein gültiges Alter (0-127) eingeben.');
       this.step.set('error');
       return;
     }
