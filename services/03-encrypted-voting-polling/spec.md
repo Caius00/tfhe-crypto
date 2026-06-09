@@ -44,7 +44,10 @@ Mit der Finalisierung wird die Session vollständig geschlossen. Ab diesem Zeitp
 
 Der Service stellt eine fachliche Voting-/Polling-API bereit, mit der Sessions erstellt, Teilnehmer verwaltet und verschlüsselte Stimmen abgegeben werden können. Die OpenAPI-Definition wird automatisch generiert und ist unter `/openapi.json` sowie `/docs` (Swagger UI) verfügbar.
 
-Im gesamten Service wird der PublicKey als CompressedPublicKey verwendet. Dieser ermöglicht eine Batch-Verschlüsselung.
+Im gesamten Service werden die TFHE-Schlüssel in serialisierter Form übertragen und gespeichert (Base64 kodiert). Für die Verschlüsselung von Teilnehmernamen und Stimmen wird ein CompactPublicKey verwendet. Diese kompakte Repräsentation des PublicKeys reduziert die Größe des öffentlichen Schlüssels und ermöglicht eine effiziente Batch-Verschlüsselung.
+Für die homomorphe Auswertung wird ein CompressedServerKey verwendet. Dieser wird ebenfalls aus dem ClientKey abgeleitet und bei der Erstellung einer Session an das Backend übertragen. Der Server speichert den Schlüssel ausschließlich in seiner komprimierten, serialisierten Form. Erst unmittelbar vor der Durchführung homomorpher Operationen wird der Schlüssel deserialisiert und zu einem regulären ServerKey dekomprimiert. Dadurch wird der Speicherbedarf des Backend-Zustands reduziert, während die vollständige Funktionalität der TFHE-Auswertung erhalten bleibt.
+Der geheime ClientKey verbleibt ausschließlich beim Session-Ersteller und wird zu keinem Zeitpunkt an das Backend übertragen. Nur mit diesem Schlüssel können verschlüsselte Namen und aggregierte Abstimmungsergebnisse wieder entschlüsselt werden.
+
 ### POST /session
 
 Legt eine neue Voting-Session an.
