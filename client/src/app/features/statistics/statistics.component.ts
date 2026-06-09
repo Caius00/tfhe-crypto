@@ -60,6 +60,7 @@ export class StatisticsComponent {
   displayedInputNumbers = signal<number[]>([]);
 
   private activeKeyPair: KeyPair | null = null;
+  private activeSessionId: string | null = null;
   private computationStartTimestamp = 0;
 
   constructor(
@@ -116,19 +117,37 @@ export class StatisticsComponent {
         const encryptedBytes = this.encryptWithBitWidth(plainNumber, selectedBitWidth);
         return this.tfheService.toBase64(encryptedBytes);
       });
-      const serverKeyBase64 = this.tfheService.toBase64(this.activeKeyPair.serverKeyBytes);
 
-      this.statisticsApiService
-        .compute(encryptedNumberList, serverKeyBase64, selectedBitWidth)
-        .subscribe({
-          next: (encryptedStatisticsResponse) => {
-            const decryptedResult = this.decryptStatisticsResponse(
-              encryptedStatisticsResponse,
-              selectedBitWidth,
-            );
-            this.computeDurationMs.set(Date.now() - this.computationStartTimestamp);
-            this.computationResult.set(decryptedResult);
-            this.currentStep.set('result');
+      const runCompute = (sessionId: string) => {
+        this.statisticsApiService
+          .compute(sessionId, encryptedNumberList, selectedBitWidth)
+          .subscribe({
+            next: (encryptedStatisticsResponse) => {
+              const decryptedResult = this.decryptStatisticsResponse(
+                encryptedStatisticsResponse,
+                selectedBitWidth,
+              );
+              this.computeDurationMs.set(Date.now() - this.computationStartTimestamp);
+              this.computationResult.set(decryptedResult);
+              this.currentStep.set('result');
+            },
+            error: (httpError) => {
+              this.validationError.set(
+                `Server-Fehler: ${httpError.error ?? httpError.message ?? 'Unbekannter Fehler'}`,
+              );
+              this.currentStep.set('error');
+            },
+          });
+      };
+
+      if (this.activeSessionId) {
+        runCompute(this.activeSessionId);
+      } else {
+        const serverKeyBase64 = this.tfheService.toBase64(this.activeKeyPair.serverKeyBytes);
+        this.statisticsApiService.createSession(serverKeyBase64).subscribe({
+          next: ({ session_id }) => {
+            this.activeSessionId = session_id;
+            runCompute(session_id);
           },
           error: (httpError) => {
             this.validationError.set(
@@ -137,6 +156,7 @@ export class StatisticsComponent {
             this.currentStep.set('error');
           },
         });
+      }
     } catch (encryptionError: any) {
       this.validationError.set(encryptionError.message ?? 'Fehler bei der Verschlüsselung.');
       this.currentStep.set('error');
@@ -150,6 +170,7 @@ export class StatisticsComponent {
 
   reset(): void {
     this.activeKeyPair = null;
+    this.activeSessionId = null;
     this.rawListInput.set('');
     this.computationResult.set(null);
     this.validationError.set('');
