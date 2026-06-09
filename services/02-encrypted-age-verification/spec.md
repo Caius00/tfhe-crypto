@@ -253,62 +253,55 @@ Die De- und Serialisierungsschritte (`bincode`, `base64`) operieren auf Byte-Arr
 ---
 
 ### Performance-Messung
-
+ 
 *Mess-Setup & Methodik*
-
+ 
 Die Performance- und Stresstests wurden auf einem virtuellen KVM-Server von Netcup durchgeführt. Die Last wurde extern mittels k6 von einer lokalen Windows-Maschine über das Internet injiziert.
-
-Es wurde ein einziger relevanter Endpunkt getestet: `POST /`. Alle anderen Endpunkte (`/health`, `/docs`) stellen nur Grundrauschen dar und wurden nicht gemessen.
-
-Die gemessene Gesamtlatenz setzt sich daher aus drei Anteilen zusammen:
-
-1. Netzwerkübertragung des ~80 MB ServerKey (dominanter Anteil bei Remote-Messung)
-2. `CompressedServerKey::decompress()` – rechenintensive Dekomprimierung
-3. `age_check()` – zwei FHE-Vergleiche + AND-Verknüpfung
-
-Die gemessenen Latenzen spiegeln den realistischen End-to-End-Overhead des zustandslosen Designs wider.
-
+ 
+Die Messungen wurden für den session-basierten Modus durchgeführt. Getestet wurde `POST /verify/{session_id}` – der rechenintensive Endpunkt. `POST /session` (einmaliger Setup) und `DELETE /session/{id}` (Cleanup) wurden nicht separat belastet, da sie nicht im kritischen Pfad der Verifikation liegen.
+ 
+Im session-basierten Modus entfällt die Netzwerkübertragung des ~80 MB ServerKey pro Request. Die Gesamtlatenz setzt sich jetzt aus zwei Anteilen zusammen:
+ 
+1. Netzwerkübertragung von `encrypted_age` (~88 KB) – vernachlässigbar
+2. `age_check()` – zwei FHE-Vergleiche + AND-Verknüpfung auf dem gecachten `ServerKey`
 - Tool: k6 v2.0.0
 - TFHE: `ConfigBuilder::default()`
-- Datum: 05.06.2026
-- Server: Netcup KVM
-
-*Test 1 – Baseline (1 VU, 10 sequentielle Requests) (05.06.2026)*
-
+- Datum: 09.06.2026
+- Server: lokal (Entwicklungsmaschine)
+*Test 1 – Baseline (1 VU, 10 sequentielle Requests, session-basiert) (09.06.2026)*
+ 
 |Metrik       | Wert        |
 |-------------|-------------|
-|p50          | 13,65 s     |
-|p90          | 29,26 s     |
-|p95          | 43,51 s     |
-|Maximum      | 60,00 s     |
+|p50          | 114,17 ms   |
+|p90          | 126,44 ms   |
+|p95          | 132,74 ms   |
+|Maximum      | 176,31 ms   |
 |Fehlerrate   | 0 %         |
-|Durchsatz    | ~0,05 req/s |
-
+|Durchsatz    | 1,47 req/s  |
+ 
 *Fazit von Test 1:*
-
-Bereits bei einem einzelnen sequentiellen Client ist die Latenz hoch. Der dominierende Faktor ist die Übertragung des ~80 MB ServerKey über das Internet sowie dessen Dekomprimierung. Die hohe Varianz zwischen p50 (13,65 s) und p95 (43,51 s) deutet darauf hin, dass Netzwerkschwankungen einen erheblichen Einfluss haben.
-
-*Test 2 – Stresstest (ramping bis 10 VUs) (05.06.2026, 3 Durchläufe)*
  
-Der Test wurde dreimal unabhängig voneinander ausgeführt. Die Tabelle zeigt Mittelwerte sowie die beobachtete Spanne zur Einordnung der Varianz.
+Im session-basierten Modus entfällt der 80 MB ServerKey-Transfer pro Request. Die eigentliche FHE-Operation (`age_check`) dauert ~114 ms. p50 und p95 liegen eng beieinander (114 ms vs. 133 ms), was auf ein stabiles und vorhersehbares Systemverhalten hinweist.
  
-|Metrik       | Lauf 1   | Lauf 2   | Lauf 3   | Mittelwert |
-|-------------|----------|----------|----------|------------|
-|p50          | 13,65 s  | 13,70 s  | 13,59 s  | **13,65 s** |
-|p90          | 37,23 s  | 39,76 s  | 27,02 s  | **34,67 s** |
-|p95          | 43,51 s  | 52,74 s  | 30,69 s  | **42,31 s** |
-|Maximum      | 60,00 s  | 54,56 s  | 42,78 s  | **52,45 s** |
-|Fehlerrate   | 30 %     | 26 %     | 35 %     | **~30 %**  |
-|Durchsatz    | ~0,05 req/s | ~0,05 req/s | ~0,05 req/s | **~0,05 req/s** |
+*Test 2 – Stresstest (ramping bis 10 VUs, pro-VU Schlüsselpaar) (09.06.2026)*
+ 
+Jede VU simuliert einen eigenen Client mit eigenem Schlüsselpaar und eigener Session. Der ServerKey-Upload (~80 MB) erfolgt einmalig pro VU beim ersten Request und wird separat als `setup_latency` gemessen.
+ 
+|Metrik       | verify_latency | setup_latency (einmalig pro VU) |
+|-------------|---------------|----------------------------------|
+|p50          | 128 ms        | ~15 s                            |
+|p90          | 151 ms        | ~16 s                            |
+|p95          | 171 ms        | 21 s                             |
+|Maximum      | 414 ms        | 26 s                             |
+|Fehlerrate   | 0 %           | –                                |
+|Durchsatz    | 3,07 req/s    | –                                |
  
 *Fazit von Test 2:*
  
-Unter paralleler Last liegt die Fehlerrate im Mittel bei ~30 %. Die Fehler sind ausschließlich HTTP 499 (Client Closed Request) und HTTP 504 (Gateway Timeout) – der vorgelagerte Nginx-Proxy trennt Verbindungen nach 60 s, bevor der Server die Verarbeitung abschließen kann. Der Server selbst lief in allen drei Durchläufen vollständig stabil und verarbeitete alle Anfragen ohne eigene Fehler.
+Unter paralleler Last mit 10 VUs bleibt die Verifikationslatenz stabil bei ~128 ms (p50) und steigt nur geringfügig auf 171 ms (p95) an. Es treten keine Timeouts oder Fehler auf. Der `set_server_key`-Mutex wirkt sich kaum aus, weil die FHE-Operation mit ~128 ms kurz genug ist, dass die Wartezeit vernachlässigbar bleibt.
  
-Der p50 ist mit ~13,6 s über alle Läufe sehr stabil – das ist die reine Verarbeitungszeit eines einzelnen Requests ohne Mutex-Wartezeit. Die hohe Varianz bei p95 (30–52 s) und der Fehlerrate (26–35 %) ist dagegen direkt auf Netzwerkschwankungen bei der Übertragung des ~80 MB großen ServerKey zurückzuführen. Je nach Netzwerklast zum Messzeitpunkt verschiebt sich der Anteil der Requests, die den Proxy-Timeout überschreiten.
+Die `setup_latency` (p95: 21 s) spiegelt den einmaligen 80 MB ServerKey-Upload pro Client wider – dieser Wert fällt nicht in den kritischen Pfad der Verifikation und tritt pro Client nur einmal auf.
  
-Die Throughput-Grenze liegt bei einem parallelen Request. Jeder weitere gleichzeitige Request verlängert die Wartezeit linear, da `tfhe::set_server_key` einen globalen Thread-Kontext setzt und die gesamte Verarbeitung (Übertragung + Dekomprimierung + FHE) serialisiert wird. Ab 2 VUs überschreitet p95 den Proxy-Timeout von 60 s regelmäßig.
-
 ---
 
 ### Limitationen
