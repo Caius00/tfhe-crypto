@@ -50,7 +50,10 @@ impl AppState {
     /// Legt eine neue Session an und gibt die zugewiesene UUID zurück.
     pub async fn insert(&self, session: Arc<Session>) -> String {
         let session_id = Uuid::new_v4().to_string();
-        self.sessions.write().await.insert(session_id.clone(), session);
+        self.sessions
+            .write()
+            .await
+            .insert(session_id.clone(), session);
         session_id
     }
 

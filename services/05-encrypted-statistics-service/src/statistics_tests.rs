@@ -8,7 +8,7 @@ use base64::{engine::general_purpose, Engine as _};
 use serial_test::serial;
 use std::sync::{Arc, OnceLock};
 use tfhe::prelude::*;
-use tfhe::{ClientKey, CompressedServerKey, ConfigBuilder, FheInt8, FheInt16, FheInt32, FheInt64};
+use tfhe::{ClientKey, CompressedServerKey, ConfigBuilder, FheInt16, FheInt32, FheInt64, FheInt8};
 use tower::ServiceExt;
 
 use crate::state::{AppState, Session};
@@ -28,17 +28,19 @@ fn get_shared_test_key_pair() -> &'static (ClientKey, CompressedServerKey) {
 // ── Hilfsfunktionen ──────────────────────────────────────────────────────────
 
 fn encrypt_i8_to_base64(value: i8, client_key: &ClientKey) -> String {
-    general_purpose::STANDARD.encode(bincode::serialize(&FheInt8::encrypt(value, client_key)).unwrap())
+    general_purpose::STANDARD
+        .encode(bincode::serialize(&FheInt8::encrypt(value, client_key)).unwrap())
 }
 
 fn encrypt_i16_to_base64(value: i16, client_key: &ClientKey) -> String {
-    general_purpose::STANDARD.encode(bincode::serialize(&FheInt16::encrypt(value, client_key)).unwrap())
+    general_purpose::STANDARD
+        .encode(bincode::serialize(&FheInt16::encrypt(value, client_key)).unwrap())
 }
 
 fn encrypt_i32_to_base64(value: i32, client_key: &ClientKey) -> String {
-    general_purpose::STANDARD.encode(bincode::serialize(&FheInt32::encrypt(value, client_key)).unwrap())
+    general_purpose::STANDARD
+        .encode(bincode::serialize(&FheInt32::encrypt(value, client_key)).unwrap())
 }
-
 
 /// Baut eine App mit vorinstallierter Session.
 ///
@@ -67,7 +69,10 @@ fn post_to(uri: &str, payload: &serde_json::Value) -> Request<Body> {
 #[tokio::test]
 async fn test_invalid_server_key_base64() {
     let response = create_app(AppState::new())
-        .oneshot(post_to("/session", &serde_json::json!({ "server_key": "not-valid-base64!!!" })))
+        .oneshot(post_to(
+            "/session",
+            &serde_json::json!({ "server_key": "not-valid-base64!!!" }),
+        ))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -311,7 +316,10 @@ async fn test_compute_statistics_roundtrip_int16() {
     let (client_key, server_key) = get_shared_test_key_pair();
     let (app, session_id) = app_with_session(server_key).await;
 
-    let encrypted_list: Vec<String> = [10i16, 30, 20].iter().map(|&v| encrypt_i16_to_base64(v, client_key)).collect();
+    let encrypted_list: Vec<String> = [10i16, 30, 20]
+        .iter()
+        .map(|&v| encrypt_i16_to_base64(v, client_key))
+        .collect();
     let payload = serde_json::json!({
         "session_id": session_id,
         "encrypted_list": encrypted_list,
@@ -326,11 +334,16 @@ async fn test_compute_statistics_roundtrip_int16() {
         .unwrap();
     let resp: StatisticsResponse = serde_json::from_slice(&body_bytes).unwrap();
 
-    let sum: FheInt32 = bincode::deserialize(&general_purpose::STANDARD.decode(&resp.sum).unwrap()).unwrap();
-    let min: FheInt16 = bincode::deserialize(&general_purpose::STANDARD.decode(&resp.min).unwrap()).unwrap();
-    let max: FheInt16 = bincode::deserialize(&general_purpose::STANDARD.decode(&resp.max).unwrap()).unwrap();
-    let avg: FheInt32 = bincode::deserialize(&general_purpose::STANDARD.decode(&resp.average).unwrap()).unwrap();
-    let med: FheInt16 = bincode::deserialize(&general_purpose::STANDARD.decode(&resp.median).unwrap()).unwrap();
+    let sum: FheInt32 =
+        bincode::deserialize(&general_purpose::STANDARD.decode(&resp.sum).unwrap()).unwrap();
+    let min: FheInt16 =
+        bincode::deserialize(&general_purpose::STANDARD.decode(&resp.min).unwrap()).unwrap();
+    let max: FheInt16 =
+        bincode::deserialize(&general_purpose::STANDARD.decode(&resp.max).unwrap()).unwrap();
+    let avg: FheInt32 =
+        bincode::deserialize(&general_purpose::STANDARD.decode(&resp.average).unwrap()).unwrap();
+    let med: FheInt16 =
+        bincode::deserialize(&general_purpose::STANDARD.decode(&resp.median).unwrap()).unwrap();
 
     let sum_val: i32 = sum.decrypt(client_key);
     let min_val: i16 = min.decrypt(client_key);
@@ -352,7 +365,10 @@ async fn test_compute_statistics_roundtrip_int8() {
     let (client_key, server_key) = get_shared_test_key_pair();
     let (app, session_id) = app_with_session(server_key).await;
 
-    let encrypted_list: Vec<String> = [10i8, 30, 20].iter().map(|&v| encrypt_i8_to_base64(v, client_key)).collect();
+    let encrypted_list: Vec<String> = [10i8, 30, 20]
+        .iter()
+        .map(|&v| encrypt_i8_to_base64(v, client_key))
+        .collect();
     let payload = serde_json::json!({
         "session_id": session_id,
         "encrypted_list": encrypted_list,
@@ -367,8 +383,10 @@ async fn test_compute_statistics_roundtrip_int8() {
         .unwrap();
     let resp: StatisticsResponse = serde_json::from_slice(&body_bytes).unwrap();
 
-    let sum: FheInt16 = bincode::deserialize(&general_purpose::STANDARD.decode(&resp.sum).unwrap()).unwrap();
-    let med: FheInt8 = bincode::deserialize(&general_purpose::STANDARD.decode(&resp.median).unwrap()).unwrap();
+    let sum: FheInt16 =
+        bincode::deserialize(&general_purpose::STANDARD.decode(&resp.sum).unwrap()).unwrap();
+    let med: FheInt8 =
+        bincode::deserialize(&general_purpose::STANDARD.decode(&resp.median).unwrap()).unwrap();
 
     let sum_val: i16 = sum.decrypt(client_key);
     let med_val: i8 = med.decrypt(client_key);
@@ -384,7 +402,10 @@ async fn test_compute_statistics_roundtrip_int32() {
     let (client_key, server_key) = get_shared_test_key_pair();
     let (app, session_id) = app_with_session(server_key).await;
 
-    let encrypted_list: Vec<String> = [10i32, 30, 20].iter().map(|&v| encrypt_i32_to_base64(v, client_key)).collect();
+    let encrypted_list: Vec<String> = [10i32, 30, 20]
+        .iter()
+        .map(|&v| encrypt_i32_to_base64(v, client_key))
+        .collect();
     let payload = serde_json::json!({
         "session_id": session_id,
         "encrypted_list": encrypted_list,
@@ -399,8 +420,10 @@ async fn test_compute_statistics_roundtrip_int32() {
         .unwrap();
     let resp: StatisticsResponse = serde_json::from_slice(&body_bytes).unwrap();
 
-    let sum: FheInt64 = bincode::deserialize(&general_purpose::STANDARD.decode(&resp.sum).unwrap()).unwrap();
-    let min: FheInt32 = bincode::deserialize(&general_purpose::STANDARD.decode(&resp.min).unwrap()).unwrap();
+    let sum: FheInt64 =
+        bincode::deserialize(&general_purpose::STANDARD.decode(&resp.sum).unwrap()).unwrap();
+    let min: FheInt32 =
+        bincode::deserialize(&general_purpose::STANDARD.decode(&resp.min).unwrap()).unwrap();
 
     let sum_val: i64 = sum.decrypt(client_key);
     let min_val: i32 = min.decrypt(client_key);

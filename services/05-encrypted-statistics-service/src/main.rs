@@ -103,10 +103,12 @@ fn deserialize_encrypted_list<T: DeserializeOwned>(
     base64_encoded_list
         .iter()
         .map(|base64_item| {
-            let raw_bytes =
-                general_purpose::STANDARD
-                    .decode(base64_item)
-                    .map_err(|e| (StatusCode::BAD_REQUEST, format!("Ungültiger Item-Base64: {e}")))?;
+            let raw_bytes = general_purpose::STANDARD.decode(base64_item).map_err(|e| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    format!("Ungültiger Item-Base64: {e}"),
+                )
+            })?;
             bincode::deserialize(&raw_bytes).map_err(|e| {
                 (
                     StatusCode::BAD_REQUEST,
@@ -167,7 +169,12 @@ where
 fn to_base64<T: Serialize>(value: &T) -> Result<String, (StatusCode, String)> {
     bincode::serialize(value)
         .map(|bytes| general_purpose::STANDARD.encode(bytes))
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Serialisierungsfehler: {e}")))
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Serialisierungsfehler: {e}"),
+            )
+        })
 }
 
 // ── Handler ──────────────────────────────────────────────────────────────────
@@ -184,7 +191,12 @@ async fn create_session(
 ) -> Result<Json<CreateSessionResponse>, (StatusCode, String)> {
     let server_key_bytes = general_purpose::STANDARD
         .decode(&request.server_key)
-        .map_err(|e| (StatusCode::BAD_REQUEST, format!("Ungültiger ServerKey Base64: {e}")))?;
+        .map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("Ungültiger ServerKey Base64: {e}"),
+            )
+        })?;
 
     let engine = tokio::task::spawn_blocking(move || -> Result<fhe::FheEngine, String> {
         let compressed: CompressedServerKey = bincode::deserialize(&server_key_bytes)
@@ -192,7 +204,12 @@ async fn create_session(
         fhe::FheEngine::from_server_key(compressed.decompress())
     })
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Task-Fehler: {e}")))?
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Task-Fehler: {e}"),
+        )
+    })?
     .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
 
     let session = Arc::new(Session::new(Arc::new(engine)));
@@ -211,13 +228,18 @@ async fn compute_statistics(
     State(state): State<AppState>,
     Json(request): Json<StatisticsRequest>,
 ) -> Result<Json<StatisticsResponse>, (StatusCode, String)> {
-    let session = state
-        .get(&request.session_id)
-        .await
-        .ok_or_else(|| (StatusCode::NOT_FOUND, "Session nicht gefunden oder abgelaufen".into()))?;
+    let session = state.get(&request.session_id).await.ok_or_else(|| {
+        (
+            StatusCode::NOT_FOUND,
+            "Session nicht gefunden oder abgelaufen".into(),
+        )
+    })?;
 
     if request.encrypted_list.is_empty() {
-        return Err((StatusCode::BAD_REQUEST, "Die Liste darf nicht leer sein".into()));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Die Liste darf nicht leer sein".into(),
+        ));
     }
 
     let element_count = request.encrypted_list.len() as u64;
