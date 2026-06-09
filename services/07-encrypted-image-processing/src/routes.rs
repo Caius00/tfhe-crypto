@@ -280,7 +280,7 @@ impl ImageOperation {
         State(state): State<AppState>,
     ) -> (StatusCode, Json<ApiResponse>) {
         Self::run_image_operation(state, |image| {
-            image.box_blur_weighted()
+            image.box_blur_splitted()
         }).await
     }
     pub async fn bloom(
