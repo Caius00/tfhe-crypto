@@ -24,10 +24,10 @@ fn main() {
         let age: i8 = 20;
         let encrypted_age = FheInt8::encrypt(age, &client_key);
 
-        let sk_b64  = general_purpose::STANDARD.encode(bincode::serialize(&server_key).unwrap());
+        let sk_b64 = general_purpose::STANDARD.encode(bincode::serialize(&server_key).unwrap());
         let age_b64 = general_purpose::STANDARD.encode(bincode::serialize(&encrypted_age).unwrap());
 
-        fs::write(format!("payload_vu{}_sk.txt",  i), &sk_b64).unwrap();
+        fs::write(format!("payload_vu{}_sk.txt", i), &sk_b64).unwrap();
         fs::write(format!("payload_vu{}_age.txt", i), &age_b64).unwrap();
 
         println!("  payload_vu{}_sk.txt  ({} bytes)", i, sk_b64.len());
