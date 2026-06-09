@@ -6,65 +6,136 @@
 ---
 
 ### Funktionsbeschreibung
-
+ 
 Der Use Case Encrypted Age Verification löst das Problem, das Alter einer Person serverseitig zu prüfen, ohne dass der Server den tatsächlichen Alterswert jemals im Klartext zu Gesicht bekommt. Das Ergebnis der Prüfung (volljährig: ja/nein) wird ebenfalls verschlüsselt zurückgegeben – der Server kennt weder Eingabe noch Ausgabe.
-
+ 
 Das Alter wird bereits auf dem Client mit dem ClientKey verschlüsselt und ausschließlich in verschlüsselter Form an das Backend übertragen. Das Backend führt die Altersüberprüfung mittels Fully Homomorphic Encryption (TFHE) durch, ohne den zugrunde liegenden Alterswert entschlüsseln zu können. Die Entschlüsselung des Ergebnisses ist ausschließlich durch den Besitzer des ClientKeys möglich.
-
+ 
+Der Service unterstützt zwei Betriebsmodi: einen zustandslosen Einzelrequest-Modus (`POST /`) sowie einen session-basierten Modus (`POST /session` + `POST /verify/{session_id}`), bei dem der ServerKey einmalig hochgeladen und gecacht wird. Der session-basierte Modus reduziert den Netzwerk-Overhead pro Verifikationsanfrage von ~80 MB auf ~88 KB.
+ 
 #### Akteure
-
-- **Client:** Generiert das TFHE-Schlüsselpaar, verschlüsselt das Alter mit dem `ClientKey`, sendet `encrypted_age` und `server_key` an den Server, empfängt das verschlüsselte Ergebnis und entschlüsselt es lokal. Der Client besitzt den `ClientKey` und ist der einzige Akteur, der das Ergebnis entschlüsseln kann.
-
-- **Backend (Server):** Empfängt `encrypted_age` und `CompressedServerKey`, setzt den ServerKey, führt die homomorphe Altersüberprüfung (`age_check`) durch und gibt das verschlüsselte Ergebnis (`FheBool`) zurück. Der Server sieht zu keinem Zeitpunkt das Alter oder das Ergebnis im Klartext.
-
+ 
+- **Client:** Generiert das TFHE-Schlüsselpaar, verschlüsselt das Alter mit dem `ClientKey`, kommuniziert mit dem Server und entschlüsselt das Ergebnis lokal. Der Client besitzt den `ClientKey` und ist der einzige Akteur, der das Ergebnis entschlüsseln kann.
+- **Backend (Server):** Empfängt den `CompressedServerKey` (einmalig beim Session-Setup), cacht den dekomprimierten `ServerKey` im `AppState`, führt bei jedem Verify-Request die homomorphe Altersüberprüfung (`age_check`) durch und gibt das verschlüsselte Ergebnis (`FheBool`) zurück. Der Server sieht zu keinem Zeitpunkt das Alter oder das Ergebnis im Klartext.
 #### Lebenszyklus einer Session
+ 
+**Phase 1 – Session-Setup (einmalig):**
 
-Da dieser Use Case vollständig zustandslos ist, gibt es keine persistente Session. Der gesamte Ablauf findet innerhalb eines einzelnen HTTP-Requests statt:
+1. Client generiert `ClientKey` und `CompressedServerKey` lokal. Das Alter wird als `FheInt8` mit dem `ClientKey` verschlüsselt.
+2. Client sendet `POST /session` mit dem `CompressedServerKey` (~80 MB) als JSON-Body.
+3. Server dekomprimiert den Key einmalig (`CompressedServerKey::decompress()`), speichert den `ServerKey` im `AppState` und gibt eine `session_id` (UUID) zurück.
 
-1. **Vorbereitung (Client):** Client generiert `ClientKey` und `CompressedServerKey` lokal. Das Alter wird als `FheInt8` mit dem `ClientKey` verschlüsselt. Beide Werte werden bincode-serialisiert und base64-kodiert.
-2. **Request:** Client sendet `POST /` mit `encrypted_age` und `server_key` als JSON-Body.
-3. **Verarbeitung (Server):** Server dekodiert und deserialisiert beide Felder, setzt den ServerKey im globalen Thread-Kontext und führt `age_check` aus: `enc_age.gt(17) & enc_age.ge(0)`.
-4. **Response:** Server serialisiert das `FheBool`-Ergebnis, base64-kodiert es und gibt es als `is_adult` zurück.
-5. **Auswertung (Client):** Client dekodiert und deserialisiert `is_adult`, entschlüsselt das `FheBool` mit dem `ClientKey` und erhält das boolesche Ergebnis.
+**Phase 2 – Verifikation (wiederholbar, ~88 KB):**
 
-#### Verhaltensdiagramm
+4. Client sendet `POST /verify/{session_id}` mit ausschließlich `encrypted_age` im Body.
+5. Server liest den gecachten `ServerKey` aus dem `AppState`, führt `age_check` aus (`enc_age.gt(17) & enc_age.ge(0)`) und gibt das verschlüsselte `FheBool`-Ergebnis zurück.
+6. Client entschlüsselt das `FheBool` mit dem `ClientKey` und erhält das boolesche Ergebnis.
+ 
+**Phase 3 – Cleanup (optional):**
 
-![Verhaltensdiagramm](./Ablaufdiagramm_Age_Verification.png)
+7. Client sendet `DELETE /session/{session_id}` um die Session zu beenden und den serverseitigen RAM freizugeben.
 
 ---
 
+#### Verhaltensdiagramm
+
+```mermaid
+
+sequenceDiagram
+    participant C as Client
+    participant S as Server
+
+    Note over C,S: Phase 1 – Session-Setup (einmalig)
+
+    C->>C: Schlüsselpaar generieren
+    C->>C: Alter verschlüsseln FheInt8::encrypt(age, client_key)
+    C->>S: POST /session {server_key}
+    activate S
+    S->>S: Dekomprimieren + cachen ServerKey im AppState
+    S-->>C: 200 OK {session_id: uuid}
+    deactivate S
+
+    Note over C,S: Phase 2 – Verifikation (wiederholbar)
+
+    C->>S: POST /verify/{session_id} {encrypted_age}
+    activate S
+    S->>S: age_check(enc_age) gt(17) & ge(0) → FheBool
+    S-->>C: 200 OK {is_adult: base64(FheBool)}
+    deactivate S
+    C->>C: FheBool::decrypt(client_key) → bool
+
+    Note over C,S: Phase 3 – Cleanup (optional)
+
+    C-->>S: DELETE /session/{session_id}
+    S-->>C: 200 OK {status: deleted}
+```
+---
+
 ### OpenAPI-Schnittstelle
-
-Der Service stellt eine einzelne verschlüsselte Verifikations-API bereit. Die OpenAPI-Definition wird automatisch generiert und ist unter `/openapi.json` sowie `/docs` (Swagger UI) erreichbar.
-
+ 
+Der Service stellt eine session-basierte verschlüsselte Verifikations-API bereit. Die OpenAPI-Definition wird automatisch generiert und ist unter `/openapi.json` sowie `/docs` (Swagger UI) erreichbar.
+ 
 Im gesamten Service wird der ServerKey als `CompressedServerKey` übertragen (bincode-serialisiert, base64-kodiert).
-
-### POST /
-
-Führt eine verschlüsselte Altersverifikation durch.
-
+ 
+### POST /session
+ 
+Lädt den `CompressedServerKey` einmalig hoch, dekomprimiert ihn und gibt eine `session_id` zurück.
+ 
 #### Request
 ```json
 {
-  "encrypted_age": "string",
   "server_key": "string"
 }
 ```
-
+ 
+#### Response 200
+```json
+{
+  "session_id": "uuid"
+}
+```
+ 
+#### Fehlercodes
+- 400 – Ungültiges Base64 oder beschädigtes bincode in `server_key`
+**Body-Limit:** 2 GiB (notwendig wegen der Größe des `CompressedServerKey`)
+ 
+### POST /verify/{session_id}
+ 
+Führt eine verschlüsselte Altersverifikation durch.
+ 
+#### Request
+```json
+{
+  "encrypted_age": "string"
+}
+```
+ 
 #### Response 200
 ```json
 {
   "is_adult": "string"
 }
 ```
-
+ 
 `is_adult` ist ein base64-kodierter, bincode-serialisierter `FheBool` — `true` wenn Alter ≥ 18 und ≥ 0.
-
+ 
 #### Fehlercodes
-- 400 – Ungültiges Base64 oder beschädigtes bincode in `server_key` oder `encrypted_age`
+- 400 – Ungültiges Base64 oder beschädigtes bincode in `encrypted_age`
+- 404 – Session nicht gefunden
 - 500 – Serialisierungsfehler beim Kodieren des Ergebnisses
-
-**Body-Limit:** 2 GiB (notwendig wegen der Größe des `CompressedServerKey`)
+### DELETE /session/{session_id}
+ 
+Löscht die Session und gibt den serverseitigen RAM frei.
+ 
+#### Response 200
+```json
+{
+  "status": "deleted"
+}
+```
+ 
+#### Fehlercodes
+- 404 – Session nicht gefunden
 
 ---
 
@@ -237,13 +308,14 @@ Unter paralleler Last liegt die Fehlerrate im Mittel bei ~30 %. Die Fehler sind 
 Der p50 ist mit ~13,6 s über alle Läufe sehr stabil – das ist die reine Verarbeitungszeit eines einzelnen Requests ohne Mutex-Wartezeit. Die hohe Varianz bei p95 (30–52 s) und der Fehlerrate (26–35 %) ist dagegen direkt auf Netzwerkschwankungen bei der Übertragung des ~80 MB großen ServerKey zurückzuführen. Je nach Netzwerklast zum Messzeitpunkt verschiebt sich der Anteil der Requests, die den Proxy-Timeout überschreiten.
  
 Die Throughput-Grenze liegt bei einem parallelen Request. Jeder weitere gleichzeitige Request verlängert die Wartezeit linear, da `tfhe::set_server_key` einen globalen Thread-Kontext setzt und die gesamte Verarbeitung (Übertragung + Dekomprimierung + FHE) serialisiert wird. Ab 2 VUs überschreitet p95 den Proxy-Timeout von 60 s regelmäßig.
+
 ---
 
 ### Limitationen
 
-- Der Use Case ist vollständig zustandslos. Es gibt keine Session, keine Audit-Log und keine Möglichkeit, Ergebnisse serverseitig zu speichern oder abzurufen.
+- Der `CompressedServerKey` (~80 MB) wird einmalig beim Session-Setup übertragen und dekomprimiert gecacht. Folgende Verify-Requests enthalten nur noch `encrypted_age` (~88 KB). Der gecachte `ServerKey` verbleibt im RAM des Servers bis die Session per `DELETE /session/{id}` beendet wird – es gibt keine automatische Ablaufzeit.
 
-- Der `CompressedServerKey` (~80 MB) wird bei jedem einzelnen Request vom Client mitgeschickt, deserialisiert und dekomprimiert.Dieses Design ist eine direkte Konsequenz der Zustandslosigkeit: Da jeder Client sein eigenes Schlüsselpaar generiert, kann kein globaler ServerKey serverseitig gespeichert werden, ohne das Sicherheitsmodell zu brechen. Ein gespeicherter ServerKey eines anderen Clients würde es diesem ermöglichen, fremde Ergebnisse zu entschlüsseln. Die Folge ist, dass Netzwerkübertragung und Dekomprimierung die Latenz dominieren und ein produktiver Einsatz über das Internet praktisch nicht skaliert.
+- Sessions haben keine Authentifizierung: Jeder, der eine `session_id` kennt, kann Verify-Requests gegen diese Session stellen. In einer produktiven Umgebung müsste die Session an eine authentifizierte Identität gebunden sein.
 
 - Der Server prüft nicht, ob ein `encrypted_age`-Ciphertext bereits zuvor verwendet wurde. Ein Angreifer, der einen Ciphertext abfängt, kann ihn beliebig oft einreichen.
 
