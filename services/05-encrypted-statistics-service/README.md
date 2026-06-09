@@ -1,6 +1,6 @@
 # 📊 05 · Encrypted Statistics Service
 
-![version](https://img.shields.io/badge/version-0.1.26-blue)
+![version](https://img.shields.io/badge/version-0.1.27-blue)
 
 Compute statistics over encrypted datasets — results are accurate, inputs stay secret.
 
