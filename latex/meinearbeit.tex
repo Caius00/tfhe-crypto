@@ -6,11 +6,10 @@
 
 \usepackage[T1]{fontenc}
 \renewcommand{\familydefault}{\sfdefault}
-\usepackage{lmodern} 
-%\usepackage{helvet} 
+\usepackage{lmodern}
+%\usepackage{helvet}
 \usepackage[utf8]{inputenc}
 \usepackage[ngerman]{babel}
-\usepackage{ngerman}
 
 \usepackage{listings}
 \usepackage{amssymb}
@@ -27,8 +26,17 @@
 \usepackage{longtable}
 
 
+\usepackage{scalerel,stackengine}
+
+\newcommand\equalhat{\mathrel{\stackon[1.5pt]{=}{\stretchto{%
+    \scalerel*[\widthof{=}]{\wedge}{\rule{1ex}{3ex}}}{0.5ex}}}}
+
+
 \usetikzlibrary{arrows.meta,positioning,calc,fit,backgrounds}
 \tikzstyle{startstop} = [rectangle, rounded corners, minimum width=3cm, minimum height=1cm,text centered, draw=black, fill=red!30]
+\usepackage{booktabs}
+\usepackage{tabularx}
+
 
 %avoid overfull hbox problem
 \setlength{\emergencystretch}{3em}

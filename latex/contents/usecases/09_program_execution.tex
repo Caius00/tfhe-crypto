@@ -2,15 +2,427 @@
 \label{sub:encrypted_program_execution}
 
 \subsubsection{Funktionsbeschreibung}
+Der Use-Case ``Encrypted Program Execution'' bietet Usern die Möglichkeit,
+ein Programm auf einem Server auszuführen, ohne dass diesem dafür Einsicht in Algorithmen oder Berechnungen gewährt wird.
+
+Dafür läuft auf dem Server ein CPU-Simulator, auf dem Programme isoliert und vollständig verschlüsselt ausgeführt werden.
+
+Der Simulator basiert dabei auf einer Von-Neumann-Akkumulator-Architektur und verfügt über
+
+\begin{itemize}
+    \item ein Akkumulator-Register A
+    \item ein weiteres Register B, das bei vielen Instruktionen einen der beiden Operanden enthält
+    \item 16-Bit Instruktionen mit 8-Bit Opcode und 8-Bit Operanden
+    \item eine Carry-Flag, u.a.\ integriert durch einen JMC-Befehl
+    \item native Unterstützung von höheren Zahlenbereichen durch \texttt{ADDC} und \texttt{SUBC} Befehlen
+    \item 8-Bit Wortbreite
+    \item einem RAM mit 8-Bit Adressraum
+    \item geteiltem Adressraum für Programmcode und Programmspeicher
+\end{itemize}
+
+\autoref{tab:instruction_set} bietet eine Übersicht über das Instruction-Set.
+Besonders hervorzuheben ist dabei, dass auf jeden Opcode ein Operand folgt, auch bei Operationen,
+bei denen dieser keine Bedeutung hat.
+Dieses redundante Byte kann als Don't-Care angesehen, und frei verwendet werden.
+Bemerkenswert ist auch das explizite Fehlen eines \texttt{HALT}-Befehls, wobei dies technisch begründet ist, und im Unterabschnitt Trust- und Threat-Model weiter erklärt wird.
+Nach Sprüngen wird der Programmcounter nicht inkrementiert, ein Assembler muss Sprungadressen dementsprechend bei der Assemblierung nicht verändern.
+Nach allen weiteren Instruktionen wird der Programmcounter um zwei inkrementiert:
+\begin{gather*}
+    PC \leftarrow PC + 2
+\end{gather*}
+
+\begin{table}[htbp]
+    \centering
+    \caption{Simulator Instruction-Set-Architecture}
+    \label{tab:instruction_set}
+    \small
+    \begin{tabularx}{\textwidth}{l l l c X}
+\toprule
+\textbf{Opcode} & \textbf{Mnemonic} & \textbf{Operand} & \textbf{Carry} & \textbf{Description} \\
+\midrule
+$0000\_0000$ & $NOP$              & $ignored$  & $-$     & $No\ operation$ \\
+$0000\_0001$ & $LDA (direct)$     & $source\_ADR$ & $-$     & $A \leftarrow M[source\_ADR]$ \\
+$0000\_0010$ & $LDA (immediate)$  & $data$       & $-$     & $A \leftarrow data$ \\
+$0000\_0011$ & $LDR$              & $target\_ADR$ & $-$     & $M[target\_ADR] \leftarrow A$ \\
+$0000\_0100$ & $SWP$              & $ignored$  & $-$     & $A \leftarrow B, B \leftarrow A$ \\
+$0000\_0101$ & $JMP  (direct)$    & $ADR$        & $-$     & $SP \leftarrow ADR - 1$ \\
+$0000\_0110$ & $JMZ  (direct)$    & $ADR$        & $-$     & if $A = 0\ then\ SP \leftarrow ADR$ \\
+$0000\_0111$ & $JMC  (direct)$    & $ADR$        & $-$     & if $carry\ then\ SP \leftarrow ADR$ \\
+$0000\_1000$ & $DJNZ (direct)$    & $ADR$        & $-$     & ${A \leftarrow A - 1;} {if A \neq 0\ then\ SP \leftarrow ADR}$ \\
+\midrule
+$0000\_1001$ & $ADD$              & $ignored$  & $*$   & $A \leftarrow A + B$ \\
+$0000\_1010$ & $ADDC$             & $ignored$  & $*$   & $A \leftarrow A + B + carry$ \\
+$0000\_1011$ & $ADD (immediate)$  & $data$       & $*$   & $A \leftarrow A + data$ \\
+$0000\_1100$ & $ADDC (immediate)$ & $data$       & $*$   & $A \leftarrow A + data + carry$ \\
+$0000\_1101$ & $SUB$              & $ignored$  & $*$   & $A \leftarrow A - B$ \\
+$0000\_1110$ & $SUBC$             & $ignored$  & $*$   & $A \leftarrow A - B - carry$ \\
+$0000\_1111$ & $SUB (immediate)$  & $data $      & $*$   & $A \leftarrow A - data$ \\
+$0001\_0000$ & $SUBC (immediate)$ & $data $      & $*$   & $A \leftarrow A - data - carry$ \\
+\midrule
+$0001\_0001$ & $MUL$              & $ignored$  & $0$     & $A \mathbin{\Vert} B \leftarrow A \times B$ \\
+$0001\_0010$ & $MUL (immediate)$  & $data$       & $0$     & $A \mathbin{\Vert} B \leftarrow A \times data$ \\
+$0001\_0011$ & $DIV$              & $ignored$  & $0$     & $A \leftarrow \lfloor A / B \rfloor$ \\
+$0001\_0100$ & $DIV (immediate)$  & $data$       & $0$     & $A \leftarrow \lfloor A / data \rfloor$ \\
+\midrule
+$0001\_0101$ & $SLA$              & $ignored$  & $A[7]$  & $A \leftarrow A \ll 1$ \\
+$0001\_0110$ & $SRA$              & $ignored$  & $A[0]$  & $A \leftarrow A \gg 1$ \\
+$0001\_0111$ & $RLA$              & $ignored$  & $A[7]$  & $A \leftarrow (A \ll 1) \lor carry$ \\
+$0001\_1000$ & $RLC$              & $ignored$  & $A[7]$  & $A \leftarrow (A \ll 1) \lor A[7]$ \\
+$0001\_1001$ & $RRA$              & $ignored$  & $A[0]$  & $A \leftarrow (A \gg 1) \lor (carry \ll 7)$ \\
+$0001\_1010$ & $RRC$              & $ignored$  & $A[0]$  & $A \leftarrow (A \gg 1) \lor (A[0] \ll 7)$ \\
+\midrule
+$0001\_1011$ & $CCA$              & $ignored$  & $-$     & $A \leftarrow \overline{A}$ \\
+$0001\_1100$ & $AND$              & $ignored$  & $-$     & $A \leftarrow A \land B$ \\
+$0001\_1101$ & $OR$               & $ignored$  & $-$     & $A \leftarrow A  \lor B$ \\
+$0001\_1110$ & $XOR$              & $ignored$  & $-$     & $A \leftarrow A \oplus B$ \\
+\midrule
+$0001\_1111$ & $DEC$              & $ignored$  & $*$   & $A \leftarrow A - 1$ \\
+$0010\_0000$ & $INC$              & $ignored$  & $*$   & $A \leftarrow A + 1$ \\
+\bottomrule
+    \end{tabularx}
+\end{table}
+
+
+\textbf{Client-Server-Interaktion:}\\
+Die Kommunikation mit dem Server findet über eine REST-Schnittstelle oder einen Websocket statt.
+Das folgende Sequenzdiagramm illustriert den Ablauf der Ausführung eines Programms.
+Zuvor muss der Client ein Schlüsselpaar (ClientKey, ServerKey) generieren, Zellenwerte und Länge des RAMs (beinhaltet Programm),
+und Werte für A und B Register sowie für die Carry-Flag bestimmen und verschlüsseln.
+
+\resizebox{.6\paperwidth}{.5\paperheight} {
+% generated by Plantuml 1.2025.4
+    \definecolor{plantucolor0000}{RGB}{173,216,230}
+    \definecolor{plantucolor0001}{RGB}{24,24,24}
+    \definecolor{plantucolor0002}{RGB}{0,0,0}
+    \definecolor{plantucolor0003}{RGB}{255,182,193}
+    \definecolor{plantucolor0004}{RGB}{255,255,255}
+    \definecolor{plantucolor0005}{RGB}{255,255,255}
+    \definecolor{plantucolor0006}{RGB}{226,226,240}
+    \definecolor{plantucolor0007}{RGB}{238,238,238}
+    \definecolor{plantucolor0008}{RGB}{254,255,221}
+    \begin{tikzpicture}[yscale=-1
+    ,pstyle2/.style={color=plantucolor0001,fill=white,line width=1.0pt}
+    ,pstyle3/.style={color=black,line width=1.5pt}
+    ,pstyle4/.style={color=plantucolor0005,line width=0.0pt}
+    ,pstyle5/.style={color=plantucolor0001,line width=0.5pt,dash pattern=on 5.0pt off 5.0pt}
+    ,pstyle6/.style={color=plantucolor0001,fill=plantucolor0006,line width=0.5pt}
+    ,pstyle7/.style={color=plantucolor0007,fill=plantucolor0007,line width=1.0pt}
+    ,pstyle8/.style={color=black,line width=1.0pt}
+    ,pstyle9/.style={color=black,fill=plantucolor0007,line width=2.0pt}
+    ,pstyle10/.style={color=plantucolor0001,fill=plantucolor0001,line width=1.0pt}
+    ,pstyle11/.style={color=plantucolor0001,line width=1.0pt}
+    ,pstyle12/.style={color=plantucolor0001,fill=plantucolor0008,line width=0.5pt}
+    ,pstyle13/.style={color=black,fill=plantucolor0007,line width=1.5pt}
+    ]
+\draw[color=plantucolor0001,fill=plantucolor0000,line width=0.5pt] (62pt,6pt) rectangle (127.61pt,617pt);
+\node at (70.21pt,6pt)[below right,color=black,inner sep=0]{\textbf{Frontend~}};
+\draw[color=plantucolor0001,fill=plantucolor0003,line width=0.5pt] (282.595pt,6pt) rectangle (350.255pt,617pt);
+\node at (295.245pt,6pt)[below right,color=black,inner sep=0]{\textbf{Backend}};
+\draw[pstyle2] (89.805pt,109pt) rectangle (99.805pt,571pt);
+\draw[pstyle2] (311.425pt,109pt) rectangle (321.425pt,571pt);
+\draw[pstyle3] (46pt,325pt) rectangle (484.735pt,510pt);
+\draw[pstyle3] (56pt,381pt) rectangle (466.255pt,503pt);
+\draw[pstyle4] (90.805pt,45pt) rectangle (98.805pt,589pt);
+\draw[pstyle5] (94pt,45pt) -- (94pt,589pt);
+\draw[pstyle4] (312.425pt,45pt) rectangle (320.425pt,589pt);
+\draw[pstyle5] (315.595pt,45pt) -- (315.595pt,589pt);
+\draw[pstyle6] (76pt,25pt) arc (180:270:5pt) -- (81pt,20pt) -- (108.61pt,20pt) arc (270:360:5pt) -- (113.61pt,25pt) -- (113.61pt,39pt) arc (0:90:5pt) -- (108.61pt,44pt) -- (81pt,44pt) arc (90:180:5pt) -- (76pt,39pt) -- cycle;
+\node at (83pt,27pt)[below right,color=black,inner sep=0]{client};
+\draw[pstyle6] (76pt,593pt) arc (180:270:5pt) -- (81pt,588pt) -- (108.61pt,588pt) arc (270:360:5pt) -- (113.61pt,593pt) -- (113.61pt,607pt) arc (0:90:5pt) -- (108.61pt,612pt) -- (81pt,612pt) arc (90:180:5pt) -- (76pt,607pt) -- cycle;
+\node at (83pt,595pt)[below right,color=black,inner sep=0]{client};
+\draw[pstyle6] (296.595pt,25pt) arc (180:270:5pt) -- (301.595pt,20pt) -- (331.255pt,20pt) arc (270:360:5pt) -- (336.255pt,25pt) -- (336.255pt,39pt) arc (0:90:5pt) -- (331.255pt,44pt) -- (301.595pt,44pt) arc (90:180:5pt) -- (296.595pt,39pt) -- cycle;
+\node at (303.595pt,27pt)[below right,color=black,inner sep=0]{server};
+\draw[pstyle6] (296.595pt,593pt) arc (180:270:5pt) -- (301.595pt,588pt) -- (331.255pt,588pt) arc (270:360:5pt) -- (336.255pt,593pt) -- (336.255pt,607pt) arc (0:90:5pt) -- (331.255pt,612pt) -- (301.595pt,612pt) arc (90:180:5pt) -- (296.595pt,607pt) -- cycle;
+\node at (303.595pt,595pt)[below right,color=black,inner sep=0]{server};
+\draw[pstyle2] (89.805pt,109pt) rectangle (99.805pt,571pt);
+\draw[pstyle2] (311.425pt,109pt) rectangle (321.425pt,571pt);
+\draw[pstyle7] (0pt,73pt) rectangle (503.075pt,76pt);
+\draw[pstyle8] (0pt,73pt) -- (503.075pt,73pt);
+\draw[pstyle8] (0pt,76pt) -- (503.075pt,76pt);
+\draw[pstyle9] (185.5875pt,65pt) rectangle (317.4875pt,83pt);
+\node at (191.5875pt,69pt)[below right,color=black,inner sep=0]{\textbf{WebSocket Handshake~}};
+\draw[pstyle10] (299.425pt,105pt) -- (309.425pt,109pt) -- (299.425pt,113pt) -- (303.425pt,109pt) -- cycle;
+\draw[pstyle11] (99.805pt,109pt) -- (305.425pt,109pt);
+\node at (106.805pt,97pt)[below right,color=black,inner sep=0]{open websocket};
+\draw[pstyle10] (110.805pt,129pt) -- (100.805pt,133pt) -- (110.805pt,137pt) -- (106.805pt,133pt) -- cycle;
+\draw[pstyle11] (104.805pt,133pt) -- (310.425pt,133pt);
+\node at (116.805pt,121pt)[below right,color=black,inner sep=0]{confirm websocket};
+\draw[pstyle7] (0pt,159pt) rectangle (503.075pt,162pt);
+\draw[pstyle8] (0pt,159pt) -- (503.075pt,159pt);
+\draw[pstyle8] (0pt,162pt) -- (503.075pt,162pt);
+\draw[pstyle9] (195.7325pt,151pt) rectangle (307.3425pt,169pt);
+\node at (201.7325pt,155pt)[below right,color=black,inner sep=0]{\textbf{Data Transmission~}};
+\draw[pstyle12] (5pt,184pt) -- (5pt,214pt) -- (186pt,214pt) -- (186pt,194pt) -- (176pt,184pt) -- (5pt,184pt);
+\draw[pstyle12] (176pt,184pt) -- (176pt,194pt) -- (186pt,194pt) -- (176pt,184pt);
+\node at (11pt,189pt)[below right,color=black,inner sep=0]{transmit data in single package,};
+\node at (11pt,199pt)[below right,color=black,inner sep=0]{~don't stream data};
+\draw[pstyle10] (299.425pt,231pt) -- (309.425pt,235pt) -- (299.425pt,239pt) -- (303.425pt,235pt) -- cycle;
+\draw[pstyle11] (99.805pt,235pt) -- (305.425pt,235pt);
+\node at (106.805pt,223pt)[below right,color=black,inner sep=0]{ServerKey, Ciphertext, \#Cycles to execute};
+\draw[pstyle11] (321.425pt,259pt) -- (363.425pt,259pt);
+\draw[pstyle11] (363.425pt,259pt) -- (363.425pt,272pt);
+\draw[pstyle11] (322.425pt,272pt) -- (363.425pt,272pt);
+\draw[pstyle10] (332.425pt,268pt) -- (322.425pt,272pt) -- (332.425pt,276pt) -- (328.425pt,272pt) -- cycle;
+\node at (328.425pt,247pt)[below right,color=black,inner sep=0]{validate data, set programme state};
+\draw[pstyle7] (0pt,298pt) rectangle (503.075pt,301pt);
+\draw[pstyle8] (0pt,298pt) -- (503.075pt,298pt);
+\draw[pstyle8] (0pt,301pt) -- (503.075pt,301pt);
+\draw[pstyle9] (189.8675pt,290pt) rectangle (313.2075pt,308pt);
+\node at (195.8675pt,294pt)[below right,color=black,inner sep=0]{\textbf{Step-Execution Loop~}};
+\draw[pstyle13] (46pt,325pt) -- (112.4pt,325pt) -- (112.4pt,327pt) -- (102.4pt,337pt) -- (46pt,337pt) -- (46pt,325pt);
+\draw[pstyle3] (46pt,325pt) rectangle (484.735pt,510pt);
+\node at (61pt,326pt)[below right,color=black,inner sep=0]{\textbf{loop}};
+\node at (127.4pt,327pt)[below right,color=black,inner sep=0]{\textbf{[1 to \#Cycles]}};
+\draw[pstyle11] (321.425pt,353pt) -- (363.425pt,353pt);
+\draw[pstyle11] (363.425pt,353pt) -- (363.425pt,366pt);
+\draw[pstyle11] (322.425pt,366pt) -- (363.425pt,366pt);
+\draw[pstyle10] (332.425pt,362pt) -- (322.425pt,366pt) -- (332.425pt,370pt) -- (328.425pt,366pt) -- cycle;
+\node at (328.425pt,341pt)[below right,color=black,inner sep=0]{execute single programme step};
+\draw[pstyle13] (56pt,381pt) -- (114.25pt,381pt) -- (114.25pt,383pt) -- (104.25pt,393pt) -- (56pt,393pt) -- (56pt,381pt);
+\draw[pstyle3] (56pt,381pt) rectangle (466.255pt,503pt);
+\node at (71pt,382pt)[below right,color=black,inner sep=0]{\textbf{alt}};
+\node at (129.25pt,383pt)[below right,color=black,inner sep=0]{\textbf{[connection alive]}};
+\draw[pstyle10] (110.805pt,405pt) -- (100.805pt,409pt) -- (110.805pt,413pt) -- (106.805pt,409pt) -- cycle;
+\draw[pstyle11] (104.805pt,409pt) -- (310.425pt,409pt);
+\node at (116.805pt,397pt)[below right,color=black,inner sep=0]{mutated programme state};
+\draw[pstyle11] (99.805pt,433pt) -- (141.805pt,433pt);
+\draw[pstyle11] (141.805pt,433pt) -- (141.805pt,446pt);
+\draw[pstyle11] (100.805pt,446pt) -- (141.805pt,446pt);
+\draw[pstyle10] (110.805pt,442pt) -- (100.805pt,446pt) -- (110.805pt,450pt) -- (106.805pt,446pt) -- cycle;
+\node at (106.805pt,421pt)[below right,color=black,inner sep=0]{decrypt state (validate if applicable)};
+\draw[color=black,line width=1.0pt,dash pattern=on 2.0pt off 2.0pt] (56pt,455pt) -- (466.255pt,455pt);
+\node at (61pt,455pt)[below right,color=black,inner sep=0]{\textbf{[client closed connection]}};
+\draw[pstyle11] (321.425pt,482pt) -- (363.425pt,482pt);
+\draw[pstyle11] (363.425pt,482pt) -- (363.425pt,495pt);
+\draw[pstyle11] (322.425pt,495pt) -- (363.425pt,495pt);
+\draw[pstyle10] (332.425pt,491pt) -- (322.425pt,495pt) -- (332.425pt,499pt) -- (328.425pt,495pt) -- cycle;
+\node at (328.425pt,470pt)[below right,color=black,inner sep=0]{cancel execution, exit loop};
+\draw[pstyle7] (0pt,535pt) rectangle (503.075pt,538pt);
+\draw[pstyle8] (0pt,535pt) -- (503.075pt,535pt);
+\draw[pstyle8] (0pt,538pt) -- (503.075pt,538pt);
+\draw[pstyle9] (187.6175pt,527pt) rectangle (315.4575pt,545pt);
+\node at (193.6175pt,531pt)[below right,color=black,inner sep=0]{\textbf{Connection Teardown~}};
+\draw[pstyle10] (105.805pt,567pt) -- (95.805pt,571pt) -- (105.805pt,575pt) -- (101.805pt,571pt) -- cycle;
+\draw[pstyle11] (99.805pt,571pt) -- (315.425pt,571pt);
+\node at (111.805pt,559pt)[below right,color=black,inner sep=0]{close websocket};
+    \end{tikzpicture}
+}
+
+Bei längeren und komplexeren Programmen sind die regelmäßigen Mitteilungen des aktuellen Programmzustandes,
+die durch die Verwendung von Websockets ermöglicht werden, besonders vorteilhaft,
+da so eventuelle Fehler im Programm frühestmöglich erkannt, und die Ausführung abgebrochen werden kann.
+Ebenso kann der Server die Ausführung ohne einen expliziten Befehl des Clients abbrechen,
+falls die Verbindung ungeordnet beendet wurde, um so Ressourcen zu schonen.
+
+Das Schließen des Websockets beendet die Session aus Sicht des Servers.
+Aus Sicht des Clients kann die Session jedoch verlängert werden, indem ein neuer Websocket geöffnet, und der übermittelte Programmendzustand dem Server
+als Startzustand des Programms einer neuen Programmausführung übermittelt wird.
+So kann ein Programm über mehrere Sessions hinweg ausgeführt werden.
 
 \subsubsection{OpenAPI-Schnittstelle}
 
 \subsubsection{Trust- und Threat-Model}
+Eine Übersicht über den Wissensstand des Servers zu Eingaben und Komponenten bietet \autoref{tab:09-trust}.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Übersicht Trust-Modell}
+    \label{tab:09-trust}
+    \small
+    \begin{tabularx}{\textwidth}{X c c c}
+\toprule
+\textbf{Datum} & \textbf{am Server klar} & \textbf{am Server verschlüsselt} & \textbf{nur am Client} \\
+\midrule
+\textbf{Programmzustand} &&&\\
+Programm &  & X & \\
+Programmcounter & & X & \\
+Registerwerte & & X & \\
+Carry-Flag & & X & \\
+RAM & & X & \\
+\midrule
+\textbf{Simulator-Spezifikation} &&&\\
+Instructionset & X &  & \\
+Wortbreite Simulator & X &  & \\
+Architektur (Akkumulator) & X &  & \\
+\midrule
+\textbf{Programmausführungsmetadaten} &&&\\
+Anzahl Zyklen & X &  & \\
+Größe RAM & X &  & \\
+\midrule
+Kommunikationsmetadaten & X &  & \\
+\bottomrule
+    \end{tabularx}
+\end{table}
+
+Folgende Mechanismen gewähren die Unwissenheit des Servers über das ausgeführte Programm:
+\begin{itemize}
+    \item Die Instruktionen sind vollhomomorph verschlüsselt, der Server kann keine ausgeführten Algorithmen erkennen.
+    \item Werte von RAM-Zellen und Registern sind vollhomomorph verschlüsselt, der Server kennt weder Operanten noch Ergebnisse.
+    \item Der Programmcounter ist vollhomomorph verschlüsselt, der Server kann den Programmfluss (Sprünge, Schleifen, \ldots) nicht nachvollziehen.
+    \item Der RAM-Zugriff ist vollhomomorph verschlüsselt, der Server kennt weder Ursprungs- noch Zieladressen von Lese- oder Schreibbefehlen.
+\end{itemize}
+
+Der Server führt somit in jedem Zyklus jede Instruktion aus, und selektiert schließlich für A und B Register, Programmcounter, jede RAM-Zeile, und Carry Flag
+das Ergebnis, vollhomomorph verschlüsselt.
+
+Die fehlenden Informationen über auszuführende Instruktionen bedingen das oben genannte Fehlen eines \texttt{HALT} Befehls.
+Dies in Kombination mit der Unkenntnis des Programmcounters, begründet warum die konkrete Angabe der Anzahl an auszuführenden Zyklen nötig ist.
+
+Folgende Informationen liegen dem Server vor:
+\begin{itemize}
+    \item Metadaten über die Kommunikation: IP-Adresse, Zeitpunkt, Frequenz, Latenz, etc.
+    \item technische Spezifikationen des Simulators: Wortbreite, Instruction-Set, Akkumulator-Architektur, Register (Anzahl, Größe),\ldots
+    \item Größe des RAMs für ein Programm
+    \item Anzahl der auszuführenden Schritte des Programms
+\end{itemize}
+
+Die Kommunikationsmetadaten sind in diesem Kontext nicht explizit schützenswert, da nicht die Identität der User, sondern deren Algorithmen
+der Geheimhaltung obliegen.
+Diese Metadaten lassen keine Schlüsse auf schützenswerte Programme und Algorithmen zu.
+Ein frühzeitiges Abbrechen der Ausführung lässt einen Fehler im ausgeführten Programm vermuten,
+Informationen über den konkreten Inhalt des Programms, oder die Art des Fehlers werden damit nicht preisgegeben.
+
+Die durch Klartextdaten erlangten Informationen über ein Programm lassen sich folgendermaßen quantifizieren:
+die Anzahl möglicher Instruktionsabfolgen ist
+
+\begin{align*}
+    instruction\_sequences &= {number\_of\_instructions}^{executed\_cycles}
+    \intertext{mit den 32 Instruktionen des Simulators ergibt sich}
+    instruction\_sequences &= 32^{executed\_cycles}
+    \intertext{Beispiel: 10 Zyklen}
+    instruction\_sequences &= 32^{10} > 10^{15}\ (1\ Brd.)
+    \intertext{Auch der limitierte Adressraum von $2^{8} = 256$ Adressen ermöglicht mit 8-Bit Wortbreite einen Zustandsraum von maximal}
+    2^{256 * 8} &= 2^{2048}
+    \intertext{möglichen Zuständen. Falls ein kleinerer RAM mit bspw.\ 10 Adressen gewählt wird, ergibt sich ein Zustandsraum von}
+    2^{10 * 8} &= 2^{80} > 10^{24}\ (1\ Quadrillion)
+\end{align*}
+
+Dabei schränkt die Größe des RAMs die möglichen Instruktionsabfolgen nicht weiter ein, da ein Programm selbstverändernde Instruktionen beinhalten kann.\\
+Somit lässt sich zwar demonstrieren, dass der Server auch bei kleinen Programmen keine Abschätzungen über den möglichen Inhalt oder Zustand des Programmes machen kann,
+insbesondere die Anzahl der Zyklen lässt jedoch Rückschlüsse auf die Komplexität ausgeführter Algorithmen zu.
+Sollte dies ein relevantes Risiko für User darstellen, können Programmausführungen künstlich verlängert werden:
+auch wenn das Ergebnis nach $n$ Zyklen bereit ist, kann der Server bspw.\ angewiesen werden, das Programm für $2n$ Zyklen auszuführen.
+Die Websocket-Kommunikation erlaubt dem User dabei, das Ergebnis bereits nach den tatsächlich nötigen $n$ Takten auszuwerten.\\
+
+Die Software ermöglicht somit Usern, schützenswerte Programme und Algorithmen,
+die einem Geheimhaltungsgebot unterliegen,
+auf einem Server einer nicht vertrauenswürdigen dritten Partei, etwa eines Cloud-Providers, auszuführen.
+Ferner auch bei bekannten Programmen und Algorithmen schützenswerte Ergebnisse auf Basis von schützenswerten Daten
+berechnet werden.
+
+Diese Sicherheit ist bedingt durch:
+\begin{itemize}
+    \item Kryptographische Sicherheit des TFHE-Verschlüsselungsschemas
+    \item Kryptographisch sichere implementierung durch TFHE-rs
+    \item Geheimhaltung von Programmen und Algorithmen von Usern über den Entwicklungsprozess hinweg
+    \item Vertrauen in die Entwicklungs-Toolchain (git-Server, Assemblierer,\ etc.)
+    \item Vertrauen in eine Client-Anwendung, die die Klartextdaten verschlüsseln und an den Server sendet
+    \item Kryptographisch sichere Implementierung des TFHE-Verschlüsselungsschemas einer Client-Anwendung
+    \item Beschränkung von Zugriff auf alle Instanzen von unverschlüsselten Programmen, Daten und Rechenergebnissen auf Client-Seite
+\end{itemize}
+
+Sollten eine, oder mehrere dieser Bedingungen ausfallen, wird die Geheimhaltung schützenswerter Daten kompromittiert.
+Ferner müssen Schlüssel mit ausreichend großer LWE-Dimension gewählt werden, sodass sie für die Zeitspanne,
+für die Geheimtexte sicher bleiben sollen, nicht anfällig für Angriffe via bspw.\ Lattice-Reduction oder Dual-Attacks sind.\\
+
+Der Simulator arbeitet auf 8-Bit positiven Ganzzahlen ($256$ Zustände) und Booleans ($2$ Zustände).
+Ein Server-Provider kann Werte wie Operanten, Instruktionen, Register, etc.\ während der Ausführung eines Programmes manipulieren.
+Durch den begrenzten Zustandsraum (insbesondere bei Booleans) können so Ergebnisse manipuliert werden,
+die User nicht durch einfache Plausibilitätschecks erkennen können.
+Auch wenn Server-Provider Ergebnisse nicht arbiträr wählen können, können sie quasi-unerkennbare Fehler in Programme einfließen lassen,
+und so Ergebnisse und anschließende Interpretation von Usern manipulieren.
+
+Dieses Problem kann durch ein Trusted-Execution-Environment auf Hardwareseite gelöst werden, dabei muss Vertrauen in Hardware-Hersteller gegeben sein.
+Dank Hardware-Attestation-Keys kann die Existenz einer solchen Umgebung verifiziert werden, Vertrauen in Server-Provider ist nicht nötig.
+
+Ebenfalls kann eine kryptographische Softwarelösung durch Zero-Knowledge-Proofs eingesetzt werden, dies ist jedoch nicht implementiert.
 
 \subsubsection{FHE-Designentscheidungen}
+Die Software verwendet ausschließlich TFHE-Verschlüsselte Booleans und 8-Bit positive Ganzzahlen.
+Die darauf ausgeführten Operationen sind beschrieben in \autoref{tab:tfhe_cost}.
+Dabei werden Bitshift und -rotationen exklusiv im Kontext von Instruktionen ausgeführt, bspw.:
+\begin{align*}
+    SLA:\ A \leftarrow A\ll1
+\end{align*}
+Shifts und Rotationen über Klartextwerte ist in TFHE-rs nicht rechenintensiv,
+dies steht im Kontrast zu Shift und Rotationen über verschlüsselten Werte, die sehr teuer sind.
+
+Da in jedem Zyklus des Programmdurchlaufes immer alle Operationen ausgeführt werden müssen,
+sinkt die Performance mit jeder zusätzlichen Instruktion im Instruction-Set.
+Für jede Instruktion muss Gleichheit zum aktuellen Opcode geprüft werden,
+sie muss berechnet werden, sie muss in den CMUX-Tree aufgenommen werden,
+der den nächsten Wert des A-Registers bestimmt,
+evtl.\ müssen auch die CMUX-Ketten von Programmcounter, B-Register, Carry-Flag oder RAM-Zugriff angepasst werden.
+
+Die Kosten vieler dieser ausgeführten Operationen skaliert mit der Größe der Operanden,
+somit wurde eine Wortbreite von 8-Bit für gewählt um angemessene Performance zu gewähren.
+Verwendete Datentypen sind somit \texttt{FheUint8}, und \texttt{FheBool}.
+Mit den \texttt{SUBC} und \texttt{ADDC} Instruktionen unterstützt der Simulator dennoch nativ das Rechnen in höheren Zahlenbereichen.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Komplexität verwendeter Operationen}
+    \label{tab:tfhe_cost}
+    \begin{tabular}{llll}
+        \toprule
+        \textbf{Operation}         & \textbf{Kosten}                                     \\
+        \midrule
+        Addition \& Subtraktion    & Gering                                              \\
+        Bitweise Logik             & Gering-Moderat                                      \\
+        Bitshift \& -rotationen    & Gering                                              \\
+        CMUX                       & Moderat (Effizient in Verbindung mit Bootstrapping) \\
+        Gleichheit                 & Moderat                                             \\
+        Multiplikation \& Division & Hoch                                                \\
+        \bottomrule
+    \end{tabular}
+\end{table}
 
 \subsubsection{Komplexität der eigenen Algorithmen}
+Fundamental skaliert die Laufzeit einer Programmausführung linear mit der Anzahl der auszuführenden Zyklen:
+$\mathcal{O}(N_{cycles})$.
+Da bei der Ausführung aufgrund der Unwissenheit keine Bedingungen evaluiert werden können,
+und die Ausführung somit zwangsweise branchless geschieht,
+gibt es keinen Unterschied zwischen Worst-Case, Best-Case und Average-Case.
+
+Interne Algorithmen haben folgende Laufzeitkomplexitäten´:
+\begin{itemize}
+    \item RAM Lese- und Schreibzugriffe werden in Batches parallel ausgeführt: ($\mathcal{O}(N_{adr\_space}))$)
+    \item Ergebnisse von Instruktionen werden parallel berechnet: ($\mathcal{O}(N_{instructions})$)
+    \item Der nächste Wert des A-Registers wird in einer Baumstruktur bestimmt: ($\mathcal{O}(\log(N_{instructions_A}))$)
+    \item Der nächste Wert des B-Registers wird sequenziell bestimmt: ($\mathcal{O}(N_{instructions_{B}})$)
+    \item Der nächste Wert des Programmcounters wird sequenziell bestimmt: ($\mathcal{O}(N_{instructions_{pc}})$)
+    \item Der nächste Wert der Carry-Flag wird sequenziell bestimmt: ($\mathcal{O}(N_{instructions_{CF}})$)
+\end{itemize}
+
+Wobei $(N_{instructions_A})$ die Menge an Instruktionen, die das A-Register verändern bezeichne,
+äquivalent für B-Register, Programmzähler und Carry-Flag.
 
 \subsubsection{Performance-Messung}
 
 \subsubsection{Limitationen}
+Die Software ermöglicht die verschlüsselte Ausführung eines Programmes,
+ohne das eine nicht vertrauenswürdige drite Partei,
+die das Programm ausführt Informationen über Inhalt oder berechnetes erlangen kann.
+Limitiert ist dieser Anwendungsfall dadurch, dass die vollhomomorph verschlüsselte Ausführung deutlich langsamer ist,
+als die unverschlüsselte Ausführung.
+So dauert eine Addition auf einem modernen Consumer-Grade-CISC-Prozessor meist einen Takt (mit 4GHz Takt $\equalhat 0.25ns$), inklusive Pipelining,
+sodass vier Additionen von 64-Bit-Zahlen gleichzeitig ausgeführt werden können,
+und das Ergebnis der vierten Addition nach lediglich $0.4375ns$ bereit ist.
+
+Für vier aufeinanderfolgende Additionen von 8-Bit-Zahlen braucht der Simulator nach Messung auf der beschriebenen Server-Hardware ungefähr 20 Sekunden.
+Dies stellt eine Verlangsamung um einenen Faktor von etwa $5 * 10^6$ dar.
+Ferner müssen für die Addition von zwei 64-Bit-Zahlen acht 8-Bit Additionen durchgeführt werden, zzgl.\ sieben Transportbefehle, und 7 SWAP-Befehlen
+für insgesamt 22 Instruktionen pro 64-Bit Addition.
+Somit ergibt sich ein Gesamtfaktor von ca. $10^8$,
+die ein Consumer-Grade-Prozessor die auf dem Server simulierte Berechnung schneller ausführt.
+
+Somit ergeben sich zwei Limitationen:
+
+\begin{enumerate}
+    \item Das Instructionset ist für Berechnungen im Kontext schützenswerter Algorithmen, Daten, oder Programme evtl.\ nicht ausreichend
+    \item Die drastischen Perfomanceeinbüßungen bedeuten,
+dass die Ausführung des Programmes auf dem Endgerät des Nutzers schneller wäre, als sie verschlüsselt auf dem Server auszuführen.
+\end{enumerate}
+
+Hierbei ist der letzte Punkt besonders relevant, da die lokale Ausführung des Programmes die selben Anforderungen erfüllt,
+wie die vollhomomorph verschlüsselte Ausführung bei nicht-vertrauenswürdigen Drittanbieter von Cloud-Rechenleistung.
