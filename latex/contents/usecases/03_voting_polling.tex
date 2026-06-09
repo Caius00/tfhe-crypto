@@ -201,8 +201,6 @@ Teilnehmer beantragt den Beitritt zu einer Session. Der Beitritt ist zunächst p
 
 409 – Session bereits beendet
 
-\\
-
 \textbf{POST/APPROVE}
 
 Der Creator genehmigt oder lehnt Teilnehmer ab.
@@ -233,8 +231,6 @@ Der Creator genehmigt oder lehnt Teilnehmer ab.
 409 – Session bereits beendet
 
 404 – Teilnehmer nicht gefunden (nur bei approval=true relevant)
-
-\\
 
 \textbf{POST /vote}
 
@@ -274,8 +270,6 @@ Ein genehmigter Teilnehmer sendet seine verschlüsselten Votes.
 
 400 – Anzahl der Votes stimmt nicht mit Fragen überein
 
-\\
-
 \textbf{GET /status/{session\_id}/{participant\_id}}
 
 Liefert den aktuellen Status eines Teilnehmers.
@@ -300,8 +294,6 @@ Liefert den aktuellen Status eines Teilnehmers.
 404 – Session nicht gefunden
 
 403 – Nicht autorisiert
-
-\\
 
 \textbf{GET /results/{session\_id}/{creator\_id}}
 
@@ -334,8 +326,6 @@ Gibt die homomorph aggregierten Ergebnisse zurück (nur Creator). Wenn noch nich
 404 – Session nicht gefunden
 
 403 – Nicht autorisiert
-
-\\
 
 \textbf{POST /finalize/{session\_id}/{creator\_id}}
 
@@ -614,7 +604,7 @@ Es wurden zwei Testszenarien mit unterschiedlichen funktionalen Schwerpunkten un
 
 \begin{itemize}
     \item Teilnehmer-Anfragen: Analyse der Endpunkte (POST /join und GET /status), um das Systemverhalten bei einem Anstieg von Join-Anfragen und hochfrequentem Polling durch die Teilnehmer zu evaluieren.
-    \item Ergebnisauswertung: Dedizierte Stressprüfung des Endpunkts (GET /results/{session_id}/{creator_id}) unter einer Dauerlast von konstant 10 parallelen VUs. Um für diesen k6-Test die mathematische Auslastung der CPU zu erzwingen, wurde das System vorab in einen Zustand versetzt, in dem die Bedingung voted_count >= approved_count dauerhaft erfüllt ist. Dadurch wurde sichergestellt, dass jeder eingehende Request unweigerlich die rechenintensive kryptografische Funktion aggregate_votes_ciphertext_only durchläuft. Dieses Szenario wurde in zwei separaten Durchläufen evaluiert, einmal mit einer Basis von 2 Teilnehmern und im Anschluss mit 10 Teilnehmern.
+    \item Ergebnisauswertung: Dedizierte Stressprüfung des Endpunkts (GET /results/\{session\_id\}/\{creator\_id\}) unter einer Dauerlast von konstant 10 parallelen VUs. Um für diesen k6-Test die mathematische Auslastung der CPU zu erzwingen, wurde das System vorab in einen Zustand versetzt, in dem die Bedingung voted\_count $\geq$ approved\_count dauerhaft erfüllt ist. Dadurch wurde sichergestellt, dass jeder eingehende Request unweigerlich die rechenintensive kryptografische Funktion aggregate\_votes\_ciphertext\_only durchläuft. Dieses Szenario wurde in zwei separaten Durchläufen evaluiert, einmal mit einer Basis von 2 Teilnehmern und im Anschluss mit 10 Teilnehmern.
 \end{itemize}
 
 Performancetest 1 (Join und Polling) (08.06.2026)
@@ -669,7 +659,7 @@ Durchsatz & 1,49 Request/s & 0,90 Request/s \\
 \end{tabular}
 \end{table}
 
-Während das System bei 2 Stimmen sehr schnell reagiert, führt die rechenintensive kryptografische Funktion aggregate_votes_ciphertext_only bei 10 Stimmen zu einer massiven Latenz von über 11 Sekunden im p95-Bereich. Diese Verzögerung resultiert aus der globalen Zustandssperre (state.lock()). Da dieser Mutex während der gesamten FHE-Berechnung gehalten wird, blockiert er die parallele Verarbeitung des Axum-Servers und führt zu einer sequenziellen Abarbeitung aller eingehenden Anfragen. Trotz dieser intensiven CPU-Auslastung arbeitet das Backend vollständig stabil und verarbeitet alle Anfragen ohne Fehlerraten.
+Während das System bei 2 Stimmen sehr schnell reagiert, führt die rechenintensive kryptografische Funktion aggregate\_votes\_ciphertext\_only bei 10 Stimmen zu einer massiven Latenz von über 11 Sekunden im p95-Bereich. Diese Verzögerung resultiert aus der globalen Zustandssperre (state.lock()). Da dieser Mutex während der gesamten FHE-Berechnung gehalten wird, blockiert er die parallele Verarbeitung des Axum-Servers und führt zu einer sequenziellen Abarbeitung aller eingehenden Anfragen. Trotz dieser intensiven CPU-Auslastung arbeitet das Backend vollständig stabil und verarbeitet alle Anfragen ohne Fehlerraten.
 
 \begin{figure}[H]
     \centering
