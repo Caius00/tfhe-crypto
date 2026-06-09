@@ -108,14 +108,17 @@ abgegeben werden können. Die OpenAPI-Definition wird automatisch
 generiert und ist unter \texttt{/openapi.json} sowie \texttt{/docs}
 (Swagger UI) verfügbar.
 
-Im gesamten Service wird der PublicKey als CompressedPublicKey
-verwendet. Dieser ermöglicht eine Batch-Verschlüsselung.
+Im gesamten Service werden die TFHE-Schlüssel in serialisierter Form übertragen und gespeichert (Base64 kodiert). Für die Verschlüsselung von Teilnehmernamen und Stimmen wird ein CompactPublicKey verwendet. Diese kompakte Repräsentation des PublicKeys reduziert die Größe des öffentlichen Schlüssels und ermöglicht eine effiziente Batch-Verschlüsselung.
+Für die homomorphe Auswertung wird ein CompressedServerKey verwendet. Dieser wird ebenfalls aus dem ClientKey abgeleitet und bei der Erstellung einer Session an das Backend übertragen. Der Server speichert den Schlüssel ausschließlich in seiner komprimierten, serialisierten Form. Erst unmittelbar vor der Durchführung homomorpher Operationen wird der Schlüssel deserialisiert und zu einem regulären ServerKey dekomprimiert. Dadurch wird der Speicherbedarf des Backend-Zustands reduziert, während die vollständige Funktionalität der TFHE-Auswertung erhalten bleibt.
+Der geheime ClientKey verbleibt ausschließlich beim Session-Ersteller und wird zu keinem Zeitpunkt an das Backend übertragen. Nur mit diesem Schlüssel können verschlüsselte Namen und aggregierte Abstimmungsergebnisse wieder entschlüsselt werden.
+
 
 \textbf{POST/session}
+
 Legt eine neue Voting-Session an.
 
 
-\textbf{Request}:
+\textbf{Request}
 \begin{lstlisting}
 {
   "creator_id": "string",
@@ -132,17 +135,22 @@ Legt eine neue Voting-Session an.
 }
 \end{lstlisting}
 
-\textbf{Response 200}:
+\textbf{Response 200}
 \begin{lstlisting}
 {
   { "session_id": "uuid" }
 }
 \end{lstlisting}
 
-\textbf{Fehlercodes}: 400 – Invalid Base64 oder beschädigtes bincode im server\_key
+\textbf{Fehlercodes}: 
+
+400 – Invalid Base64 oder beschädigtes bincode im server\_key
+\\
 
 \textbf{GET /session/{session\_id}
-} - Gibt die Metadaten einer Session für Teilnehmer zurück.
+}
+
+Gibt die Metadaten einer Session für Teilnehmer zurück.
 
 \textbf{Response 200}
 \begin{lstlisting}
@@ -161,10 +169,14 @@ Legt eine neue Voting-Session an.
     }
 }
 \end{lstlisting}
-\textbf{Fehlercodes}: 400 – Session nicht gefunden
+\textbf{Fehlercodes}: 
+400 – Session nicht gefunden
+\\
 
 \textbf{POST/JOIN}
+
 Teilnehmer beantragt den Beitritt zu einer Session. Der Beitritt ist zunächst pending und muss vom Creator freigegeben werden.
+
 \textbf{Response 200}
 \begin{lstlisting}
 {
@@ -183,13 +195,13 @@ Teilnehmer beantragt den Beitritt zu einer Session. Der Beitritt ist zunächst p
   { "status": "pending" }
 }
 \end{lstlisting}
-\textbf{Fehlercodes}
+\textbf{Fehlercodes}:
 
 404 – Session nicht gefunden
 
 409 – Session bereits beendet
 
-
+\\
 
 \textbf{POST/APPROVE}
 
@@ -212,7 +224,7 @@ Der Creator genehmigt oder lehnt Teilnehmer ab.
   { "status": "ok" }
 }
 \end{lstlisting}
-\textbf{Fehlercodes}
+\textbf{Fehlercodes}:
 
 404 – Session nicht gefunden
 
@@ -222,9 +234,13 @@ Der Creator genehmigt oder lehnt Teilnehmer ab.
 
 404 – Teilnehmer nicht gefunden (nur bei approval=true relevant)
 
+\\
+
 \textbf{POST /vote}
 
 Ein genehmigter Teilnehmer sendet seine verschlüsselten Votes.
+
+\textbf{Request}
 \begin{lstlisting}
 {
   {
@@ -241,12 +257,12 @@ Ein genehmigter Teilnehmer sendet seine verschlüsselten Votes.
 \textbf{Response 200}
 \begin{lstlisting}
 {
-  { "status": "vote received" }}
+  { "status": "vote received" }
 }
 \end{lstlisting}
 
 
-\textbf{Fehlercodes}
+\textbf{Fehlercodes}:
 
 404 – Session nicht gefunden
 
@@ -258,6 +274,7 @@ Ein genehmigter Teilnehmer sendet seine verschlüsselten Votes.
 
 400 – Anzahl der Votes stimmt nicht mit Fragen überein
 
+\\
 
 \textbf{GET /status/{session\_id}/{participant\_id}}
 
@@ -278,13 +295,16 @@ Liefert den aktuellen Status eines Teilnehmers.
 \end{lstlisting}
 
 
-\textbf{Fehlercodes}
+\textbf{Fehlercodes}:
 
 404 – Session nicht gefunden
 
 403 – Nicht autorisiert
 
+\\
+
 \textbf{GET /results/{session\_id}/{creator\_id}}
+
 Gibt die homomorph aggregierten Ergebnisse zurück (nur Creator). Wenn noch nicht alle Votes vorhanden sind, ist ready = false.
 
 \textbf{Response (ready)}
@@ -299,7 +319,7 @@ Gibt die homomorph aggregierten Ergebnisse zurück (nur Creator). Wenn noch nich
 }
 \end{lstlisting}
 
- \textbf{Response (not ready)}
+\textbf{Response (not ready)}
 \begin{lstlisting}
 {
   {
@@ -309,12 +329,13 @@ Gibt die homomorph aggregierten Ergebnisse zurück (nur Creator). Wenn noch nich
 }
 \end{lstlisting}
 
- \textbf{Fehlercodes}
+\textbf{Fehlercodes}:
 
 404 – Session nicht gefunden
 
 403 – Nicht autorisiert
 
+\\
 
 \textbf{POST /finalize/{session\_id}/{creator\_id}}
 
@@ -327,7 +348,7 @@ Schließt die Session endgültig. Danach sind keine Votes oder Joins mehr mögli
 }
 \end{lstlisting}
 
- \textbf{Fehlercodes}
+\textbf{Fehlercodes}:
 
 404 – Session nicht gefunden
 
@@ -414,6 +435,8 @@ TFHE schützt ausschließlich die Inhalte von Stimmen und Ergebnissen. Für den 
 
 Ein Server-Operator kann daraus Rückschlüsse auf Aktivitätsmuster, soziale Dynamiken, die Größe einer Abstimmung oder mögliche Zusammenhänge zwischen Abstimmungszeitpunkten und Teilnehmerverhalten ziehen. 
 
+\textbf{Restvertrauen in den Server}
+
 Der Server kann zwar keine Stimmen entschlüsseln, muss jedoch weiterhin als korrekter Ausführer des Protokolls vertrauenswürdig sein. Insbesondere wird angenommen, dass der Server:
 
 \begin{itemize}
@@ -434,7 +457,8 @@ Die Sicherheitsbetrachtung basiert auf folgenden Annahmen:
 \begin{itemize}
     \item Die Kommunikation zwischen Client und Server erfolgt über TLS.
     \item Das Frontend führt die Verschlüsselung und Entschlüsselung korrekt aus.
-    \item Die verwendete TFHE-rs-Bibliothek wird als kryptographisch korrekt implementierte Black Box betrachtet. Der ClientKey verbleibt ausschließlich beim Session-Ersteller.
+    \item Die verwendete TFHE-rs-Bibliothek wird als kryptographisch korrekt implementierte Black Box betrachtet. 
+    \item Der ClientKey verbleibt ausschließlich beim Session-Ersteller.
 \end{itemize}
 
 Das System besitzt keine starke Benutzerauthentifizierung, die Teilnahme erfolgt ausschließlich über Session-ID und frei gewählten Namen.
@@ -446,7 +470,8 @@ Durch den Einsatz von TFHE wird garantiert:
 \begin{itemize}
     \item Der Server kann individuelle Stimmen nicht im Klartext lesen.
     \item Der Server kann einzelne Abstimmungsentscheidungen nicht rekonstruieren.
-    \item Stimmen werden ausschließlich verschlüsselt verarbeitet. Auch aggregierte Ergebnisse liegen auf dem Server nur verschlüsselt vor.
+    \item Stimmen werden ausschließlich verschlüsselt verarbeitet. 
+    \item Auch aggregierte Ergebnisse liegen auf dem Server nur verschlüsselt vor.
 \end{itemize}
 
 Nicht garantiert werden:
@@ -483,19 +508,19 @@ Der Server führt ausschließlich homomorphe Additionen auf verschlüsselten Sti
 
 \textbf{Verworfene Alternativen}
 
-Separate Bool-Fragen (FheBool)
+Separate Bool-Fragen (FheBool):
 
 Ursprünglich war vorgesehen, Ja/Nein-Fragen als eigene Kategorie abzubilden. Diese Variante wurde verworfen. Stattdessen können Ja/Nein-Fragen als Single-Choice-Fragen mit den Antwortoptionen „Ja“ und „Nein“ modelliert werden.
 
 Dadurch müssen alle Fragen zwingend beantwortet werden und die Auswertung aller Auswahlfragen kann über denselben Algorithmus erfolgen. Zudem entfällt die Notwendigkeit, unterschiedliche verschlüsselte Datentypen (FheBool und FheUint32) parallel zu unterstützen. Die Implementierung verwendet somit ausschließlich FheUint32 für die Repräsentation von Stimmen.
 
-FheUint8 als Speichertyp für Stimmen
+FheUint8 als Speichertyp für Stimmen:
 
 FheUint8 wäre für einzelne Stimmen semantisch korrekt, da Eingabewerte auf 0–255 begrenzt sind. Dieser Ansatz wurde jedoch verworfen, da die homomorphe Aggregation schnell zu Überläufen führen würde.
 
 Stattdessen wird einheitlich FheUint32 verwendet, um sowohl Einzelwerte als auch Summen sicher darzustellen.
 
-Gleitkommazahlen
+Gleitkommazahlen:
 
 Gleitkommazahlen wurden als naheliegende Repräsentation für numerische Eingaben verworfen, da TFHE primär auf Ganzzahlarithmetik ausgelegt ist. Insbesondere Divisionen und Floating-Point-Operationen sind entweder nicht vorgesehen oder ineffizient. Daher erfolgt die Modellierung aller Werte als Ganzzahlen (FheUint32).
 
@@ -537,45 +562,45 @@ get\_participants & $O(k)$ & $O(k)$ \\
 \end{tabular}
 \end{table}
 
-Create\_session -- $O(n)$, $O(n)$
+Create\_session - $O(n)$, $O(n)$
 
 Beim Anlegen einer Session wird die übergebene Fragenliste gespeichert. Die übrigen Operationen (UUID-Erzeugung, Initialisierung leerer HashMaps, Einfügen in die Session-Map) besitzen konstante Laufzeit. Da die Größe der Fragenliste proportional zu n ist, ergeben sich Zeit- und Platzkomplexität von O(n).
 
-Join\_session -- $O(1)$, $O(1)$
+Join\_session - $O(1)$, $O(1)$
 
 Die Session wird per HashMap-Lookup gefunden und ein neuer Teilnehmer in die Teilnehmer-HashMap eingefügt. Beide Operationen besitzen durchschnittlich konstante Laufzeit. Pro Aufruf wird nur ein zusätzlicher Teilnehmer gespeichert.
 
-Approve\_participant –- $O(1)$, $O(1)$
+Approve\_participant - $O(1)$, $O(1)$
 
 Die Session und der Teilnehmer werden über HashMaps gefunden. Anschließend wird entweder ein Boolean gesetzt oder der Teilnehmer entfernt. Es erfolgt keine Iteration über Teilnehmer oder Stimmen.
 
-Submit\_vote -– $O(nm)$, $O(nm)$
+Submit\_vote - $O(nm)$, $O(nm)$
 
 Eine Stimme enthält für jede der n Fragen verschlüsselte Antworten. Bei Single-/Multiple-Choice-Fragen können pro Frage bis zu m verschlüsselte Optionen enthalten sein. Das Speichern der gesamten Stimmenstruktur benötigt daher Zeit und Speicher proportional zur Anzahl der übergebenen verschlüsselten Werte.
 
-Aggregate\_votes\_ciphertext\_only -– $O(nkm)$, $O(m)$
+Aggregate\_votes\_ciphertext\_only - $O(nkm)$, $O(m)$
 
 Für jede der $n$ Fragen werden alle $k$ Stimmen verarbeitet. Bei Single- oder Multiple-Choice-Fragen werden zusätzlich alle $m$ Antwortoptionen aufsummiert. Daraus ergibt sich eine Zeitkomplexität von $O(n \cdot k \cdot m)$.
 
 Der zusätzliche Speicher besteht lediglich aus dem Akkumulatorvektor für die aktuelle Frage und benötigt maximal m Einträge.
 
-Get\_results -– $O(k+nkm)$, $O(nkm)$
+Get\_results - $O(k+nkm)$, $O(nkm)$
 
 Zunächst werden alle Teilnehmer durchlaufen, um die Anzahl der freigegebenen Teilnehmer zu bestimmen (O(k)). Anschließend werden alle gespeicherten Stimmen kopiert und aggregiert. Die Aggregation dominiert mit $O(nkm)$. Für die Kopie aller Stimmen wird Speicher proportional zur Gesamtzahl gespeicherter Stimmen benötigt: $O(nkm)$
 
-Finalize\_session -– $O(1)$, $O(1)$
+Finalize\_session - $O(1)$, $O(1)$
 
 Die Session wird per HashMap gefunden und das Boolean-Feld finalized gesetzt. Es werden weder Schleifen noch zusätzliche Datenstrukturen verwendet.
 
-Get\_status -– $O(1)$, $O(1)$
+Get\_status - $O(1)$, $O(1)$
 
 Der Teilnehmerstatus wird über einen einzelnen HashMap-Zugriff bestimmt. Es erfolgt keine Iteration über andere Teilnehmer.
 
-Get\_session –- $O(n)$, $O(n)$
+Get\_session - $O(n)$, $O(n)$
 
 Die Session wird per HashMap gefunden und die Fragenliste in die Antwort kopiert. Die Größe dieser Liste ist proportional zur Anzahl der Fragen n.
 
-Get\_participants -– $O(k)$, $O(k)$
+Get\_participants - $O(k)$, $O(k)$
 
 Für die Antwort wird über alle Teilnehmer iteriert und für jeden ein ParticipantAdminView erzeugt. Jeder Teilnehmer wird genau einmal verarbeitet, daher ergibt sich eine lineare Laufzeit und Speicherbelegung in der Anzahl der Teilnehmer k.
 
@@ -589,7 +614,7 @@ Es wurden zwei Testszenarien mit unterschiedlichen funktionalen Schwerpunkten un
 
 \begin{itemize}
     \item Teilnehmer-Anfragen: Analyse der Endpunkte (POST /join und GET /status), um das Systemverhalten bei einem Anstieg von Join-Anfragen und hochfrequentem Polling durch die Teilnehmer zu evaluieren.
-    \item Ergebnisauswertung: Dedizierte Stressprüfung des Endpunkts \texttt{GET /results/\{session\_id\}/\{creator\_id\}} unter einer Dauerlast von konstant zehn parallelen Virtual Users (VUs). Um die CPU-Auslastung durch die kryptografischen Berechnungen gezielt zu maximieren, wurde das System vorab in einen Zustand versetzt, in dem die Bedingung \texttt{voted\_count >= approved\_count} dauerhaft erfüllt war. Dadurch wurde sichergestellt, dass jeder eingehende Request die rechenintensive homomorphe Aggregationsfunktion \texttt{aggregate\_votes\_ciphertext\_only} vollständig durchläuft. Das Szenario wurde in zwei separaten Testläufen durchgeführt: zunächst mit zwei Teilnehmern und anschließend mit zehn Teilnehmern pro Session.
+    \item Ergebnisauswertung: Dedizierte Stressprüfung des Endpunkts (GET /results/{session_id}/{creator_id}) unter einer Dauerlast von konstant 10 parallelen VUs. Um für diesen k6-Test die mathematische Auslastung der CPU zu erzwingen, wurde das System vorab in einen Zustand versetzt, in dem die Bedingung voted_count >= approved_count dauerhaft erfüllt ist. Dadurch wurde sichergestellt, dass jeder eingehende Request unweigerlich die rechenintensive kryptografische Funktion aggregate_votes_ciphertext_only durchläuft. Dieses Szenario wurde in zwei separaten Durchläufen evaluiert, einmal mit einer Basis von 2 Teilnehmern und im Anschluss mit 10 Teilnehmern.
 \end{itemize}
 
 Performancetest 1 (Join und Polling) (08.06.2026)
@@ -644,15 +669,14 @@ Durchsatz & 1,49 Request/s & 0,90 Request/s \\
 \end{tabular}
 \end{table}
 
-Während das System bei 2 Stimmen sehr schnell reagiert, führt die rechenintensive kryptografische Funktion aggregate\_votes\_ciphertext\_only bei 10 Stimmen zu einer massiven Latenz von über 11 Sekunden im p95-Bereich. Diese Verzögerung resultiert aus der globalen Zustandssperre $(state.lock())$. Da dieser Mutex während der gesamten FHE-Berechnung gehalten wird, blockiert er die parallele Verarbeitung des Axum-Servers und führt zu einer sequenziellen Abarbeitung aller eingehenden Anfragen. Trotz dieser intensiven CPU-Auslastung arbeitet das Backend vollständig stabil und verarbeitet alle Anfragen ohne Fehlerraten.
-
+Während das System bei 2 Stimmen sehr schnell reagiert, führt die rechenintensive kryptografische Funktion aggregate_votes_ciphertext_only bei 10 Stimmen zu einer massiven Latenz von über 11 Sekunden im p95-Bereich. Diese Verzögerung resultiert aus der globalen Zustandssperre (state.lock()). Da dieser Mutex während der gesamten FHE-Berechnung gehalten wird, blockiert er die parallele Verarbeitung des Axum-Servers und führt zu einer sequenziellen Abarbeitung aller eingehenden Anfragen. Trotz dieser intensiven CPU-Auslastung arbeitet das Backend vollständig stabil und verarbeitet alle Anfragen ohne Fehlerraten.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{contents/media/uc31.png}
 \end{figure}
 
-n der Grafik findet sich die Testvariante mit 2 hinterlegten Stimmen im Bereich von ca. 12:17–12:22. Hier wird sichtbar, dass das System sehr schnell reagiert und p95 und p99 nahezu identisch verlaufen.
+In der Grafik findet sich die Testvariante mit 2 hinterlegten Stimmen im Bereich von ca. 12:17–12:22. Hier wird sichtbar, dass das System sehr schnell reagiert und p95 und p99 nahezu identisch verlaufen.
 
 Die Variante mit 10 hinterlegten Teilnehmern findet sich im Bereich von ca. 12:26–12:30. Hier zeigt sich ein drastischer Umschwung im Systemverhalten: Die Latenzkurven für p95 und p99 brechen steil nach oben aus und bilden ein massives Plateau, das sich knapp unterhalb der 10-Sekunden-Marke einpendelt. Die grüne Median-Linie (p50) verläuft deutlich darunter im Bereich von knapp 3 Sekunden, was die Verteilung der Wartezeiten im eingetretenen Mutex-Stau exakt widerspiegelt. Der absolute Peak von 14,32 Sekunden wird kurz vor dem Ende des Testfensters als dünne, maximale Spitze der blauen p99-Kurve sichtbar. Nach dem harten Stopp der Last um Punkt 12:30 Uhr fällt die Latenz sofort wieder auf die Baseline von 0 Sekunden ab.
 
@@ -663,4 +687,6 @@ Zusammenfassend zeigen die Messergebnisse, dass die grundlegende REST-Infrastruk
 \begin{itemize}
     \item Teilnehmende können bei numerischen Fragen ausschließlich Werte zwischen 0 und 255 als Antwort angeben. Höhere Zahlen lassen wir bewusst nicht zu, demenstprechend müssen Fragen eventuell anders definiert werden. Bsp: Wie hoch ist dein Jahregehalt in tausend €
     \item Es können keine Doppelabstimmungen verhindert werden. Ein Teilnehmer kann technisch mehrere Join-Requests mit unterschiedlichen Namen schicken und so mehrfach abstimmen. Stattdessen erfolgt die Kontrolle durch den Ersteller. Dadurch liegt die Verantwortung für die Verhinderung von Mehrfachteilnahmen bei ihm.
+    \item Der Client Key wird nur temporär im sessionStorage des Browsers gespeichert. Nach dem Schließen des Browser-Tabs ist er nicht mehr verfügbar. Dadurch können verschlüsselte Ergebnisse und Namen anschließend nicht mehr entschlüsselt werden.
+    \item Der gesamte Session-Zustand wird über einen globalen Mutex geschützt. Im Endpunkt zur Ergebnisauswertung wird diese Sperre während der kompletten homomorphen Aggregation gehalten. Da TFHE-Operationen eine hohe Rechenzeit verursachen, blockieren währenddessen auch andere Anfragen wie Statusabfragen, Beitritte oder Stimmabgaben. Dies reduziert die Parallelität des Systems.
 \end{itemize}
