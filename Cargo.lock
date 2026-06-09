@@ -916,7 +916,7 @@ dependencies = [
 
 [[package]]
 name = "encrypted-age-verification"
-version = "0.1.26"
+version = "0.1.27"
 dependencies = [
  "aide",
  "axum 0.8.9",
