@@ -20,6 +20,8 @@ schemars.workspace = true
 rayon = "1"
 bincode = "1"
 base64 = "0.22"
+uuid = { version = "1", features = ["v4"] }
+tracing = "0.1"
 
 [dev-dependencies]
 serial_test = "3"

@@ -2,13 +2,16 @@ use super::*;
 use axum::{
     body::Body,
     http::{Request, StatusCode},
+    Router,
 };
 use base64::{engine::general_purpose, Engine as _};
 use serial_test::serial;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use tfhe::prelude::*;
 use tfhe::{ClientKey, CompressedServerKey, ConfigBuilder, FheInt16, FheInt32, FheInt64, FheInt8};
 use tower::ServiceExt;
+
+use crate::state::{AppState, Session};
 
 // Keys werden einmalig für alle FHE-Tests generiert.
 static SHARED_TEST_KEY_PAIR: OnceLock<(ClientKey, CompressedServerKey)> = OnceLock::new();
@@ -22,36 +25,56 @@ fn get_shared_test_key_pair() -> &'static (ClientKey, CompressedServerKey) {
     })
 }
 
-fn encrypt_i8_to_base64(plaintext_value: i8, client_key: &ClientKey) -> String {
-    let encrypted = FheInt8::encrypt(plaintext_value, client_key);
-    general_purpose::STANDARD.encode(bincode::serialize(&encrypted).unwrap())
+// ── Hilfsfunktionen ──────────────────────────────────────────────────────────
+
+fn encrypt_i8_to_base64(value: i8, client_key: &ClientKey) -> String {
+    general_purpose::STANDARD
+        .encode(bincode::serialize(&FheInt8::encrypt(value, client_key)).unwrap())
 }
 
-fn encrypt_i16_to_base64(plaintext_value: i16, client_key: &ClientKey) -> String {
-    let encrypted = FheInt16::encrypt(plaintext_value, client_key);
-    general_purpose::STANDARD.encode(bincode::serialize(&encrypted).unwrap())
+fn encrypt_i16_to_base64(value: i16, client_key: &ClientKey) -> String {
+    general_purpose::STANDARD
+        .encode(bincode::serialize(&FheInt16::encrypt(value, client_key)).unwrap())
 }
 
-fn encrypt_i32_to_base64(plaintext_value: i32, client_key: &ClientKey) -> String {
-    let encrypted = FheInt32::encrypt(plaintext_value, client_key);
-    general_purpose::STANDARD.encode(bincode::serialize(&encrypted).unwrap())
+fn encrypt_i32_to_base64(value: i32, client_key: &ClientKey) -> String {
+    general_purpose::STANDARD
+        .encode(bincode::serialize(&FheInt32::encrypt(value, client_key)).unwrap())
 }
 
-fn compressed_server_key_to_base64(server_key: &CompressedServerKey) -> String {
-    general_purpose::STANDARD.encode(bincode::serialize(server_key).unwrap())
+/// Baut eine App mit vorinstallierter Session.
+///
+/// Umgeht den HTTP-Roundtrip zu POST /session in Tests — der FheEngine wird
+/// direkt in den AppState eingefügt. Die zurückgegebene session_id kann sofort
+/// in POST /-Requests verwendet werden.
+async fn app_with_session(server_key: &CompressedServerKey) -> (Router, String) {
+    let engine = fhe::FheEngine::from_server_key(server_key.decompress()).unwrap();
+    let state = AppState::new();
+    let session_id = state.insert(Arc::new(Session::new(Arc::new(engine)))).await;
+    (create_app(state), session_id)
 }
 
-// --- Error-Tests (kein FHE, schnell) ---
+fn post_to(uri: &str, payload: &serde_json::Value) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header("Content-Type", "application/json")
+        .body(Body::from(serde_json::to_vec(payload).unwrap()))
+        .unwrap()
+}
 
-/// Ungültiges Base64 im server_key-Feld → 400
+// ── POST /session Error-Tests ─────────────────────────────────────────────────
+
+/// Ungültiges Base64 im server_key → 400
 #[tokio::test]
 async fn test_invalid_server_key_base64() {
-    let payload = serde_json::json!({
-        "encrypted_list": [],
-        "server_key": "not-valid-base64!!!",
-        "bit_width": 16
-    });
-    let response = create_app().oneshot(post_json(&payload)).await.unwrap();
+    let response = create_app(AppState::new())
+        .oneshot(post_to(
+            "/session",
+            &serde_json::json!({ "server_key": "not-valid-base64!!!" }),
+        ))
+        .await
+        .unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
@@ -59,26 +82,45 @@ async fn test_invalid_server_key_base64() {
 #[tokio::test]
 async fn test_corrupt_server_key_bytes() {
     let payload = serde_json::json!({
-        "encrypted_list": [],
         "server_key": general_purpose::STANDARD.encode(vec![1u8, 2, 3, 4, 5]),
-        "bit_width": 16
     });
-    let response = create_app().oneshot(post_json(&payload)).await.unwrap();
+    let response = create_app(AppState::new())
+        .oneshot(post_to("/session", &payload))
+        .await
+        .unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
+// ── POST / Error-Tests ────────────────────────────────────────────────────────
+
+/// Unbekannte session_id → 404
+#[tokio::test]
+async fn test_unknown_session_id() {
+    let payload = serde_json::json!({
+        "session_id": "00000000-0000-0000-0000-000000000000",
+        "encrypted_list": [],
+        "bit_width": 16,
+    });
+    let response = create_app(AppState::new())
+        .oneshot(post_to("/", &payload))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
 /// Ungültiges Base64 in einem Listenelement → 400
-// multi_thread weil der Handler bei validem server_key auf
-// tokio::task::block_in_place trifft — das panicked auf single-thread.
+// multi_thread weil block_in_place auf single-thread panict (FHE-Compute-Pfad).
+// Hier tritt es nicht auf (Fehler vor block_in_place), aber für Konsistenz.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_invalid_list_item_base64() {
     let (_, server_key) = get_shared_test_key_pair();
+    let (app, session_id) = app_with_session(server_key).await;
     let payload = serde_json::json!({
+        "session_id": session_id,
         "encrypted_list": ["not-valid-base64!!!"],
-        "server_key": compressed_server_key_to_base64(server_key),
-        "bit_width": 16
+        "bit_width": 16,
     });
-    let response = create_app().oneshot(post_json(&payload)).await.unwrap();
+    let response = app.oneshot(post_to("/", &payload)).await.unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
@@ -86,12 +128,13 @@ async fn test_invalid_list_item_base64() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_corrupt_list_item_bytes() {
     let (_, server_key) = get_shared_test_key_pair();
+    let (app, session_id) = app_with_session(server_key).await;
     let payload = serde_json::json!({
+        "session_id": session_id,
         "encrypted_list": [general_purpose::STANDARD.encode(vec![1u8, 2, 3, 4, 5])],
-        "server_key": compressed_server_key_to_base64(server_key),
-        "bit_width": 16
+        "bit_width": 16,
     });
-    let response = create_app().oneshot(post_json(&payload)).await.unwrap();
+    let response = app.oneshot(post_to("/", &payload)).await.unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
@@ -99,12 +142,13 @@ async fn test_corrupt_list_item_bytes() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_empty_list() {
     let (_, server_key) = get_shared_test_key_pair();
+    let (app, session_id) = app_with_session(server_key).await;
     let payload = serde_json::json!({
+        "session_id": session_id,
         "encrypted_list": [],
-        "server_key": compressed_server_key_to_base64(server_key),
-        "bit_width": 16
+        "bit_width": 16,
     });
-    let response = create_app().oneshot(post_json(&payload)).await.unwrap();
+    let response = app.oneshot(post_to("/", &payload)).await.unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
@@ -112,27 +156,21 @@ async fn test_empty_list() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn test_invalid_bit_width() {
     let (_, server_key) = get_shared_test_key_pair();
+    let (app, session_id) = app_with_session(server_key).await;
     let payload = serde_json::json!({
+        "session_id": session_id,
         "encrypted_list": [],
-        "server_key": compressed_server_key_to_base64(server_key),
-        "bit_width": 64
+        "bit_width": 64,
     });
-    let response = create_app().oneshot(post_json(&payload)).await.unwrap();
+    let response = app.oneshot(post_to("/", &payload)).await.unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
-// --- FHE Unit-Tests ---
+// ── FHE Unit-Tests (direkt, kein HTTP) ───────────────────────────────────────
 
-/// Alle Statistikfunktionen auf bekannten Werten mit FheInt16 — ein einziger Test,
-/// um Key-Generierung und Server-Key-Setup nur einmal zu zahlen.
-///
+/// Alle Statistikfunktionen auf bekannten Werten mit FheInt16.
 /// Eingabe: [10, 50, 30, 20, 40] → sortiert: [10, 20, 30, 40, 50]
-///   sum    = 150  (FheInt32, Overflow-Schutz)
-///   count  = 5
-///   min    = 10   (FheInt16)
-///   max    = 50   (FheInt16)
-///   average = 30  (FheInt32, 150 / 5)
-///   median  = 30  (FheInt16, Index 2, mittleres Element)
+///   sum=150, count=5, min=10, max=50, avg=30, median=30
 #[test]
 #[serial]
 fn test_statistics_functions_int16() {
@@ -151,21 +189,20 @@ fn test_statistics_functions_int16() {
     let encrypted_average: FheInt32 =
         statistics::average_from_sum(encrypted_sum.clone(), encrypted_input.len());
 
-    let decrypted_sum: i32 = encrypted_sum.decrypt(client_key);
-    let decrypted_min: i16 = statistics::min(&encrypted_input).decrypt(client_key);
-    let decrypted_max: i16 = statistics::max(&encrypted_input).decrypt(client_key);
-    let decrypted_average: i32 = encrypted_average.decrypt(client_key);
-    let decrypted_median: i16 = statistics::median(&encrypted_input).decrypt(client_key);
-
+    let sum: i32 = encrypted_sum.decrypt(client_key);
+    let min: i16 = statistics::min(&encrypted_input).decrypt(client_key);
+    let max: i16 = statistics::max(&encrypted_input).decrypt(client_key);
+    let avg: i32 = encrypted_average.decrypt(client_key);
+    let med: i16 = statistics::median(&encrypted_input).decrypt(client_key);
     assert_eq!(encrypted_input.len(), 5, "count");
-    assert_eq!(decrypted_sum, 150, "sum");
-    assert_eq!(decrypted_min, 10, "min");
-    assert_eq!(decrypted_max, 50, "max");
-    assert_eq!(decrypted_average, 30, "average");
-    assert_eq!(decrypted_median, 30, "median (n=5, Index 2)");
+    assert_eq!(sum, 150, "sum");
+    assert_eq!(min, 10, "min");
+    assert_eq!(max, 50, "max");
+    assert_eq!(avg, 30, "average");
+    assert_eq!(med, 30, "median");
 }
 
-/// n=1 — Sonderpfad in median() (if element_count == 1) und Trivialfall für alle anderen Funktionen.
+/// n=1 — Sonderpfad in median() und Trivialfall für alle anderen Funktionen.
 #[test]
 #[serial]
 fn test_statistics_single_element() {
@@ -175,27 +212,24 @@ fn test_statistics_single_element() {
     tfhe::set_server_key(decompressed_server_key);
 
     let encrypted_single_element = vec![FheInt16::encrypt(42i16, client_key)];
-
     let encrypted_sum: FheInt32 = statistics::sum(&encrypted_single_element);
     let encrypted_average: FheInt32 =
         statistics::average_from_sum(encrypted_sum.clone(), encrypted_single_element.len());
 
-    let decrypted_sum: i32 = encrypted_sum.decrypt(client_key);
-    let decrypted_min: i16 = statistics::min(&encrypted_single_element).decrypt(client_key);
-    let decrypted_max: i16 = statistics::max(&encrypted_single_element).decrypt(client_key);
-    let decrypted_average: i32 = encrypted_average.decrypt(client_key);
-    let decrypted_median: i16 = statistics::median(&encrypted_single_element).decrypt(client_key);
-
-    assert_eq!(encrypted_single_element.len(), 1, "count");
-    assert_eq!(decrypted_sum, 42, "sum");
-    assert_eq!(decrypted_min, 42, "min");
-    assert_eq!(decrypted_max, 42, "max");
-    assert_eq!(decrypted_average, 42, "average");
-    assert_eq!(decrypted_median, 42, "median");
+    let sum: i32 = encrypted_sum.decrypt(client_key);
+    let min: i16 = statistics::min(&encrypted_single_element).decrypt(client_key);
+    let max: i16 = statistics::max(&encrypted_single_element).decrypt(client_key);
+    let avg: i32 = encrypted_average.decrypt(client_key);
+    let med: i16 = statistics::median(&encrypted_single_element).decrypt(client_key);
+    assert_eq!(sum, 42, "sum");
+    assert_eq!(min, 42, "min");
+    assert_eq!(max, 42, "max");
+    assert_eq!(avg, 42, "average");
+    assert_eq!(med, 42, "median");
 }
 
 /// Gerades n → Lower Median.
-/// [10, 20, 30, 40] → sortiert [10, 20, 30, 40], Index (4-1)/2 = 1 → Median = 20
+/// [10, 20, 30, 40] → Index (4-1)/2 = 1 → Median = 20
 #[test]
 #[serial]
 fn test_statistics_even_n_lower_median() {
@@ -204,21 +238,19 @@ fn test_statistics_even_n_lower_median() {
     rayon::broadcast(|_| tfhe::set_server_key(decompressed_server_key.clone()));
     tfhe::set_server_key(decompressed_server_key);
 
-    let plaintext_input = [10i16, 20, 30, 40];
-    let encrypted_input: Vec<_> = plaintext_input
+    let encrypted_input: Vec<_> = [10i16, 20, 30, 40]
         .iter()
-        .map(|&value| FheInt16::encrypt(value, client_key))
+        .map(|&v| FheInt16::encrypt(v, client_key))
         .collect();
 
     let encrypted_sum: FheInt32 = statistics::sum(&encrypted_input);
     let encrypted_average: FheInt32 =
         statistics::average_from_sum(encrypted_sum, encrypted_input.len());
 
-    let decrypted_median: i16 = statistics::median(&encrypted_input).decrypt(client_key);
-    let decrypted_average: i32 = encrypted_average.decrypt(client_key);
-
-    assert_eq!(decrypted_median, 20, "lower median (nicht 25)");
-    assert_eq!(decrypted_average, 25, "average");
+    let med: i16 = statistics::median(&encrypted_input).decrypt(client_key);
+    let avg: i32 = encrypted_average.decrypt(client_key);
+    assert_eq!(med, 20, "lower median");
+    assert_eq!(avg, 25, "average");
 }
 
 /// Negative Eingabewerte — FheInt16 unterstützt Vorzeichen.
@@ -231,31 +263,29 @@ fn test_statistics_negative_values() {
     rayon::broadcast(|_| tfhe::set_server_key(decompressed_server_key.clone()));
     tfhe::set_server_key(decompressed_server_key);
 
-    let plaintext_input = [-10i16, -5, 5, 10];
-    let encrypted_input: Vec<_> = plaintext_input
+    let encrypted_input: Vec<_> = [-10i16, -5, 5, 10]
         .iter()
-        .map(|&value| FheInt16::encrypt(value, client_key))
+        .map(|&v| FheInt16::encrypt(v, client_key))
         .collect();
 
     let encrypted_sum: FheInt32 = statistics::sum(&encrypted_input);
     let encrypted_average: FheInt32 =
         statistics::average_from_sum(encrypted_sum.clone(), encrypted_input.len());
 
-    let decrypted_sum: i32 = encrypted_sum.decrypt(client_key);
-    let decrypted_min: i16 = statistics::min(&encrypted_input).decrypt(client_key);
-    let decrypted_max: i16 = statistics::max(&encrypted_input).decrypt(client_key);
-    let decrypted_average: i32 = encrypted_average.decrypt(client_key);
-    let decrypted_median: i16 = statistics::median(&encrypted_input).decrypt(client_key);
-
-    assert_eq!(decrypted_sum, 0, "sum");
-    assert_eq!(decrypted_min, -10, "min");
-    assert_eq!(decrypted_max, 10, "max");
-    assert_eq!(decrypted_average, 0, "average");
-    assert_eq!(decrypted_median, -5, "lower median");
+    let sum: i32 = encrypted_sum.decrypt(client_key);
+    let min: i16 = statistics::min(&encrypted_input).decrypt(client_key);
+    let max: i16 = statistics::max(&encrypted_input).decrypt(client_key);
+    let avg: i32 = encrypted_average.decrypt(client_key);
+    let med: i16 = statistics::median(&encrypted_input).decrypt(client_key);
+    assert_eq!(sum, 0, "sum");
+    assert_eq!(min, -10, "min");
+    assert_eq!(max, 10, "max");
+    assert_eq!(avg, 0, "average");
+    assert_eq!(med, -5, "lower median");
 }
 
 /// Average Truncation toward zero (nicht Floor).
-/// [-3, -2] → sum=-5, avg=-5/2=-2 (toward zero), nicht -3 (floor)
+/// [-3, -2] → avg = -5/2 = -2 (toward zero), nicht -3 (floor)
 #[test]
 #[serial]
 fn test_average_truncation_toward_zero() {
@@ -266,229 +296,138 @@ fn test_average_truncation_toward_zero() {
 
     let encrypted_input: Vec<_> = [-3i16, -2]
         .iter()
-        .map(|&value| FheInt16::encrypt(value, client_key))
+        .map(|&v| FheInt16::encrypt(v, client_key))
         .collect();
 
     let encrypted_sum: FheInt32 = statistics::sum(&encrypted_input);
     let encrypted_average: FheInt32 =
         statistics::average_from_sum(encrypted_sum, encrypted_input.len());
-    let decrypted_average: i32 = encrypted_average.decrypt(client_key);
-    assert_eq!(
-        decrypted_average, -2,
-        "truncation toward zero: -5/2 = -2, nicht -3"
-    );
+    let avg: i32 = encrypted_average.decrypt(client_key);
+    assert_eq!(avg, -2, "truncation toward zero");
 }
 
-// --- Roundtrip-Tests (HTTP) ---
+// ── HTTP-Roundtrip-Tests ──────────────────────────────────────────────────────
 
-/// Vollständiger HTTP-Roundtrip mit bit_width=16: Client-seitige Verschlüsselung →
-/// Base64/bincode → HTTP POST → FHE-Berechnung → Entschlüsselung.
-/// Fängt Integrationsfehler die in Unit-Tests unsichtbar wären,
-/// z.B. inkompatible Serialisierungsformate zwischen Client und Server.
-///
+/// Vollständiger HTTP-Roundtrip mit bit_width=16.
 /// Eingabe: [10, 30, 20] → sum=60, count=3, min=10, max=30, avg=20, median=20
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_compute_statistics_roundtrip_int16() {
     let (client_key, server_key) = get_shared_test_key_pair();
+    let (app, session_id) = app_with_session(server_key).await;
 
-    let plaintext_input = [10i16, 30, 20];
-    let request_payload = StatisticsRequest {
-        encrypted_list: plaintext_input
-            .iter()
-            .map(|&value| encrypt_i16_to_base64(value, client_key))
-            .collect(),
-        server_key: compressed_server_key_to_base64(server_key),
-        bit_width: 16,
-    };
+    let encrypted_list: Vec<String> = [10i16, 30, 20]
+        .iter()
+        .map(|&v| encrypt_i16_to_base64(v, client_key))
+        .collect();
+    let payload = serde_json::json!({
+        "session_id": session_id,
+        "encrypted_list": encrypted_list,
+        "bit_width": 16,
+    });
 
-    let http_response = create_app()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/")
-                .header("Content-Type", "application/json")
-                .body(Body::from(serde_json::to_vec(&request_payload).unwrap()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
+    let http_response = app.oneshot(post_to("/", &payload)).await.unwrap();
     assert_eq!(http_response.status(), StatusCode::OK);
 
-    let response_body_bytes = axum::body::to_bytes(http_response.into_body(), 50 * 1024 * 1024)
+    let body_bytes = axum::body::to_bytes(http_response.into_body(), 50 * 1024 * 1024)
         .await
         .unwrap();
-    let statistics_response: StatisticsResponse =
-        serde_json::from_slice(&response_body_bytes).unwrap();
+    let resp: StatisticsResponse = serde_json::from_slice(&body_bytes).unwrap();
 
-    let encrypted_sum: FheInt32 = bincode::deserialize(
-        &general_purpose::STANDARD
-            .decode(&statistics_response.sum)
-            .unwrap(),
-    )
-    .unwrap();
-    let encrypted_min: FheInt16 = bincode::deserialize(
-        &general_purpose::STANDARD
-            .decode(&statistics_response.min)
-            .unwrap(),
-    )
-    .unwrap();
-    let encrypted_max: FheInt16 = bincode::deserialize(
-        &general_purpose::STANDARD
-            .decode(&statistics_response.max)
-            .unwrap(),
-    )
-    .unwrap();
-    let encrypted_average: FheInt32 = bincode::deserialize(
-        &general_purpose::STANDARD
-            .decode(&statistics_response.average)
-            .unwrap(),
-    )
-    .unwrap();
-    let encrypted_median: FheInt16 = bincode::deserialize(
-        &general_purpose::STANDARD
-            .decode(&statistics_response.median)
-            .unwrap(),
-    )
-    .unwrap();
+    let sum: FheInt32 =
+        bincode::deserialize(&general_purpose::STANDARD.decode(&resp.sum).unwrap()).unwrap();
+    let min: FheInt16 =
+        bincode::deserialize(&general_purpose::STANDARD.decode(&resp.min).unwrap()).unwrap();
+    let max: FheInt16 =
+        bincode::deserialize(&general_purpose::STANDARD.decode(&resp.max).unwrap()).unwrap();
+    let avg: FheInt32 =
+        bincode::deserialize(&general_purpose::STANDARD.decode(&resp.average).unwrap()).unwrap();
+    let med: FheInt16 =
+        bincode::deserialize(&general_purpose::STANDARD.decode(&resp.median).unwrap()).unwrap();
 
-    let decrypted_sum: i32 = encrypted_sum.decrypt(client_key);
-    let decrypted_min: i16 = encrypted_min.decrypt(client_key);
-    let decrypted_max: i16 = encrypted_max.decrypt(client_key);
-    let decrypted_average: i32 = encrypted_average.decrypt(client_key);
-    let decrypted_median: i16 = encrypted_median.decrypt(client_key);
-
-    assert_eq!(statistics_response.count, 3, "count");
-    assert_eq!(decrypted_sum, 60, "sum");
-    assert_eq!(decrypted_min, 10, "min");
-    assert_eq!(decrypted_max, 30, "max");
-    assert_eq!(decrypted_average, 20, "average");
-    assert_eq!(decrypted_median, 20, "median");
+    let sum_val: i32 = sum.decrypt(client_key);
+    let min_val: i16 = min.decrypt(client_key);
+    let max_val: i16 = max.decrypt(client_key);
+    let avg_val: i32 = avg.decrypt(client_key);
+    let med_val: i16 = med.decrypt(client_key);
+    assert_eq!(resp.count, 3, "count");
+    assert_eq!(sum_val, 60, "sum");
+    assert_eq!(min_val, 10, "min");
+    assert_eq!(max_val, 30, "max");
+    assert_eq!(avg_val, 20, "average");
+    assert_eq!(med_val, 20, "median");
 }
 
-/// Roundtrip mit bit_width=8 — prüft dass die Auto-Bitbreiten-Erkennung auch für
-/// kleine Werte (FheInt8 → FheInt16 für Summe/Durchschnitt) korrekt durchläuft.
+/// Roundtrip mit bit_width=8 — FheInt8 → FheInt16 Overflow-Schutz-Kette.
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_compute_statistics_roundtrip_int8() {
     let (client_key, server_key) = get_shared_test_key_pair();
+    let (app, session_id) = app_with_session(server_key).await;
 
-    let plaintext_input = [10i8, 30, 20];
-    let request_payload = StatisticsRequest {
-        encrypted_list: plaintext_input
-            .iter()
-            .map(|&value| encrypt_i8_to_base64(value, client_key))
-            .collect(),
-        server_key: compressed_server_key_to_base64(server_key),
-        bit_width: 8,
-    };
+    let encrypted_list: Vec<String> = [10i8, 30, 20]
+        .iter()
+        .map(|&v| encrypt_i8_to_base64(v, client_key))
+        .collect();
+    let payload = serde_json::json!({
+        "session_id": session_id,
+        "encrypted_list": encrypted_list,
+        "bit_width": 8,
+    });
 
-    let http_response = create_app()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/")
-                .header("Content-Type", "application/json")
-                .body(Body::from(serde_json::to_vec(&request_payload).unwrap()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
+    let http_response = app.oneshot(post_to("/", &payload)).await.unwrap();
     assert_eq!(http_response.status(), StatusCode::OK);
 
-    let response_body_bytes = axum::body::to_bytes(http_response.into_body(), 50 * 1024 * 1024)
+    let body_bytes = axum::body::to_bytes(http_response.into_body(), 50 * 1024 * 1024)
         .await
         .unwrap();
-    let statistics_response: StatisticsResponse =
-        serde_json::from_slice(&response_body_bytes).unwrap();
+    let resp: StatisticsResponse = serde_json::from_slice(&body_bytes).unwrap();
 
-    let encrypted_sum: FheInt16 = bincode::deserialize(
-        &general_purpose::STANDARD
-            .decode(&statistics_response.sum)
-            .unwrap(),
-    )
-    .unwrap();
-    let encrypted_median: FheInt8 = bincode::deserialize(
-        &general_purpose::STANDARD
-            .decode(&statistics_response.median)
-            .unwrap(),
-    )
-    .unwrap();
+    let sum: FheInt16 =
+        bincode::deserialize(&general_purpose::STANDARD.decode(&resp.sum).unwrap()).unwrap();
+    let med: FheInt8 =
+        bincode::deserialize(&general_purpose::STANDARD.decode(&resp.median).unwrap()).unwrap();
 
-    let decrypted_sum: i16 = encrypted_sum.decrypt(client_key);
-    let decrypted_median: i8 = encrypted_median.decrypt(client_key);
-
-    assert_eq!(statistics_response.count, 3, "count");
-    assert_eq!(decrypted_sum, 60, "sum");
-    assert_eq!(decrypted_median, 20, "median");
+    let sum_val: i16 = sum.decrypt(client_key);
+    let med_val: i8 = med.decrypt(client_key);
+    assert_eq!(resp.count, 3, "count");
+    assert_eq!(sum_val, 60, "sum");
+    assert_eq!(med_val, 20, "median");
 }
 
-/// Roundtrip mit bit_width=32 — prüft die FheInt32 → FheInt64 Overflow-Schutz-Kette.
+/// Roundtrip mit bit_width=32 — FheInt32 → FheInt64 Overflow-Schutz-Kette.
 #[tokio::test(flavor = "multi_thread")]
 #[serial]
 async fn test_compute_statistics_roundtrip_int32() {
     let (client_key, server_key) = get_shared_test_key_pair();
+    let (app, session_id) = app_with_session(server_key).await;
 
-    let plaintext_input = [10i32, 30, 20];
-    let request_payload = StatisticsRequest {
-        encrypted_list: plaintext_input
-            .iter()
-            .map(|&value| encrypt_i32_to_base64(value, client_key))
-            .collect(),
-        server_key: compressed_server_key_to_base64(server_key),
-        bit_width: 32,
-    };
+    let encrypted_list: Vec<String> = [10i32, 30, 20]
+        .iter()
+        .map(|&v| encrypt_i32_to_base64(v, client_key))
+        .collect();
+    let payload = serde_json::json!({
+        "session_id": session_id,
+        "encrypted_list": encrypted_list,
+        "bit_width": 32,
+    });
 
-    let http_response = create_app()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/")
-                .header("Content-Type", "application/json")
-                .body(Body::from(serde_json::to_vec(&request_payload).unwrap()))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-
+    let http_response = app.oneshot(post_to("/", &payload)).await.unwrap();
     assert_eq!(http_response.status(), StatusCode::OK);
 
-    let response_body_bytes = axum::body::to_bytes(http_response.into_body(), 50 * 1024 * 1024)
+    let body_bytes = axum::body::to_bytes(http_response.into_body(), 50 * 1024 * 1024)
         .await
         .unwrap();
-    let statistics_response: StatisticsResponse =
-        serde_json::from_slice(&response_body_bytes).unwrap();
+    let resp: StatisticsResponse = serde_json::from_slice(&body_bytes).unwrap();
 
-    let encrypted_sum: FheInt64 = bincode::deserialize(
-        &general_purpose::STANDARD
-            .decode(&statistics_response.sum)
-            .unwrap(),
-    )
-    .unwrap();
-    let encrypted_min: FheInt32 = bincode::deserialize(
-        &general_purpose::STANDARD
-            .decode(&statistics_response.min)
-            .unwrap(),
-    )
-    .unwrap();
+    let sum: FheInt64 =
+        bincode::deserialize(&general_purpose::STANDARD.decode(&resp.sum).unwrap()).unwrap();
+    let min: FheInt32 =
+        bincode::deserialize(&general_purpose::STANDARD.decode(&resp.min).unwrap()).unwrap();
 
-    let decrypted_sum: i64 = encrypted_sum.decrypt(client_key);
-    let decrypted_min: i32 = encrypted_min.decrypt(client_key);
-
-    assert_eq!(statistics_response.count, 3, "count");
-    assert_eq!(decrypted_sum, 60, "sum");
-    assert_eq!(decrypted_min, 10, "min");
-}
-
-// --- Hilfsfunktion ---
-
-fn post_json(payload: &serde_json::Value) -> Request<Body> {
-    Request::builder()
-        .method("POST")
-        .uri("/")
-        .header("Content-Type", "application/json")
-        .body(Body::from(serde_json::to_vec(payload).unwrap()))
-        .unwrap()
+    let sum_val: i64 = sum.decrypt(client_key);
+    let min_val: i32 = min.decrypt(client_key);
+    assert_eq!(resp.count, 3, "count");
+    assert_eq!(sum_val, 60, "sum");
+    assert_eq!(min_val, 10, "min");
 }
