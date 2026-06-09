@@ -1,96 +1,126 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * stress.js – FHE Stress Test (Throughput-Grenze finden)
+ * stress_load_test.js – FHE Stress Test (realistisch, pro-VU Schlüsselpaar)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Was wird getestet?
- *   Isolierter Stress Test von POST /age-verification/.
- *   Dieser Endpunkt führt bei jedem Request eine vollständige FHE-Berechnung
- *   durch (ServerKey dekomprimieren + age_check). Da der Mutex während der
- *   gesamten Berechnung gehalten wird, werden Requests serialisiert.
- *
- *   Ziel: Herausfinden ab welcher parallelen Request-Anzahl p95 deutlich
- *   ansteigt und Timeouts auftreten.
- *
- * Endpunkte:
- *   - POST /age-verification/
+ *   Jede VU simuliert einen eigenen Client mit eigenem Schlüsselpaar:
+ *   - Eigener ServerKey (payload_vu{N}_sk.txt)
+ *   - Eigenes encrypted_age (payload_vu{N}_age.txt)
+ *   - Eigene Session per POST /session
+ *   - Verify per POST /verify/{session_id}
  *
  * Voraussetzungen:
- *   1. Backend läuft auf dem Netcup-Server
- *   2. Payload generieren: cargo run --bin gen_payload
- *      → schreibt payload_age.txt und payload_sk.txt
+ *   1. Backend läuft
+ *   2. cargo run --bin gen_payload
+ *      → schreibt payload_vu1_sk.txt bis payload_vu10_sk.txt
+ *                 payload_vu1_age.txt bis payload_vu10_age.txt
  *
  * Ausführen:
- *   k6 run \
- *     --env BASE_URL=http://159.195.145.100/age-verification \
- *     --out json=results/stress.json \
- *     services/02-encrypted-age-verification/load-tests/stress.js
+ *   k6 run stress_load_test.js
  *
  * Mess-Setup:
  *   - Tool:    k6 v2.0.0
  *   - TFHE:    ConfigBuilder::default()
  *   - Datum:   <vor dem Test eintragen>
- *   - Server:  Netcup KVM
- *   - CPU/RAM: <Serverspecs eintragen>
- *
- * Erwartetes Verhalten:
- *   - Bei 1–2 VUs: stabile Latenzen nahe Baseline
- *   - Ab 3–5 VUs: p95 steigt deutlich (Mutex serialisiert Requests)
- *   - Ab X VUs: Gateway Timeouts (499/504) durch Proxy-Timeout
+ *   - Server:  <lokal / Netcup KVM>
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 import http from 'k6/http';
 import { check, sleep, group } from 'k6';
 import { Trend, Counter, Rate } from 'k6/metrics';
-import { open } from 'k6/experimental/fs';
 
-//Konfiguration
-const BASE_URL      = __ENV.BASE_URL || 'http://159.195.145.100/age-verification';
-const ENCRYPTED_AGE = open('./payload_age.txt');
-const SERVER_KEY    = open('./payload_sk.txt');
+// ── Konfiguration ─────────────────────────────────────────────────────────────
+const BASE_URL   = __ENV.BASE_URL || 'http://159.195.145.100/age-verification';
+const MAX_VUS    = 10;
 
-//Payload
-const payload = JSON.stringify({
-    encrypted_age: ENCRYPTED_AGE,
-    server_key: SERVER_KEY,
-});
+// Alle Payloads im Init-Kontext laden
+const SERVER_KEYS    = [];
+const ENCRYPTED_AGES = [];
+
+for (let i = 1; i <= MAX_VUS; i++) {
+    SERVER_KEYS.push(open(`./payload_vu${i}_sk.txt`));
+    ENCRYPTED_AGES.push(open(`./payload_vu${i}_age.txt`));
+}
 
 const params = {
     headers: { 'Content-Type': 'application/json' },
     timeout: '120s',
 };
 
-//Eigene Metriken
+// ── Eigene Metriken ───────────────────────────────────────────────────────────
 const verifyLatency = new Trend('verify_latency', true);
+const setupLatency  = new Trend('setup_latency',  true);
 const errorCount    = new Counter('errors');
 const successRate   = new Rate('success_rate');
 
+// ── Pro-VU State ──────────────────────────────────────────────────────────────
+const vuSessions = {};
+
+// ── Lastkurve ─────────────────────────────────────────────────────────────────
 export const options = {
     scenarios: {
         stress: {
             executor: 'ramping-vus',
             startVUs: 1,
             stages: [
-                { duration: '30s', target: 1  },   // Baseline: 1 VU
-                { duration: '60s', target: 3  },   // Leichte Last
-                { duration: '60s', target: 6  },   // Mittlere Last (Mutex-Effekt erwartet)
-                { duration: '60s', target: 10 },   // Peak: Throughput-Grenze
-                { duration: '30s', target: 0  },   // Cool-down
+                { duration: '30s', target: 1  },
+                { duration: '60s', target: 3  },
+                { duration: '60s', target: 6  },
+                { duration: '60s', target: 10 },
+                { duration: '30s', target: 0  },
             ],
             gracefulRampDown: '30s',
             exec: 'verifyFlow',
         },
     },
     thresholds: {
-        'verify_latency': ['p(95)<120000'],  
-        'success_rate':   ['rate>0.90'],     
+        'verify_latency': ['p(95)<10000'],
+        'setup_latency':  ['p(95)<120000'],
+        'success_rate':   ['rate>0.99'],
     },
 };
 
+// ── Flow ──────────────────────────────────────────────────────────────────────
 export function verifyFlow() {
+    // VU-Index: 1-basiert, max MAX_VUS (wraparound falls mehr VUs als Paare)
+    const vuIndex = ((__VU - 1) % MAX_VUS);
+    const serverKey    = SERVER_KEYS[vuIndex];
+    const encryptedAge = ENCRYPTED_AGES[vuIndex];
+
+    // Erste Iteration dieser VU: eigene Session aufbauen
+    if (!vuSessions[__VU]) {
+        group('session_setup', () => {
+            const res = http.post(
+                `${BASE_URL}/session`,
+                JSON.stringify({ server_key: serverKey }),
+                { headers: { 'Content-Type': 'application/json' }, timeout: '120s' }
+            );
+
+            setupLatency.add(res.timings.duration);
+
+            if (res.status !== 200) {
+                errorCount.add(1);
+                console.error(`VU ${__VU} Session-Setup fehlgeschlagen: ${res.status}`);
+                return;
+            }
+
+            vuSessions[__VU] = JSON.parse(res.body).session_id;
+            console.log(`VU ${__VU} Session erstellt: ${vuSessions[__VU]}`);
+        });
+    }
+
+    if (!vuSessions[__VU]) return;
+
+    // Verify mit eigenem encrypted_age
     group('verify_age', () => {
-        const res = http.post(`${BASE_URL}/`, payload, params);
+        const payload = JSON.stringify({ encrypted_age: encryptedAge });
+        const res = http.post(
+            `${BASE_URL}/verify/${vuSessions[__VU]}`,
+            payload,
+            params
+        );
 
         verifyLatency.add(res.timings.duration);
 
@@ -104,9 +134,17 @@ export function verifyFlow() {
         successRate.add(ok);
         if (!ok) {
             errorCount.add(1);
-            console.error(`Fehler: ${res.status} – ${res.body}`);
+            console.error(`VU ${__VU} Fehler: ${res.status} – ${res.body}`);
         }
     });
 
-    sleep(5);
+    sleep(1);
+}
+
+// ── Teardown ──────────────────────────────────────────────────────────────────
+export function teardown() {
+    for (const [vu, sessionId] of Object.entries(vuSessions)) {
+        http.del(`${BASE_URL}/session/${sessionId}`);
+        console.log(`VU ${vu} Session ${sessionId} gelöscht`);
+    }
 }
