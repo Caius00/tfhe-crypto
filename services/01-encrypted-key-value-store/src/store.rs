@@ -240,17 +240,11 @@ impl AppState {
     }
 
     fn create_db_key(key: &CustomFheAsciiString, session_id: &str) -> Vec<u8> {
-        println!("create_db_key-A");
         let mut db_key = Vec::new();
-        println!("create_db_key-B");
         let len = session_id.len() as u32;
-        println!("create_db_key-C");
         db_key.extend_from_slice(&len.to_be_bytes());
-        println!("create_db_key-D");
         db_key.extend_from_slice(session_id.as_bytes());
-        println!("create_db_key-E");
         db_key.extend_from_slice(&key.compress().string);
-        println!("create_db_key-F");
 
         db_key
     }
