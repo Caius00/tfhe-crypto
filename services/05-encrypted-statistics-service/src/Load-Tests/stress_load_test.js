@@ -4,23 +4,29 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Was wird getestet?
- *   Isolierter Stress Test von POST /statistics/.
+ *   Isolierter Stress Test von POST /.
  *   Jeder Request löst eine vollständige FHE-Berechnung aus:
  *   sum, min, max, average (O(n)), median (O(n log²n) via Batcher-Netzwerk).
  *
- *   Da der FheEngine-Pool pro Request neu aufgebaut wird (eigener Rayon-Pool
- *   mit set_server_key im start_handler), gibt es keinen globalen Mutex wie
- *   bei UC02. Stattdessen ist die CPU der Engpass: Rayon nutzt alle Kerne,
+ *   Da der FheEngine-Pool jetzt SESSION-weit geteilt wird (nicht mehr pro
+ *   Request neu aufgebaut), entfällt der ~80 MB Key-Upload-Overhead.
+ *   Der eigentliche Engpass ist weiterhin CPU: Rayon nutzt alle Kerne,
  *   konkurrierende Requests kämpfen um CPU-Zeit.
  *
  *   Getestet mit n=10, bit_width=8.
  *
+ * Session-Caching:
+ *   setup() lädt den ServerKey einmalig via POST /session hoch.
+ *   Alle VUs nutzen dieselbe session_id — kein Key-Upload pro Request.
+ *
  * Endpunkte:
- *   - POST /statistics/
+ *   - POST /session   (einmalig in setup)
+ *   - POST /          (pro Iteration)
  *
  * Voraussetzungen:
- *   1. Backend läuft auf dem Netcup-Server
- *   2. Payloads generieren: cargo run --bin gen_payload
+ *   1. Backend läuft auf dem Netcup-Server (neuer Build mit Session-API)
+ *   2. Payloads generieren (aus src/Load-Tests/):
+ *        cargo run --bin gen_payload
  *      → schreibt payload_sk.txt und payload_list_n10_b8.txt
  *
  * Ausführen:
@@ -37,9 +43,10 @@
  *   - CPU/RAM: <Serverspecs eintragen>
  *
  * Erwartetes Verhalten:
- *   - Bei 1 VU: Grundlatenz aus baseline_load_test.js
- *   - Ab 2–3 VUs: p95 steigt (CPU-Contention zwischen Rayon-Pools)
- *   - Ab X VUs: Proxy-Timeouts (499/504) durch Nginx-Timeout
+ *   - Bei 1 VU: Grundlatenz aus baseline_load_test.js (deutlich weniger Traffic)
+ *   - Ab 2–3 VUs: p95 steigt (CPU-Contention zwischen parallelen FHE-Ops)
+ *   - Ab X VUs: Proxy-Timeouts (499/504) — aber Schwellwert höher als vorher,
+ *     weil kein Key-Deserialisierungs-Overhead mehr pro Request
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -51,13 +58,7 @@ import { Trend, Counter, Rate } from 'k6/metrics';
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080/statistics';
 
 const SERVER_KEY  = open('./payload_sk.txt');
-const LIST_N10_B8 = open('./payload_list_n10_b8.txt');
-
-const payload = JSON.stringify({
-    encrypted_list: JSON.parse(LIST_N10_B8),
-    server_key: SERVER_KEY,
-    bit_width: 8,
-});
+const LIST_N10_B8 = JSON.parse(open('./payload_list_n10_b8.txt'));
 
 const params = {
     headers: { 'Content-Type': 'application/json' },
@@ -92,8 +93,32 @@ export const options = {
     },
 };
 
+// ── Setup: ServerKey einmalig hochladen ───────────────────────────────────────
+// Läuft einmal vor allen VUs. Rückgabewert wird an jede VU-Funktion übergeben.
+export function setup() {
+    const res = http.post(
+        `${BASE_URL}/session`,
+        JSON.stringify({ server_key: SERVER_KEY }),
+        params
+    );
+
+    if (res.status !== 200) {
+        throw new Error(`Session-Erstellung fehlgeschlagen: ${res.status} – ${res.body}`);
+    }
+
+    const { session_id } = JSON.parse(res.body);
+    console.log(`Session erstellt: ${session_id}`);
+    return { session_id };
+}
+
 // ── Flow ──────────────────────────────────────────────────────────────────────
-export function stressFlow() {
+export function stressFlow(data) {
+    const payload = JSON.stringify({
+        session_id: data.session_id,
+        encrypted_list: LIST_N10_B8,
+        bit_width: 8,
+    });
+
     group('statistics', () => {
         const res = http.post(`${BASE_URL}/`, payload, params);
 

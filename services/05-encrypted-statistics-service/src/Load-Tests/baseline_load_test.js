@@ -8,20 +8,27 @@
  *   1 VU sendet Requests sequentiell – so wird die Mindestlatenz der
  *   homomorphen Statistikberechnung ohne Mutex-Contention bestimmt.
  *
- *   Da die Latenz stark von Listenlänge (n) und Bitbreite abhängt,
- *   werden drei repräsentative Konfigurationen gemessen:
+ *   Vier Konfigurationen:
  *     - n=5,  bit_width=8   (Kleinstlast)
  *     - n=10, bit_width=8   (Mittlere Last)
  *     - n=10, bit_width=16  (Höhere Bitbreite)
+ *     - n=10, bit_width=32  (Maximale Bitbreite — Trend vollständig)
+ *
+ * Session-Caching:
+ *   setup() lädt den ServerKey einmalig via POST /session hoch.
+ *   Alle VUs teilen dieselbe session_id — kein Key-Overhead pro Request mehr.
  *
  * Endpunkte:
- *   - POST /statistics/
+ *   - POST /session   (einmalig in setup)
+ *   - POST /          (pro Iteration)
  *
  * Voraussetzungen:
- *   1. Backend läuft auf dem Netcup-Server
- *   2. Payloads generieren: cargo run --bin gen_payload
+ *   1. Backend läuft auf dem Netcup-Server (neuer Build mit Session-API)
+ *   2. Payloads generieren (aus src/Load-Tests/):
+ *        cargo run --bin gen_payload
  *      → schreibt payload_sk.txt, payload_list_n5_b8.txt,
- *                    payload_list_n10_b8.txt, payload_list_n10_b16.txt
+ *                    payload_list_n10_b8.txt, payload_list_n10_b16.txt,
+ *                    payload_list_n10_b32.txt
  *
  * Ausführen:
  *   k6 run \
@@ -40,6 +47,7 @@
  *   - Stabile Latenzen ohne Ausreißer bei 1 VU
  *   - Latenz steigt mit n (Median ist O(n log²n))
  *   - Latenz steigt mit Bitbreite
+ *   - Deutlich geringerer Traffic als vorher (kein ~80 MB Key mehr pro Request)
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -50,30 +58,12 @@ import { Trend, Counter, Rate } from 'k6/metrics';
 // ── Konfiguration ─────────────────────────────────────────────────────────────
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080/statistics';
 
-// open() im Init-Kontext liest die Datei als String (k6 built-in, kein experimental/fs)
+// Payload-Dateien einmalig im Init-Kontext lesen
 const SERVER_KEY   = open('./payload_sk.txt');
-const LIST_N5_B8   = open('./payload_list_n5_b8.txt');
-const LIST_N10_B8  = open('./payload_list_n10_b8.txt');
-const LIST_N10_B16 = open('./payload_list_n10_b16.txt');
-
-// Payloads einmalig im Init-Kontext bauen – nicht bei jedem Request neu
-const payload_n5_b8 = JSON.stringify({
-    encrypted_list: JSON.parse(LIST_N5_B8),
-    server_key: SERVER_KEY,
-    bit_width: 8,
-});
-
-const payload_n10_b8 = JSON.stringify({
-    encrypted_list: JSON.parse(LIST_N10_B8),
-    server_key: SERVER_KEY,
-    bit_width: 8,
-});
-
-const payload_n10_b16 = JSON.stringify({
-    encrypted_list: JSON.parse(LIST_N10_B16),
-    server_key: SERVER_KEY,
-    bit_width: 16,
-});
+const LIST_N5_B8   = JSON.parse(open('./payload_list_n5_b8.txt'));
+const LIST_N10_B8  = JSON.parse(open('./payload_list_n10_b8.txt'));
+const LIST_N10_B16 = JSON.parse(open('./payload_list_n10_b16.txt'));
+const LIST_N10_B32 = JSON.parse(open('./payload_list_n10_b32.txt'));
 
 const params = {
     headers: { 'Content-Type': 'application/json' },
@@ -84,6 +74,7 @@ const params = {
 const latency_n5_b8   = new Trend('latency_n5_b8',   true);
 const latency_n10_b8  = new Trend('latency_n10_b8',  true);
 const latency_n10_b16 = new Trend('latency_n10_b16', true);
+const latency_n10_b32 = new Trend('latency_n10_b32', true);
 const errorCount      = new Counter('errors');
 const successRate     = new Rate('success_rate');
 
@@ -94,7 +85,7 @@ export const options = {
             executor: 'per-vu-iterations',
             vus: 1,
             iterations: 5,
-            maxDuration: '60m',
+            maxDuration: '120m',
             exec: 'baselineFlow',
         },
     },
@@ -102,12 +93,37 @@ export const options = {
         'latency_n5_b8':   ['p(95)<120000'],
         'latency_n10_b8':  ['p(95)<300000'],
         'latency_n10_b16': ['p(95)<300000'],
+        'latency_n10_b32': ['p(95)<600000'],
         'success_rate':    ['rate>0.99'],
     },
 };
 
+// ── Setup: ServerKey einmalig hochladen ───────────────────────────────────────
+// Läuft einmal vor allen VUs. Rückgabewert wird an jede VU-Funktion übergeben.
+export function setup() {
+    const res = http.post(
+        `${BASE_URL}/session`,
+        JSON.stringify({ server_key: SERVER_KEY }),
+        params
+    );
+
+    if (res.status !== 200) {
+        throw new Error(`Session-Erstellung fehlgeschlagen: ${res.status} – ${res.body}`);
+    }
+
+    const { session_id } = JSON.parse(res.body);
+    console.log(`Session erstellt: ${session_id}`);
+    return { session_id };
+}
+
 // ── Hilfsfunktion ─────────────────────────────────────────────────────────────
-function request(payload, trendMetric, label) {
+function request(list, bitWidth, trendMetric, label, sessionId) {
+    const payload = JSON.stringify({
+        session_id: sessionId,
+        encrypted_list: list,
+        bit_width: bitWidth,
+    });
+
     const res = http.post(`${BASE_URL}/`, payload, params);
 
     trendMetric.add(res.timings.duration);
@@ -132,8 +148,11 @@ function request(payload, trendMetric, label) {
 }
 
 // ── Flow ──────────────────────────────────────────────────────────────────────
-export function baselineFlow() {
-    group('n5_b8',   () => request(payload_n5_b8,   latency_n5_b8,   'n=5  b=8'));
-    group('n10_b8',  () => request(payload_n10_b8,  latency_n10_b8,  'n=10 b=8'));
-    group('n10_b16', () => request(payload_n10_b16, latency_n10_b16, 'n=10 b=16'));
+// data.session_id kommt von setup() — dieselbe für alle VUs und Iterationen.
+export function baselineFlow(data) {
+    const sid = data.session_id;
+    group('n5_b8',   () => request(LIST_N5_B8,   8,  latency_n5_b8,   'n=5  b=8',  sid));
+    group('n10_b8',  () => request(LIST_N10_B8,  8,  latency_n10_b8,  'n=10 b=8',  sid));
+    group('n10_b16', () => request(LIST_N10_B16, 16, latency_n10_b16, 'n=10 b=16', sid));
+    group('n10_b32', () => request(LIST_N10_B32, 32, latency_n10_b32, 'n=10 b=32', sid));
 }
