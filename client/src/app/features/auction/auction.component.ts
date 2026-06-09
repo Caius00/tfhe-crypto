@@ -77,6 +77,8 @@ export class AuctionComponent implements OnInit {
         server_key: serverKeyB64,
       };
 
+      console.log('Payload size MB:', (JSON.stringify(payload).length / 1024 / 1024).toFixed(2));
+
       this.http.post<any>('/auction/gebot', payload).subscribe({
         next: (res) => {
           this.statusMessage.set(`Erfolg: Gebot von ${currentName} erfolgreich empfangen!`);
