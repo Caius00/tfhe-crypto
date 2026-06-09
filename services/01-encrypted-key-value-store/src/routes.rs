@@ -3,22 +3,13 @@ use crate::models::{
     AppError, CreateSessionRequest, DeleteRequest, ExistsRequest, GetRequest, MessageResponse,
     PutRequest, ValueResponse,
 };
-use crate::store::{SharedState};
+use crate::store::SharedState;
 use axum::extract::State;
 use axum::Json;
-use tfhe::{set_server_key, CompressedServerKey};
+use tfhe::{CompressedServerKey};
 use uuid::Uuid;
 
-pub const VALUE_LENGTH: usize = 200;
-
-async fn set_route_server_key(state: &SharedState, session_id: &str) -> Result<(), AppError> {
-    let keys_lock = state.server_keys.read().await;
-    let server_key = keys_lock.get(session_id).ok_or(AppError::Unauthorized)?;
-
-    set_server_key(server_key.clone());
-
-    Ok(())
-}
+// pub const VALUE_LENGTH: usize = 200;
 
 pub async fn create_session_route(
     State(state): State<SharedState>,
@@ -47,9 +38,7 @@ pub async fn put_route(
     let parsed_key = CompressedCustomFheAsciiString::new(body.key);
     let parsed_value = CompressedCustomFheAsciiString::new(body.value);
 
-    state
-        .put(parsed_key, parsed_value, body.session_id)
-        .await?;
+    state.put(parsed_key, parsed_value, body.session_id).await?;
 
     Ok(())
 }
@@ -71,13 +60,6 @@ pub async fn exists_route(
     State(state): State<SharedState>,
     Json(body): Json<ExistsRequest>,
 ) -> Result<Json<ValueResponse>, AppError> {
-    let server_key = {
-        let keys_lock = state.server_keys.read().await;
-        keys_lock.get(&body.session_id)
-            .ok_or(AppError::Unauthorized)?
-            .clone()
-    };
-
     let compressed_key = CompressedCustomFheAsciiString::new(body.key);
 
     let exists = state.exists(compressed_key, body.session_id).await?;

@@ -3,14 +3,13 @@ use crate::models::AppError;
 use dotenvy::from_path;
 use redis::{AsyncCommands, Client, ConnectionAddr, ConnectionInfo, RedisConnectionInfo};
 use std::collections::HashMap;
+use std::env;
 use std::ops::BitOr;
 use std::sync::Arc;
-use std::{env};
 use tfhe::prelude::{FheEq, FheTrivialEncrypt, IfThenElse};
-use tfhe::{set_server_key, FheBool};
 use tfhe::ServerKey;
-use tokio::sync::{RwLock};
-use crate::routes::VALUE_LENGTH;
+use tfhe::{set_server_key, FheBool};
+use tokio::sync::RwLock;
 
 fn get_redis_client() -> Client {
     let password = env::var("REDIS_PASSWORD").unwrap_or_default();
@@ -78,7 +77,8 @@ impl AppState {
     ) -> Result<(), AppError> {
         let server_key = {
             let keys_lock = self.server_keys.read().await;
-            keys_lock.get(&session_id)
+            keys_lock
+                .get(&session_id)
                 .ok_or(AppError::Unauthorized)?
                 .clone()
         };
@@ -114,7 +114,8 @@ impl AppState {
     ) -> Result<(CustomFheAsciiString, FheBool), AppError> {
         let server_key = {
             let keys_lock = self.server_keys.read().await;
-            keys_lock.get(&session_id)
+            keys_lock
+                .get(&session_id)
                 .ok_or(AppError::Unauthorized)?
                 .clone()
         };
@@ -175,7 +176,8 @@ impl AppState {
     ) -> Result<FheBool, AppError> {
         let server_key = {
             let keys_lock = self.server_keys.read().await;
-            keys_lock.get(&session_id)
+            keys_lock
+                .get(&session_id)
                 .ok_or(AppError::Unauthorized)?
                 .clone()
         };
@@ -219,7 +221,8 @@ impl AppState {
     ) -> Result<(), AppError> {
         let server_key = {
             let keys_lock = self.server_keys.read().await;
-            keys_lock.get(&session_id)
+            keys_lock
+                .get(&session_id)
                 .ok_or(AppError::Unauthorized)?
                 .clone()
         };

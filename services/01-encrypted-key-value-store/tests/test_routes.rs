@@ -50,12 +50,7 @@ async fn session_req(server: &TestServer, compressed_server_key: Vec<u8>) -> Str
     session_response.json::<MessageResponse>().message
 }
 
-async fn put_req(
-    server: &TestServer,
-    route_key: Vec<u8>,
-    route_value: Vec<u8>,
-    session_id: &str,
-) {
+async fn put_req(server: &TestServer, route_key: Vec<u8>, route_value: Vec<u8>, session_id: &str) {
     let response = server
         .post("/entry")
         .json(&PutRequest {
@@ -444,17 +439,16 @@ async fn delete_req(server: &TestServer, route_key: Vec<u8>, session_id: &String
 //         }
 //     }
 // }
-
 #[cfg(test)]
 mod test_all {
     use super::*;
+    // use encrypted_key_value_store::routes::VALUE_LENGTH;
     use serial_test::serial;
-    use std::time::Duration;
-    use tfhe::{set_server_key, CompactCiphertextListBuilder, CompactPublicKey};
-    use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
-    use tokio::time::sleep;
-    use encrypted_key_value_store::routes::VALUE_LENGTH;
     use std::error::Error;
+    use std::time::Duration;
+    use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
+    use tfhe::{set_server_key, CompactCiphertextListBuilder, CompactPublicKey};
+    use tokio::time::sleep;
 
     async fn test_all(
         server: &TestServer,
@@ -491,13 +485,11 @@ mod test_all {
     }
 
     async fn run_client(server: Arc<TestServer>, key: &str, value: &str) {
-        let parameters = MetaParametersFinder::new(
-            Constraint::LessThanOrEqual(Log2PFail(-128.0)),
-            Backend::Cpu,
-        )
-        .with_compression(true)
-        .find()
-        .expect("Could not find suitable parameters");
+        let parameters =
+            MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
+                .with_compression(true)
+                .find()
+                .expect("Could not find suitable parameters");
 
         let client_key = ClientKey::generate(parameters);
         let compressed_server_key = CompressedServerKey::new(&client_key);
@@ -524,13 +516,11 @@ mod test_all {
         let server = get_test_server();
         server.delete("/clear").await;
 
-        let parameters = MetaParametersFinder::new(
-            Constraint::LessThanOrEqual(Log2PFail(-128.0)),
-            Backend::Cpu,
-        )
-        .with_compression(true)
-        .find()
-        .expect("Could not find suitable parameters");
+        let parameters =
+            MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
+                .with_compression(true)
+                .find()
+                .expect("Could not find suitable parameters");
 
         let client_key = ClientKey::generate(parameters);
         let compressed_server_key = CompressedServerKey::new(&client_key);

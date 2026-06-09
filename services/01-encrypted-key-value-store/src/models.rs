@@ -1,6 +1,5 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use crate::routes::VALUE_LENGTH;
 
 #[derive(Deserialize, Serialize, JsonSchema)]
 pub struct PutRequest {
@@ -49,7 +48,7 @@ pub enum AppError {
     NotFound(String),
     Unauthorized,
     InternalError(String),
-    ValueLength(usize),
+    // ValueLength(usize),
 }
 
 impl From<redis::RedisError> for AppError {
@@ -88,10 +87,13 @@ impl axum::response::IntoResponse for AppError {
                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Internal Server Error: {}", e),
             ),
-            AppError::ValueLength(len) => (
-                axum::http::StatusCode::BAD_REQUEST,
-                format!("Value length ({}) doesnt match fixed length: {}", len, VALUE_LENGTH),
-            ),
+            // AppError::ValueLength(len) => (
+            //     axum::http::StatusCode::BAD_REQUEST,
+            //     format!(
+            //         "Value length ({}) doesnt match fixed length: {}",
+            //         len, VALUE_LENGTH
+            //     ),
+            // ),
         };
 
         (status, axum::Json(MessageResponse { message })).into_response()
