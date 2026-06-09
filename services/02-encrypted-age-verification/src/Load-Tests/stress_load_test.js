@@ -1,14 +1,17 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * stress_load_test.js – FHE Stress Test (realistisch, pro-VU Schlüsselpaar)
+ * stress_load_test.js – FHE Stress Test (10 parallele Clients, pre-built Sessions)
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Was wird getestet?
- *   Jede VU simuliert einen eigenen Client mit eigenem Schlüsselpaar:
- *   - Eigener ServerKey (payload_vu{N}_sk.txt)
- *   - Eigenes encrypted_age (payload_vu{N}_age.txt)
- *   - Eigene Session per POST /session
- *   - Verify per POST /verify/{session_id}
+ *   setup() baut alle 10 Sessions sequentiell auf bevor der Test startet.
+ *   Danach greifen alle VUs parallel auf ihre eigene Session zu – der
+ *   ServerKey-Upload beeinflusst die Verify-Latenz nicht mehr.
+ *
+ * Endpunkte:
+ *   - POST /session             (10x in setup(), vor dem Test)
+ *   - POST /verify/{session_id} (unter Last, jede VU eigene Session)
+ *   - DELETE /session/{id}      (10x in teardown())
  *
  * Voraussetzungen:
  *   1. Backend läuft
@@ -32,8 +35,8 @@ import { check, sleep, group } from 'k6';
 import { Trend, Counter, Rate } from 'k6/metrics';
 
 // ── Konfiguration ─────────────────────────────────────────────────────────────
-const BASE_URL   = __ENV.BASE_URL || 'http://159.195.145.100/age-verification';
-const MAX_VUS    = 10;
+const BASE_URL  = __ENV.BASE_URL || 'http://159.195.145.100/age-verification';
+const MAX_VUS   = 10;
 
 // Alle Payloads im Init-Kontext laden
 const SERVER_KEYS    = [];
@@ -51,15 +54,12 @@ const params = {
 
 // ── Eigene Metriken ───────────────────────────────────────────────────────────
 const verifyLatency = new Trend('verify_latency', true);
-const setupLatency  = new Trend('setup_latency',  true);
 const errorCount    = new Counter('errors');
 const successRate   = new Rate('success_rate');
 
-// ── Pro-VU State ──────────────────────────────────────────────────────────────
-const vuSessions = {};
-
 // ── Lastkurve ─────────────────────────────────────────────────────────────────
 export const options = {
+    setupTimeout: '300s',  // 10 Sessions à ~15-30s = bis zu 300s
     scenarios: {
         stress: {
             executor: 'ramping-vus',
@@ -77,47 +77,47 @@ export const options = {
     },
     thresholds: {
         'verify_latency': ['p(95)<10000'],
-        'setup_latency':  ['p(95)<120000'],
         'success_rate':   ['rate>0.99'],
     },
 };
 
-// ── Flow ──────────────────────────────────────────────────────────────────────
-export function verifyFlow() {
-    // VU-Index: 1-basiert, max MAX_VUS (wraparound falls mehr VUs als Paare)
-    const vuIndex = ((__VU - 1) % MAX_VUS);
-    const serverKey    = SERVER_KEYS[vuIndex];
-    const encryptedAge = ENCRYPTED_AGES[vuIndex];
+// ── Setup: alle Sessions vorab aufbauen ───────────────────────────────────────
+// Läuft einmal vor allen VUs – gibt Array von session_ids zurück
+export function setup() {
+    const sessionIds = [];
 
-    // Erste Iteration dieser VU: eigene Session aufbauen
-    if (!vuSessions[__VU]) {
-        group('session_setup', () => {
-            const res = http.post(
-                `${BASE_URL}/session`,
-                JSON.stringify({ server_key: serverKey }),
-                { headers: { 'Content-Type': 'application/json' }, timeout: '120s' }
-            );
+    for (let i = 0; i < MAX_VUS; i++) {
+        console.log(`Setup Session ${i + 1}/${MAX_VUS}...`);
+        const res = http.post(
+            `${BASE_URL}/session`,
+            JSON.stringify({ server_key: SERVER_KEYS[i] }),
+            { headers: { 'Content-Type': 'application/json' }, timeout: '120s' }
+        );
 
-            setupLatency.add(res.timings.duration);
+        if (res.status !== 200) {
+            throw new Error(`Session ${i + 1} Setup fehlgeschlagen: ${res.status} – ${res.body}`);
+        }
 
-            if (res.status !== 200) {
-                errorCount.add(1);
-                console.error(`VU ${__VU} Session-Setup fehlgeschlagen: ${res.status}`);
-                return;
-            }
-
-            vuSessions[__VU] = JSON.parse(res.body).session_id;
-            console.log(`VU ${__VU} Session erstellt: ${vuSessions[__VU]}`);
-        });
+        const sessionId = JSON.parse(res.body).session_id;
+        sessionIds.push(sessionId);
+        console.log(`Session ${i + 1} erstellt: ${sessionId}`);
     }
 
-    if (!vuSessions[__VU]) return;
+    console.log(`Alle ${MAX_VUS} Sessions bereit. Stresstest beginnt.`);
+    return { sessionIds };
+}
 
-    // Verify mit eigenem encrypted_age
+// ── Flow ──────────────────────────────────────────────────────────────────────
+export function verifyFlow(data) {
+    // VU-Index: 0-basiert, wraparound falls mehr VUs als Sessions
+    const vuIndex  = (__VU - 1) % MAX_VUS;
+    const sessionId    = data.sessionIds[vuIndex];
+    const encryptedAge = ENCRYPTED_AGES[vuIndex];
+
     group('verify_age', () => {
         const payload = JSON.stringify({ encrypted_age: encryptedAge });
         const res = http.post(
-            `${BASE_URL}/verify/${vuSessions[__VU]}`,
+            `${BASE_URL}/verify/${sessionId}`,
             payload,
             params
         );
@@ -142,9 +142,9 @@ export function verifyFlow() {
 }
 
 // ── Teardown ──────────────────────────────────────────────────────────────────
-export function teardown() {
-    for (const [vu, sessionId] of Object.entries(vuSessions)) {
-        http.del(`${BASE_URL}/session/${sessionId}`);
-        console.log(`VU ${vu} Session ${sessionId} gelöscht`);
+export function teardown(data) {
+    for (let i = 0; i < data.sessionIds.length; i++) {
+        http.del(`${BASE_URL}/session/${data.sessionIds[i]}`);
+        console.log(`Session ${i + 1} gelöscht: ${data.sessionIds[i]}`);
     }
 }
