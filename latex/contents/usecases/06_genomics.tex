@@ -1,16 +1,593 @@
 \subsection{Encrypted-Genomics}
 \label{sub:encrypted_genomics}
+Der folgende Abschnitt beschreibt die Implementierung des Use-Cases encrypted-genomics. 
 
 \subsubsection{Funktionsbeschreibung}
+Der Use Case dient dem verschluesselten Vergleich von DNA-Sequenzen gegen bekannte Riskmarker und gegen in Sessions gespeicherte verschluesselte Sequenzen. Die Riskmarker sind global bekannt, Sessionsequenzen sind geheim. Rechnungen darf jeder Akteur anfordern, Entschlüsselungen kann gem. des Trust-Thread-Models nur der Owner einer Session.
+
+DNA eine Folge von Nukleinbasen. Diese Basen sind für den Use-Case wie folgt kodiert worden:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|c|c|c|c|}
+\hline
+Adenin & A & 0  \\
+\hline
+Thymin & T & 1 \\
+\hline
+Cytosin & C & 2 \\
+\hline
+Guanin & G & 3 \\
+\hline
+\end{tabular}
+\caption{Basenkodierung}
+\end{table}
+
+Die Rechendarstellung der Zahlen erfolgt als 8-Bit Integer. Das vereinfacht die Umwandlung in Tfhe- und Handlerformate, die hier weitestgehend 8-Bit sind. 
+
+Implementiert wurden frei wählbare Verarbeitung mit der Hammingdistanz oder der Levenshteindistanz. Bioinformatische Besonderheiten wie verpflichtende Basenpaare oder RNA (Uracil statt Thymin) werden nicht berücksichtigt. Auch eine für wissenschaftliche Fragestellungen relevante Unterscheidung zwischen teilweisen Vorliegen von Sequenzen und Gewichtungen von Basensequenzen wird vorliegend nicht berücksichtigt. Es handelt sich um einfache Vergleiche der 4 Basen, bei der eine Gleichheit bei vollwertiger ungewichteter Gleichheit der Sequenzen oder Einzelbasen angenommen wird.  
+
+\textbf{Akteure}
+\begin{itemize}
+    \item Creator: Client, der eine Session eröffnet. Er generiert sich alle drei Schlüssel und verfügt damit über Private-, Public- und Serverkey. Die Schlüsselgenerierung erfolgt auf Ebene des Clients (Browser).  
+    Der Creator kann Sequenzen beliebig verschlüsseln, Abgleiche verschlüsselter Sequenzen am Server anfragen und auch Rechenergebnisse mit dem Private-Key entschlüsseln. 
+    \item Joined user: Client, der einer Session beitritt. Er verfügt nur über den Public-Key der Session. Mit diesem kann er eigene Sequenzen verschlüsseln. Die Verschlüsselten Sequenzen des Joined-Users werden wahlweise in die Riskmarker-Datenbank oder in die Session-Datenbank gelegt. Der Joined-User kann auch Abgleichsreichnungen am Server anfragen. Er erhält dann ein Ergebnis, das er nicht entschlüsseln kann. Schlüsselbedingt kann er keine eigene Rechnung durchführen.
+    \item Server: Der Server übernimmt die Rechnungen für alle Clients. Er verfügt über den Server-Key und den Public-Key jeder Session. Da der Server mit einem globalen State arbeitet, koordiniert er alle Anfragen.Er führt eine FIFO aus, mit der die Schlüssel-und Befehlsausführung gesteuert wird. Er rechnet Gleichheitsvergleiche mit Hamming- und Levenshteindistanzen für bereits verschlüsselte (Session) und noch unverschlüsselte (Riskpattern) Sequenzen aus. Des Weiteren Speichert er alle Sequenzen, Public-Keys, Server-Keys und SessionIDs, um die Aufgaben und Schlüssel zu koordinieren:
+
+    \begin{table}[h]
+    \centering
+    \begin{tabular}{|c|c|c|}
+    \hline
+    \textbf{Datenbank} & \textbf{Spalten} & \textbf{Zweck} \\
+    \hline
+    \hline
+    genomics\_sessions & id, public\_key, server\_key & Sessionlogik \\
+    \hline
+    risk\_patterns & id, sequence, & Riskpatterns\\
+    \hline
+    sessionsequences & session\_id, public\_key, encrypted\_bases & Sessionsequenzen\\
+    \hline
+    \end{tabular}
+    \caption{Datenbanken UC4-Server}
+    \end{table}
+\end{itemize}
+
+\textbf{Lebenszyklus einer Session}:
+
+\begin{itemize}
+\item
+\textbf{1. Session erstellen: } Creatorclient wählt Session erstellen aus. Lokal werden alle 3 Keys erzeugt und über \texttt{POST\textbackslash sessions} an den Server versendet. Der Creator behält den Private-Key, Public- und Server-Key werden an den Server gesendet, der die beiden Keys speichert. 
+
+\item
+\textbf{2. Weitere Clients: } Beliebige Clients können als Joined Clients mit der Anfrage \texttt{GET\textbackslash sessions} der Session beitreten. In der Session erhalten sie den Public-Key der Session gem. der Datenbankzuordnung. 
+
+\item
+  \textbf{3. Sequenz verschluesseln:} Creator und Teilnehmer kodieren ihre
+  DNA lokal und verschluesseln sie mit dem PublicKey. Die Sequenz bleibt hier noch lokal. Alternativ kann der Server eine klare Sequenz ueber \texttt{POST\ /encrypt} mit einem
+  PublicKey verschluesseln.
+\item
+  \textbf{4. Riskmarker verwalten:} Ein Client kann Riskmarker als Klartext
+  mit \texttt{POST\ /patterns} speichern. Sowohl in Front-, wie auch im Backend wird die Eingabe auf die gültigen Zeichen A, T, C, G kontrolliert. Der Riskmarker wird als Klartext in \texttt{risk\_patterns} gespeichert.
+\item
+  \textbf{5. Riskmarker-Vergleich:} Ein Client sendet verschlüsselte DNA
+  plus \texttt{session\_id} und optional \texttt{pattern\_id}. Bei
+  Hamming wird gegen ein ausgewaehltes Pattern oder alle Patterns der Datenbank per Sliding Window gerechnet. Jedes Sliding-Window entspricht hierbei der Patternsequenz. Ist das Pattern kleiner als das eingegebene Wort, so wird bis das Wort vollständig iteriert ist eine Hammingdistanz berechnet und anschließend ein Bitshift um 1 ausgeführt. Es gibt daher final Wort-Pattern viele Windows. Bei Levenshtein wird pro Pattern eine Distanz diagonal berechnet. Ist das Pattern größer als das Wort, wird der Riskmarkervergleich direkt abgebrochen, da der vom Entwickler gewählte Schwellenwert 100 Prozent übereinstimmung ist, also Levenshteindistanz 0 oder mindestens ein Window mit Hammingdistanz 0.
+\item
+  \textbf{6. Sessionsequenzen speichern:} Jeder Sessionteilnehmer kann
+  seine aktuell eingetragene DNA in \texttt{sessionsequences}
+  speichern. Dort werden Session-ID, PublicKey, Ciphertexts und Laenge
+  gespeichert. Wird der Button getätigt, wird die eingetragene Sequenz lokal verschlüsselt und verschickt. Sie wird in die Datenbank Sessionsequences abgelegt. 
+\item
+  \textbf{7. Sessionsequenz-Vergleich:} Der Client waehlt eine Session-ID
+  aus der Sessionsequenz-Dropdown-Liste. Über einen Button kann er diese Liste aktualisieren. Seine aktuelle Sequenz wird mit
+  dem PublicKey dieser Session verschlüsselt und gegen alle dort
+  gespeicherten verschlüsselten Sequenzen verglichen. Hamming oder Levenshtein sind wieder frei wählbar. Hier treten Besonderheiten zum Riskmarker auf: bei Levenshtein wird ein einfacher Levenshteinvergleich durchgeführt. Bei Hamming wird hier immer die kleinere gegen die größere Sequenz geprüft. Ist in einem Window eine Hammingdistanz von 0 gegeben, liegt Gleichheit vor. Dies ist nach Entwickleransicht hier stimmig, da ein einfacher Gleichheitswert in eine der beiden Sequenzen schon eine gleiche Sequenz ohne jede Bedeutung darstellen. Im Gegensatz zum Riskmarker, wo je nach Risikomuster und Krankheitsanfälligkeit ggf. 100 Prozent nötig sind, erscheint dies hier zielführend. Für Levenshtein wurde dies bewusst nicht umgesetzt, da die Rechnung damit extrem teuer wird. Auch eignet sich Levenshtein eher für zielgerichtetere gewichtete Vergleiche mit oder ohne Windows, was den Rahmen der Aufgabe sprengen würde. 
+\item
+  \textbf{8. Auswertung:} Der Server gibt verschlüsselte
+  Distanzen für Hamming oder Levenshtein zurück. Der Creator entschlüsselt diese lokal mit dem Private-Key. Joined-Clients sehen hier nur verschlüsselte Sequenzen.
+\item
+  \textbf{9. Session verlassen:} \texttt{Leave\ session} löscht nur den
+  lokalen Zustand im Frontend. Es gibt aktuell keinen Backend-Endpunkt zum Deaktivieren oder Löschen einer Session. Ein rejoin als Creator ist für niemanden möglich.
+  
+\end{itemize}
 
 \subsubsection{OpenAPI-Schnittstelle}
+Der Service startet auf http://159.195.145.100/genomics. Die OpenAPI-Dokumentation wird ueber \texttt{aide} erzeugt und mit
+\texttt{openapi-docs::attach} eingebunden. Je nach Deployment sind
+\texttt{/openapi.json} und \texttt{/docs} verfügbar. Es gibt keine
+Auth-Header in der Implementierung. Fehlerantworten sind einfache
+Textantworten mit HTTP-Statuscode. Folgende Antworten sind definiert:
+
+\begin{table}[h]
+    \centering
+    \begin{tabular}{|c|c|}
+    \hline
+    \textbf{Datenbank} & \textbf{Spalten}  \\
+    \hline
+    \hline
+    200 & OK \\
+    \hline
+    400 & Ungültige Eingabe einer Base oder Session \\
+    \hline
+    429 & FIFO voll \\
+    \hline
+    500 & Serialisierung- oder Lockfehler \\
+    \hline
+    \end{tabular}
+    \caption{Statuscodes}
+    \end{table}
+
 
 \subsubsection{Trust- und Threat-Model}
 
+
+\begin{longtable}{|p{5.2cm}|c|c|c|}
+\hline
+\textbf{Datum} & \textbf{Server } & \textbf{Creator} & \textbf{Joined} \\
+\hline
+\hline
+Session-ID & X & x  & X \\
+\hline
+PublicKey & X & x & X \\
+\hline
+Server Key & X & x &  \\
+\hline
+Private Key &  & x &  \\
+\hline
+DNA Klartext & lokal & lokal & lokal \\
+\hline
+DNA-Verschlüsselt & x & X & X \\
+\hline
+Riskpatternn & x & x & x \\
+\hline
+Sessionsequenzen Rechnung & x &  &  \\
+\hline
+Sessionsequenzen Ergebnis &  & x &  \\
+\hline
+Hamming-Distanzen & x & x & x (encrypted) \\
+\hline
+Levenshtein-Distanzen & x & X & x (encrypted) \\
+\hline
+Sequenzlängen / Anzahl Basen &  & x & x \\
+\hline
+Windows Rechnung & x &  &  \\
+\hline
+Windows Ergebnis & x & x & x \\
+\hline
+Anzahl Sequenzen Rechnung & x &  &  \\
+\hline
+Anzahl Sequenzen Ergebnis & x & x & x \\
+\hline
+FIFO & x & x & x \\
+\hline
+Datenbank & x & per GET & per GET \\
+\hline
+\caption{Trust- und Threat-Model des Encrypted-Genomics-Service}
+\label{tab:genomics-trust-threat-model}
+\end{longtable}
+
+
+\paragraph{Beobachtbare Metadaten}\label{beobachtbare-metadaten}
+
+Der Service schützt über Tfhe den Inhalt der verschlüsselten DNA-Sequenzen und der berechneten Distanzen. Der Server sieht jedoch weiterhin Metadaten:
+
+\begin{itemize}
+\item
+  Welche Session existiert und wie oft sie genutzt wird.
+\item
+  Welche Riskmarker im Klartext existieren und welches Pattern
+  abgefragt wird.
+\item
+  Ob ein Einzelpattern oder \texttt{All\ patterns} abgefragt wird.
+\item
+  Länge der verschlüsselten Vergleichssequenz, Länge gespeicherter
+  Sessionsequenzen und daraus ableitbare Anzahl der Hamming-Windows.
+\item
+  Anzahl gespeicherter Sessionsequenzen je Session.
+\item
+  FIFO-Positionen, Job-Typen und ungefähre Laufzeiten.
+\item
+  Ob ein Request wegen FIFO-Füllstand, Eingabelänge oder
+  Pattern-Länge abgelehnt wurde.
+\end{itemize}
+
+Es lassen sich serverseitig durchaus Aktivitätsprofile aus
+Sequenzlängen, Nutzungsintensität einzelner Sessions und die
+verwendeten Riskmarker ableiten. Es list außerdem erkennbar, ob viele
+Anfragen auf dieselbe Session laufen oder ob bestimmte Riskmarker
+besonders häufig abgefragt werden. Ohne Private Key lassen sich aber keine konkreten Schlüsse für Server und auch Clients ziehen.
+
+\paragraph{Restvertrauen in den
+Server}\label{restvertrauen-in-den-server}
+
+Der Server kann nicht entschlüsseln, muss aber korrekt handeln.Der Use Case vertraut darauf, dass der Server:
+
+\begin{itemize}
+\item
+  die richtigen Session-Keys zur richtigen Session lädt,
+\item
+  Riskmarker und Sessionsequenzen vollständig und unverfälscht aus der
+  Datenbank liest,
+\item
+  keine Patterns austauscht oder Ergebnisse unterschlägt,
+\item
+  FIFO-Jobs fair in Reihenfolge abarbeitet,
+\item
+  den ServerKey nur für die vorgesehene homomorphe Berechnung
+  verwendet,
+\item
+  verschlüsselte Ergebnisse unverändert an den Client zurückgibt.
+\end{itemize}
+
+TFHE reduziert das Vertrauen in den Server hinsichtlich Vertraulichkeit
+der DNA-Inhalte. Es ersetzt aber keine Integritätsbeweise, Authentifizierung und keine Verifikation, dass der
+Server tatsächlich genau den dokumentierten Code ausgeführt hat.
+
+\paragraph{Annahmen außerhalb von
+FHE}\label{annahmen-ausserhalb-von-fhe}
+
+\begin{itemize}
+\item
+  Die Transportverschlüsselung erfolgt im Deployment ueber TLS bzw. den
+  vorgeschalteten Gateway.
+\item
+  Das Angular-Frontend und \texttt{tfhe.js} führen Keygenerierung,
+  Verschlüsselung und Entschlüsselung korrekt aus.
+\item
+  TFHE-rs und TFHE-WASM werden als kryptographisch korrekte Black Boxes
+  betrachtet.
+\item
+  Der Private Key verlässt den Browser des Creators nicht.
+\item
+  Die Datenbank ist für Verfügbarkeit und Integrität
+  vertrauenswürdig genug.
+\item
+  Es gibt keine starke Benutzer- oder Rollen-Authentifizierung im
+  Genomics-Service.
+\end{itemize}
+
+\paragraph{Schutzversprechen}\label{schutzversprechen}
+
+Produktiv versprochen werden kann nur: Der Server verarbeitet
+DNA-Vergleichssequenzen und Sessionsequenzen als Ciphertexts und kann
+deren Klartext ohne ClientKey nicht lesen. Ebenfalls liegen die
+berechneten Hamming- und Levenshtein-Distanzen auf dem Server nur
+verschlüsselt vor.
+
+Nicht versprochen wird: Schutz von Riskmarkern, Pattern-Auswahl,
+Session-IDs, Sequenzlängen, Zeitpunkten, FIFO-Metadaten,
+Datenbank-Metadaten oder Schutz gegen einen aktiv manipulierenden
+Server.
+
 \subsubsection{FHE-Designentscheidungen}
+
+\paragraph{Verwendete TFHE-rs-Typen}\label{verwendete-tfhe-rs-typen}
+
+\begin{itemize}
+\item
+  \texttt{CompactPublicKey}: Wird verwendet, damit klare DNA-Werte
+  effizient als kompakte Ciphertext-Liste verschlüsselt werden koennen.
+  Der Server nutzt ihn insbesondere, um klare Riskmarker vor dem
+  Vergleich zu verschlüsseln.
+\item
+  \texttt{CompressedServerKey}: Wird vom Client erzeugt, base64-kodiert
+  an den Server gesendet und serverseitig zu \texttt{ServerKey}
+  dekomprimiert.
+\item
+  \texttt{ServerKey}: Wird im Serverprozess gesetzt, damit homomorphe
+  Operationen auf \texttt{FheUint8} ausgeführt werden können.
+\item
+  \texttt{FheUint8}: Wird für verschlüsselte DNA-Basen,
+  Hamming-Distanzen, Levenshtein-DP-Zellen und Ergebniswerte verwendet.
+\end{itemize}
+
+\texttt{FheUint8} reicht aus, weil DNA-Basen nur Werte von 0
+bis 3 benoetigen und die Distanzwerte durch die Eingabelimits in den
+Bereich 0 bis 255 passen. Hamming erlaubt in der Implementierung maximal 255 Zeichen, Levenshtein maximal 122 Zeichen. Größere Typen erfordern entweder eine Erweiterung auf größere FheUint-Typen oder die Nutzung einer Overflowaddition, in der ein Overflow eine unklare Hammingdistanz + Overflow ausgibt. Aus dem Overflow kann man dann das Ergebnis NO MATCH ziehen. Darauf wurde aber verzichtet, da die Rechnung bewusst einfach und damit leicht parallelisiertbar gemacht werden sollte.
+
+\paragraph{Homomorphe Operationen}\label{homomorphe-operationen}
+
+Hamming:
+
+\begin{itemize}
+\item
+  \texttt{ne} vergleicht zwei verschlüsselte oder verschlüsselt/klare
+  Basen.
+\item
+  \texttt{FheUint8::cast\_from(FheBool)} wandelt Match/Mismatch in
+  \texttt{0} oder \texttt{1}.
+\item
+  Homomorphe Addition summiert Mismatches im Window.
+\end{itemize}
+
+Levenshtein:
+
+\begin{itemize}
+\item
+  \texttt{ne} berechnet die Substitutionskosten.
+\item
+  Addition mit \texttt{1u8} modelliert Einfügung und Löschung. Eine Performanceverbesserung durch Nutzung von trivial\_encrypt(1u8) konnte nicht verzeichnet werden.
+\item
+  \texttt{lt} und \texttt{if\_then\_else} bilden \texttt{min} und
+  \texttt{min3} fuer die DP-Rekurrenz.
+\item
+  \texttt{FheUint8::encrypt\_trivial} erzeugt öffentliche Startwerte
+  für die DP-Ränder.
+\end{itemize}
+
+\paragraph{Algorithmische Varianten}\label{algorithmische-varianten}
+
+Der Service unterstützt zwei Arten von Pattern-Vergleichen:
+
+\begin{itemize}
+\item
+  \textbf{Einzelvergleich gegen Riskmarker:} \texttt{/process} und
+  \texttt{/process-levenshtein} laden ein klares Pattern aus der
+  Datenbank. Hamming kann dabei verschlüsselte DNA direkt gegen klare
+  Patternwerte vergleichen.
+\item
+  \textbf{Datenbankvergleich gegen Riskmarker:} \texttt{/compare-db} und
+  \texttt{/compare-db-levenshtein} verschlüsseln alle relevanten klaren
+  Riskmarker erst mit dem PublicKey der Session und vergleichen dann
+  Ciphertext gegen Ciphertext.
+\item
+  \textbf{Sessionsequenzvergleich:} Beide Seiten liegen bereits
+  verschlüsselt vor. Für Hamming wird bei unterschiedlich langen
+  Sequenzen die längere Sequenz als Wort und die kürzere als Pattern
+  genutzt.
+\end{itemize}
+
+\paragraph{Parallelisierung}\label{parallelisierung}
+
+Der Server initialisiert Rayon mit der Anzahl verfügbarer CPU-Threads.
+Die rechenintensiven Handler laufen in
+\texttt{tokio::task::spawn\_blocking}, damit der Async-Runtime-Thread
+nicht blockiert. Innerhalb der Berechnung werden Patterns,
+Sessionsequenzen, Serialisierung, Deserialisierung und Hamming-Windows
+parallelisiert.
+
+Gleichzeitig gibt es eine globale FIFO. Dadurch nutzt jede einzelne Berechnung die Serverleistung,
+während weitere Jobs geordnet warten. Die FIFO-Kapazität ist aktuell 5
+Jobs.
+
+\paragraph{Verworfene oder bewusst vermiedene
+Varianten}\label{verworfene-oder-bewusst-vermiedene-varianten}
+
+\begin{itemize}
+\item
+  \textbf{Private Key an den Server senden:} Wurde bewusst nicht
+  umgesetzt, weil dadurch der zentrale Schutz des Use Case verloren
+  ginge.
+\item
+  \textbf{Riskmarker nur klar vergleichen:} Für DB-Vergleiche werden
+  Riskmarker serverseitig mit dem PublicKey verschlüsselt, damit die
+  eigentliche Distanzberechnung homomorph auf Ciphertexts laeuft.
+\item
+  \textbf{FheUint16/FheUint32 fuer Distanzen:} Für leichtere Parallelisierung und Optimierung - lässt sich im Nachhinein leicht ändern.
+\item
+  \textbf{Datenabhängiges Abkürzen bei Levenshtein:} Der Server kann
+  wegen FHE nicht sinnvoll auf geheimen Zwischenwerten branchen. Die
+  DP-Matrix wird deshalb systematisch berechnet.
+\end{itemize}
+
 
 \subsubsection{Komplexität der eigenen Algorithmen}
 
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|p{6.2cm}|c|c|}
+\hline
+\textbf{Funktion / Ablauf} & \textbf{Zeit} & \textbf{Speicher} \\
+\hline
+DNA kodieren & $O(n)$ & $O(n)$ \\
+\hline
+Sequenz verschlüsseln & $O(n)$ & $O(n)$ \\
+\hline
+FIFO enqueue & $O(1)$ & $O(1)$ \\
+\hline
+FIFO snapshot & $O(q)$ & $O(q)$ \\
+\hline
+Sessions listen & $O(s)$ & $O(s)$ \\
+\hline
+Riskmarker listen & $O(p)$ & $O(p)$ \\
+\hline
+Riskmarker speichern & $O(m)$ & $O(m)$ \\
+\hline
+Sessionsequenz speichern & $O(n)$ & $O(n)$ \\
+\hline
+Hamming Einzelpattern & $O((n - m + 1) \cdot m)$ & $O(n - m + 1)$ \\
+\hline
+Hamming Riskmarker-DB & $O(\sum_i (n - m_i + 1) \cdot m_i)$ & $O(\sum_i (n - m_i + 1))$ \\
+\hline
+Hamming Sessionsequenzen & $O(\sum_i (n - m_i + 1) \cdot m_i)$ & $O(\sum_i (n - m_i + 1))$ \\
+\hline
+Levenshtein Einzelpattern & $O(n \cdot m)$ & $O(n \cdot m)$ \\
+\hline
+Levenshtein Riskmarker-DB & $O(\sum_i n \cdot m_i)$ & $O(\max_i(n \cdot m_i) + p)$ \\
+\hline
+Levenshtein Sessionsequenzen & $O(\sum_i n \cdot l_i)$ & $O(\max_i(n \cdot l_i) + s)$ \\
+\hline
+\end{tabular}
+\caption{Big-O-Komplexitaeten des Encrypted-Genomics-Service}
+\label{tab:genomics-komplexitaet}
+\end{table}
+
+
 \subsubsection{Performance-Messung}
 
+
+Die Performance- und Stresstests wurden gegen den deployed Genomics-Service auf dem Netcup-Server ausgefuehrt. Die Last wurde extern mittels \texttt{k6} von einer lokalen Gentoo-Linux-Maschine über das Internet injiziert.
+
+\begin{itemize}
+    \item Basis-URL: \texttt{http://159.195.145.100/genomics}
+    \item Tool: \texttt{k6}
+\end{itemize}
+
+Es wurden zwei verwertbare Testszenarien untersucht:
+
+\begin{enumerate}
+    \item \textbf{Normalbetrieb / Metadata Flow:} Analyse der Endpunkte \texttt{GET /fifo}, \texttt{GET /sessions}, \texttt{GET /patterns} und \texttt{GET /sessionsequences}.
+    \item \textbf{FIFO-/Session-Spike:} Plötzlicher Lastanstieg auf bis zu 250 parallele virtuelle Nutzer mit Fokus auf \texttt{GET /fifo} und \texttt{GET /sessions}.
+\end{enumerate}
+
+
+\subsubsection{Test 1: Normalbetrieb / Metadata Flow}
+Der Test ruft regelmaessig FIFO-Status, Sessions, Risk Patterns und Session-Sequenzgruppen ab. Die Last wurde auf bis zu 30 parallele virtual users skaliert.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|r|r|r|r|}
+\hline
+\textbf{Metrik} & \textbf{/fifo} & \textbf{/sessions} & \textbf{/patterns} & \textbf{/sessionsequences} \\
+\hline
+avg & 40,53 ms & 331,44 ms & 29,61 ms & 143,98 ms \\
+\hline
+min & 2,32 ms & 91,48 ms & 11,38 ms & 44,30 ms \\
+\hline
+p50 & 22,18 ms & 227,92 ms & 26,97 ms & 94,17 ms \\
+\hline
+p90 & 39,86 ms & 681,62 ms & 43,37 ms & 318,61 ms \\
+\hline
+p95 & 45,96 ms & 844,57 ms & 47,93 ms & 383,22 ms \\
+\hline
+max & 12,95 s & 1,74 s & 128,90 ms & 771,80 ms \\
+\hline
+\end{tabular}
+\caption{Normalbetrieb: Latenzen der Genomics-Metadata-Endpunkte}
+\label{tab:genomics-normal-flow-latenzen}
+\end{table}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|r|}
+\hline
+\textbf{Metrik} & \textbf{Wert} \\
+\hline
+HTTP Requests & 5.872 \\
+\hline
+Durchsatz & 36,39 requests/s \\
+\hline
+Iterationen & 1.492 \\
+\hline
+Checks erfolgreich & 5.872 / 5.872 \\
+\hline
+Fehlerrate & 0,00 \% \\
+\hline
+HTTP p50 & 50,14 ms \\
+\hline
+HTTP p90 & 348,77 ms \\
+\hline
+HTTP p95 & 528,16 ms \\
+\hline
+HTTP max & 12,95 s \\
+\hline
+Daten empfangen & 4,3 GB \\
+\hline
+Daten gesendet & 523 kB \\
+\hline
+\end{tabular}
+\caption{Normalbetrieb: Gesamtmetriken}
+\label{tab:genomics-normal-flow-gesamt}
+\end{table}
+
+\textbf{Ergebnis Test 1:}
+Es gab keine HTTP-Fehler. Auffaellig ist jedoch die deutlich hoehere Latenz von \texttt{GET /sessions}. Der p95-Wert von 844,57 ms ueberschreitet den gesetzten Threshold von 800 ms. Ursache ist vermutlich die grosse Antwortmenge der Sessionliste, da dort Public Keys mit uebertragen werden. Die uebrigen Endpunkte bleiben stabil im niedrigen Millisekundenbereich.
+
+\subsubsection{Test 2: FIFO-/Session-Spike}
+Es wurde ein ploetzlicher Lastanstieg auf bis zu 250 parallele virtual Users simuliert. Jeder user ruft wiederholt \texttt{GET /fifo} und \texttt{GET /sessions} ab.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|r|r|}
+\hline
+\textbf{Metrik} & \textbf{/fifo} & \textbf{/sessions} \\
+\hline
+avg & 52,86 ms & 7,47 s \\
+\hline
+min & 2,07 ms & 70,54 ms \\
+\hline
+p50 & 41,22 ms & 10,52 s \\
+\hline
+p90 & 62,15 ms & 13,18 s \\
+\hline
+p95 & 260,22 ms & 13,68 s \\
+\hline
+max & 2,08 s & 16,69 s \\
+\hline
+\end{tabular}
+\caption{FIFO-/Session-Spike: Latenzen}
+\label{tab:genomics-spike-latenzen}
+\end{table}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|r|}
+\hline
+\textbf{Metrik} & \textbf{Wert} \\
+\hline
+HTTP Requests & 2.574 \\
+\hline
+Durchsatz & 31,28 requests/s \\
+\hline
+Iterationen & 1.287 \\
+\hline
+Checks erfolgreich & 2.574 / 2.574 \\
+\hline
+Fehlerrate & 0,00 \% \\
+\hline
+HTTP p50 & 85,69 ms \\
+\hline
+HTTP p90 & 12,51 s \\
+\hline
+HTTP p95 & 13,18 s \\
+\hline
+HTTP max & 16,69 s \\
+\hline
+Daten empfangen & 2,5 GB \\
+\hline
+Daten gesendet & 221 kB \\
+\hline
+\end{tabular}
+\caption{FIFO-/Session-Spike: Gesamtmetriken}
+\label{tab:genomics-spike-gesamt}
+\end{table}
+
+\textbf{Fazit Test 2:}
+Der Service bleibt funktional stabil. Es traten keine fehlgeschlagenen HTTP-Requests auf. Der FIFO-Endpunkt bleibt mit p95 = 260,22 ms vergleichsweise stabil. Der Sessions-Endpunkt skaliert dagegen schlecht unter hoher Parallelität und erreicht p95 = 13,68 s. 
+
+
 \subsubsection{Limitationen}
+
+\begin{itemize}
+\item
+  Der ClientKey existiert nur lokal beim Creator. Wenn der Creator die
+  Seite verlässt, ist alles verloren.
+\item
+  Joined Clients können Ergebnisse bewusst nicht entschluesseln. 
+\item
+  Sessions werden aktuell nicht serverseitig geschlossen.
+\item
+  Riskmarker müssen global und als Klartext gespeichert werden.
+\item
+  Sessionsequenzen werden verschlüsselt gespeichert, aber Session, PublicKey und Anzahl der Sequenzen bleiben sichtbar.
+\item
+  Hamming-Vergleiche sind auf 255 Zeichen begrenzt.
+  Levenshtein-Vergleiche sind auf 122 Zeichen begrenzt.
+\item
+  Bei Riskmarker-Einzelauswahl gibt es ein Zeichenlimit in Höhe von 255/122, da das Pattern nicht länger als die Clientsequenz sein darf.
+\item
+  Levenshtein ist trotz Parallelisierung teuer, weil für jede DP-Zelle
+  mehrere homomorphe Operationen noöig sind und viele Zellen diagonal
+  voneinander abhängen.
+\item
+  Die FIFO-Kapazität ist aktuell 5 Jobs. Ist die Liste voll, gibt der
+  Server HTTP-Statuscode 429 zurück.
+\item
+  Der Service setzt einen globalen ServerKey-Kontext und setzt Locks. Das verhindert parallele Berechnung verschiedener
+  ServerKeys und passt zur FIFO-Architektur, begrenzt aber parallelen
+  Multi-Session-Durchsatz.
+\item
+  Es gibt keine kryptographischen Integritätsbeweise, dass der Server die angefragten Patterns, alle gespeicherten Sequenzen oder alle
+  berechneten Distanzen korrekt verarbeitet hat.
+\end{itemize}
