@@ -6,7 +6,6 @@ import {InputComponent} from "../../shared/components/input/input.component";
 import {FheBool, FheUint8, TfheClientKey, TfheCompressedServerKey} from "tfhe";
 import {CheckboxComponent} from "../../shared/components/checkbox/checkbox.component";
 import {fromPromise} from "rxjs/internal/observable/innerFrom";
-import {HttpClient} from "@angular/common/http";
 import {KeyPair} from "../../core/crypto/key-pair.model";
 import {ExecReq, ExecResp} from "./types";
 import {forkJoin, from, of, switchMap} from "rxjs";
@@ -47,7 +46,7 @@ export class ProgramExecutionComponent implements OnInit {
 
     public keypair: KeyPair | null = null;
 
-    constructor(private tfhe: TfheService, private http: HttpClient, private cdr: ChangeDetectorRef) {
+    constructor(private tfhe: TfheService, private cdr: ChangeDetectorRef) {
     }
 
     ngOnInit(): void {
@@ -190,11 +189,15 @@ export class ProgramExecutionComponent implements OnInit {
             server_key: b64Key,
         };
 
-        const ws = new WebSocket(SERVICE_URLS.programExecution.remoteBase + "/" +
-          "program-execution" + SERVICE_URLS.programExecution.path + "-stream");
 
+        const ws = new WebSocket(SERVICE_URLS.programExecution.remoteBase + "/" +
+            "program-execution" + SERVICE_URLS.programExecution.path + "-stream");
+
+
+        let now: Date;
         ws.onopen = () => {
             ws.send(JSON.stringify(req));
+            now = new Date();
         };
 
         ws.onmessage = (event) => {
@@ -236,6 +239,7 @@ export class ProgramExecutionComponent implements OnInit {
 
         ws.onclose = () => {
             this.executing = false;
+            console.log(new Date().getTime() - now.getTime());
             this.cdr.detectChanges();
         };
 
