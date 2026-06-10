@@ -223,7 +223,10 @@ So kann ein Programm über mehrere Sessions hinweg ausgeführt werden.
 \textbf{GET /execute-stream}\\
 Etabliert den WebSocket.
 Nach Verbindungsaufbau kann genau ein Programm ausgeführt werden, nachdem die angegebene Anzahl an Programmschritten
-ausgeführt wurde, wird der WebSocket geordnet geschlossen.\\
+ausgeführt wurde, wird der WebSocket geordnet geschlossen.
+Es wird maximal ein Programm gleichzeitig ausgeführt, parallel können weitere WebSockets geöffnet werden,
+sendet ein weiterer Client eine Request-Execution-Nachricht während bereits ein Programm ausgeführt wird,
+schließt der Server den WebSocket des zweiten Clients und meldet eine Überlastung (Close-Code 1013)\\
 \textbf{Response 101}
 
 \textbf{Request Execute Program Message}\\
@@ -279,6 +282,7 @@ Folgende Close-Codes werden vom Server gesendet:
     \item 1000 bei geordnetem Verbindungsabbau durch Client oder nach Ende der Programmausführung
     \item 1003 bei fehlerhaftem Request-Execute-Payload
     \item 1011 bei Fehler während der Simulation
+    \item 1013 falls bereits ein Programm ausgeführt wird
 \end{itemize}
 
 \subsubsection{Trust- und Threat-Model}
@@ -457,42 +461,85 @@ Interne Algorithmen haben folgende Laufzeitkomplexitäten´:
 Wobei $(N_{instructions_A})$ die Menge an Instruktionen, die das A-Register verändern bezeichne,
 äquivalent für B-Register, Programmzähler und Carry-Flag.
 
+Der verwendete Platz ist lediglich abhängig von der Größe des RAMs und der Bitbreite.
+Die Bitbreite ist dabei Konstant, weswegen die Platzkomplexität $\matchal{O}(N_{adr\_space})$ beträgt.
+
 \subsubsection{Performance-Messung}
+Da die Kommunikation über WebSockets geschieht, ist eine klassische Latenzmessung nicht Anwendbar.
+Ferner blockiert der Server die nebenläufige Ausführung mehrerer Programme,
+weswegen auch ein Lasttest mit mehreren Clients nicht sinnvoll ist.
+Stattdessen wurde ein Programm mit
 Das folgende Programm wurde als Benchmark gewählt:
 \begin{lstlisting}[label={lst:lstlisting}]
 ; Addition zweier 64-Bit Zahlen.
-; $50d bis $57d = A, $58d bis $65d = B
-; Ergebnis = $66d bis $73d
+; Ergebnis liegt nach 40 Takten vor, 104Byte RAM.
+; $80d bis $87d = A, $88d bis $95d = B
+; Ergebnis = $96d bis $103d
     ; Byte 0  |  ; Byte 4
-    LDA $65d  |  LDA $61d
+    LDA $95d  |  LDA $91d
     SWP       |  SWP
-    LDA $57d  |  LDA $53d
+    LDA $87d  |  LDA $83d
     ADD       |  ADDC
-    LDR $73d  |  LDR $69d
+    LDR $103d |  LDR $99d
     ; Byte 1  |  ; Byte 5
-    LDA $64d  |  LDA $60d
+    LDA $94d  |  LDA $90d
     SWP       |  SWP
-    LDA $56d  |  LDA $52d
+    LDA $86d  |  LDA $82d
     ADDC      |  ADDC
-    LDR $72d  |  LDR $68d
+    LDR $102d |  LDR $98d
     ; Byte 2  |  ; Byte 6
-    LDA $63d  |  LDA $59d
+    LDA $93d  |  LDA $89d
     SWP       |  SWP
-    LDA $55d  |  LDA $51d
+    LDA $85d  |  LDA $81d
     ADDC      |  ADDC
-    LDR $71d  |  LDR $67d
+    LDR $101d |  LDR $97d
     ; Byte 3  |  ; Byte 7
-    LDA $62d  |  LDA $58d
+    LDA $92d  |  LDA $88d
     SWP       |  SWP
-    LDA $54d  |  LDA $50d
+    LDA $84d  |  LDA $80d
     ADDC      |  ADDC
-    LDR $70d  |  LDR $66d
-
+    LDR $100d |  LDR $96d
 \end{lstlisting}
+Da das Programm selbst keinen Effekt auf die vom Server ausgeführten Berechnungen hat,
+können diese Messungen mit einem beliebigen Programm mit 104-Byte RAM,
+welches 40 Zyklen ausgeführt wird reproduziert werden.
 
-Performance:
+\textbf{Performance auf Netcup RS 1000 G9.5, limitiert auf 6 Kerne}:\\
+Werte sind Intervalle zwischen zwei Program-Execution-State-Response des Servers,
+das erste Intervall ist zwischen der Program-Execution-Request und der ersten Antwort.
+Dabei liegt die CPU-Auslastung durchschnittlich bei $5.32$ Kernen, es werden durchschnittlich $420MiB$ RAM (Max.\ $605MiB$) verwendet.
+Die Software ist nutzt für die Ausführung eines Zyklus' durchgängig das Maximum der verfügbaren Kerne,
+eine Messung mit mehr als sechs Kernen war in der Testumgebung nicht möglich.
+Stattdessen wurde eine weitere Messung auf einem AMD Ryzen 9\ 9950X3D mit 16 Kernen, 32GB DDR5 RAM @5600MHz durchgeführt.
+Ergebnisse sind in \autoref{tab:response_times} aufgeführt.
+
+\begin{table}[h!]
+    \centering
+    \begin{tabular}{|l|r|r|}
+        \hline
+        \textbf{Metrik} & \textbf{Zeit NetCup [s]} & \textbf{Zeit 9950X3D[s]} \\ \hline
+        Gesamtdauer     & 1,080.397                & 459.901                  \\ \hline
+        Minimum         & 25.821                   & 9.871                    \\ \hline
+        Maximum         & 40.681                   & 33.014                   \\ \hline
+        $p_{50}$        & 28.127                   & 10.560                   \\ \hline
+        $p_{95}$        & 30.010                   & 12.669                   \\ \hline
+        $\emptyset$     & 28.432                   & 11.433                   \\ \hline
+    \end{tabular}
+    \caption{Vergleich Antwortzeiten}
+    \label{tab:response_times}
+\end{table}
+
+Das Maximum ist bei beiden Messungen ein deutlicher Ausreißer, in beiden Fällen ist dies die erste Antwortzeit.
+Zu erklären ist dies dadurch, dass vor dem ersten Zyklus der ServerKey dekompressiert, und sämtliche Werte von Bas64 in TFHE-rs Formate gebracht werden müssen.
 
 \subsubsection{Limitationen}
+Fachlich stellen die Limitierte Wortbreite von 8-Bit, der 8-Bit-Addressraum, sowie das limitierte Instructionset die größten Limitationen dar.
+Das Instructionset ist zwar Turing-Complete, und bietet viele Funktionen, die über dieses Minimum hinaus gehen an,
+der Unterschied zu modernen Befehlssatzarchitekturen ist jedoch offensichtlich.
+Diese Limitationen sind allesamt durch die Performance von Operationen auf vollhomomorph verschlüsselten Daten zurückzuführen.
+
+\textbf{Fazit}
+
 Die Software ermöglicht die verschlüsselte Ausführung eines Programmes,
 ohne das eine nicht vertrauenswürdige drite Partei,
 die das Programm ausführt Informationen über Inhalt oder berechnetes erlangen kann.
@@ -503,16 +550,16 @@ sodass vier Additionen von 64-Bit-Zahlen gleichzeitig ausgeführt werden können
 
 Um auf dem Simulator zwei 64-Bit-Zahlen zu addieren, müssen acht 8-Bit Additionen durchgeführt werden, zzgl.\ 24 Transportbefehle, und 8 SWAP-Befehlen
 für insgesamt 40 Instruktionen pro 64-Bit Addition,.
-Wie oben beschrieben .
-Somit ergibt sich ein Gesamtfaktor von ca. $10^8$,
-die ein Consumer-Grade-Prozessor die auf dem Server simulierte Berechnung schneller ausführt.
+Wie oben beschrieben benötigt der NetCup-Server hierfür $18.97$ Minuten.
+Die vollhomomorph verschlüsselte Ausführung ist somit um einen Faktor von ca. $2.6*10^{12}$ langsamer,
+als die lokale Ausführung auf Consumer-Grade-Hardware.
 
 Somit ergeben sich zwei Limitationen:
 
 \begin{enumerate}
     \item Das Instructionset ist für Berechnungen im Kontext schützenswerter Algorithmen, Daten, oder Programme evtl.\ nicht ausreichend
     \item Die drastischen Perfomanceeinbüßungen bedeuten,
-    dass die Ausführung des Programmes auf dem Endgerät des Nutzers schneller wäre, als sie verschlüsselt auf dem Server auszuführen.
+    dass die Ausführung des Programmes auf dem Endgerät des Nutzers um Größenordnungen schneller wäre, als sie verschlüsselt auf dem Server auszuführen.
 \end{enumerate}
 
 Hierbei ist der letzte Punkt besonders relevant, da die lokale Ausführung des Programmes ebenso die Anforderung erfüllt,
