@@ -200,17 +200,7 @@ pub fn create_app() -> Router {
         sessions: Arc::new(RwLock::new(HashMap::new())),
     };
 
-    // Stateless-Route ohne State für openapi_docs
-    let stateless_router = ApiRouter::new().api_route(
-        "/",
-        post_with(verify_age, |op| {
-            op.description("Zustandslose Altersverifikation — server_key im Request-Body.")
-                .response::<200, Json<AgeResponse>>()
-        }),
-    );
-
-    // Session-Routen mit State
-    let session_router = ApiRouter::new()
+    let api_router = ApiRouter::new()
         .api_route(
             "/session",
             post_with(setup_session, |op| {
@@ -235,12 +225,11 @@ pub fn create_app() -> Router {
         .with_state(state);
 
     openapi_docs::attach(
-        stateless_router,
+        api_router,
         "Encrypted Age Verification",
         "Homomorphic age-check service.",
         env!("CARGO_PKG_VERSION"),
     )
-    .merge(session_router)
     .merge(health::router(env!("CARGO_PKG_VERSION")))
     .layer(DefaultBodyLimit::max(2 * 1024 * 1024 * 1024))
 }
