@@ -302,20 +302,20 @@ Jeder Komparator besteht aus: 1 * FheOrd-Vergleich + 2 * IfThenElse = $O(1)$ hom
 Gesamtspeicher: $O(n)$ (der \verb|partially_sorted|-Vektor als Arbeitspuffer).
 
 \subsubsection{Performance-Messung}
-Mess-Setup: k6 v2.0.0, \verb|ConfigBuilder::default()|, Server: Netcup KVM, Last injiziert von lokaler Windows-Maschine über das Internet, Datum: 09.06.2026.\par
+Mess-Setup: k6 v2.0.0, \verb|ConfigBuilder::default()|, Server: Netcup KVM, Last injiziert von lokaler Windows-Maschine über das Internet, Datum: 10.06.2026.\par
 
 \textbf{Test 1 — Baseline (1 VU, 5 Iterationen, alle Bitbreiten)}:\par
 \begin{tabular}{||l|l|c||}
     \hline
     \textbf{Konfiguration} & \textbf{p95 Latenz} & \textbf{Fehlerrate} \\
     \hline\hline
-    n=5, bit\_width=8 & 2,23 s & 0\,\% \\
+    n=5, bit\_width=8 & 2,48 s & 0\,\% \\
     \hline
-    n=10, bit\_width=8 & 4,46 s & 0\,\% \\
+    n=10, bit\_width=8 & 4,54 s & 0\,\% \\
     \hline
-    n=10, bit\_width=16 & 7,95 s & 0\,\% \\
+    n=10, bit\_width=16 & 8,48 s & 0\,\% \\
     \hline
-    n=10, bit\_width=32 & 16,16 s & 0\,\% \\
+    n=10, bit\_width=32 & 17,89 s & 0\,\% \\
     \hline
     \textbf{Gesamt} & — & \textbf{0\,\% (20/20)} \\
     \hline
@@ -329,16 +329,16 @@ Lastkurve: 60\,s $\rightarrow$ 1\,VU, 90\,s $\rightarrow$ 3\,VUs, 90\,s $\righta
     \hline
     \textbf{Metrik} & \textbf{Wert} \\
     \hline\hline
-    Fehlerrate gesamt & 52\,\% (77/149 Requests) \\
+    Fehlerrate gesamt & 54\,\% (83/153 Requests) \\
     \hline
-    p95 Latenz (erfolgreiche Requests) & 18,77 s \\
+    p95 Latenz (erfolgreiche Requests) & 22,87 s \\
     \hline
-    Fehler starten ab & $\sim$108\,s ($\approx$ 2–3 parallele VUs) \\
+    Fehler starten ab & $\sim$121\,s ($\approx$ 2–3 parallele VUs) \\
     \hline
     Fehlertyp & HTTP 502 Bad Gateway (Nginx-Timeout nach 60\,s) \\
     \hline
 \end{tabular}\par
-\textit{Fazit}: Ab ca. 2–3 parallelen Clients reicht die CPU nicht mehr aus, um alle Requests innerhalb des Nginx-Timeouts zu beantworten. Der Engpass ist rein CPU-seitig — nicht mehr der Netzwerk-Overhead wie im alten Design.\par
+\textit{Fazit}: Ab ca. 2–3 parallelen Clients reicht die CPU nicht mehr aus, um alle Requests innerhalb des Nginx-Timeouts zu beantworten. Der Engpass ist rein CPU-seitig — FHE-Operationen sind rechenintensiv by design und lassen sich nicht durch Netzwerk-Optimierungen kompensieren.\par
 
 \textbf{Bekannte Performance-Treiber}:
 \begin{itemize}
@@ -367,4 +367,5 @@ k6 run stress_load_test.js
     \item Keine Eingabevalidierung: Der Server kann nicht prüfen, ob der Client korrekte FHE-Ciphertexte schickt — kein ZKP, keine Authentifizierung. Bei öffentlichem Zugang sind viele Anfragen möglich, die teure Rechenzeit binden.
     \item Listengröße: Bei n > $\sim$20 mit Int32 dauert die Berechnung mehrere Minuten. Der Service ist für kleine Listen (n $\leq$ $\sim$15) ausgelegt. Der Batcher-Algorithmus sortiert außerdem die gesamte Liste, statt nur den Median zu isolieren — das ist mehr Arbeit als nötig, wurde aber nicht optimiert.
     \item Session-Lebensdauer: Sessions laufen nach 10 Minuten Inaktivität ab. Wer danach einen Request schickt, erhält 404 und muss den ServerKey erneut hochladen.
+    \item Keine parallele Last: Der Service ist für sequenzielle Einzelanfragen ausgelegt. Jede FHE-Berechnung belegt die CPU für mehrere Sekunden vollständig. Unter paralleler Last ($\geq$3 VUs) erschöpfen gleichzeitige Rechenaufgaben die verfügbare CPU-Kapazität — Nginx bricht nach 60\,s Upstream-Timeout mit HTTP\,502 ab. Die Session-Architektur hat den vorherigen Engpass (Netzwerk-Overhead durch $\sim$80\,MB ServerKey pro Request, siehe Verworfene Alternativen) beseitigt; der CPU-Engpass ist davon unabhängig und eine inhärente Eigenschaft von FHE — er lässt sich durch Architekturänderungen allein nicht lösen. Für Produktivbetrieb wäre dedizierte Hardware oder eine Anfrage-Queue erforderlich.
 \end{itemize}

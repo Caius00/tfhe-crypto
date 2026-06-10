@@ -1,2 +1,18 @@
 \section{Einleitung}
 \label{sec:einleitung}
+
+Fully Homomorphic Encryption (FHE) ermöglicht es, Berechnungen direkt auf verschlüsselten Daten durchzuführen, ohne sie jemals zu entschlüsseln. Der Server sieht ausschließlich Ciphertexte — Eingaben, Zwischenergebnisse und Ausgaben bleiben für ihn semantisch leer. Nur der Besitzer des privaten Schlüssels kann die Ergebnisse lesen.
+
+Dieses Dokument ist die technische Spezifikation eines Systems, das neun praktische Anwendungsfälle auf Basis von FHE realisiert. Als kryptographische Grundlage dient \textbf{TFHE-rs}~\cite{TFHE-rs} — eine Rust-Bibliothek für das Torus-FHE-Schema, das effiziente boolesche und ganzzahlige Operationen auf Ciphertexten bereitstellt.
+
+\textbf{Systemüberblick}:
+Das System besteht aus neun unabhängigen Rust-Microservices, einem gemeinsamen Angular-Frontend und einer geteilten Plattform. Jeder Service implementiert genau einen Use Case. Das Frontend verschlüsselt alle Eingaben lokal im Browser per WebAssembly, bevor sie den Client verlassen. Der private Schlüssel (\verb|ClientKey|) verlässt den Browser nie — nur der Client kann Ergebnisse entschlüsseln.
+
+\textbf{Ziel dieses Dokuments}:
+Das Dokument spezifiziert jeden Use Case in einheitlicher Struktur: Funktionsbeschreibung, OpenAPI-Schnittstelle, Trust- und Threat-Modell, FHE-Designentscheidungen, algorithmische Komplexität, Performance-Messungen und bekannte Limitationen. Querschnittsthemen wie Architektur, Routing, Key Lifecycle, Serialisierung und Deployment sind vorangestellt und gelten für alle Use Cases gleichermaßen.
+
+\textbf{Dokumentstruktur}:
+\begin{enumerate}
+    \item \textbf{Querschnittssektionen} — systemweite Architektur, Gateway, Key Lifecycle, Serialisierung, Build und Deployment
+    \item \textbf{Use Cases 01–09} — je eine vollständige Spezifikation pro Service
+\end{enumerate}
