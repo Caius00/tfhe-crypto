@@ -349,7 +349,7 @@ Lastkurve: 60\,s $\rightarrow$ 1\,VU, 90\,s $\rightarrow$ 3\,VUs, 90\,s $\righta
 \end{itemize}
 
 \textbf{Reproduzierbarkeit}:
-Die k6-Skripte liegen unter \verb|services/05-encrypted-statistics-service/src/Load-Tests/|. Vor dem ersten Lauf muss ein Payload generiert werden:
+Die k6-Skripte liegen unter services/05-encrypted-statistics-service/src/Load-Tests/. Vor dem ersten Lauf muss ein Payload generiert werden:
 \begin{lstlisting}
 # Payload generieren (einmalig, aus Repo-Root)
 cargo run --release -p encrypted-statistics-service --bin gen_payload
