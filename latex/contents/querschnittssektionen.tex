@@ -3,164 +3,172 @@
 
 \subsection{Architektur-Übersicht}
 \label{sub:architektur_uebersicht}
-\textbf{Gesamtarchitektur}:
-Das System folgt einer Microservice-Architektur. Jeder Use Case (UC) wird als eigenständiger Service umgesetzt. Dadurch erhalten die einzelnen UCs getrennte Lebenszyklen, unabhängige Deployments und eine klare fachliche Verantwortlichkeit. Zusätzlich wird eine Isolation auf Prozessebene erreicht, sodass Fehler oder Abstürze eines Services keine Auswirkungen auf andere UCs haben.
+Das System besteht aus neun unabhängigen Rust-Services, einem Angular-Frontend und einer geteilten Plattform. Jeder Use Case ist ein eigener kleiner Server, der nur sich selbst kennt - keine zwei Services teilen sich Daten oder Schlüssel. Das macht Entwicklung und Betrieb einfacher: stürzt ein Service ab, betrifft das die anderen nicht.
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\textwidth]{contents/media/Architektur-Uebersicht.png}
+\end{figure}
 
-Insbesondere im Kontext von Fully Homomorphic Encryption (FHE) ist diese Trennung vorteilhaft, da jeder Service seinen eigenen ServerKey im Arbeitsspeicher hält. In einer monolithischen Architektur würden sich die Speicheranforderungen aller UCs gegenseitig beeinflussen.
+\textbf{Die FHE-Grenze}: 
+Nur der Browser des Initiators und die Service-Pods sehen jemals „echte" FHE-Werte. Alle anderen Komponenten (Gateway, Interceptor, Redis, Postgres) arbeiten mit den verschlüsselten Bytes wie mit beliebigen anderen Daten - sie wissen nicht, was drinsteht, und müssen es auch nicht.
 
-Die Services sind als Rust-Anwendungen implementiert und verwenden das Framework Axum für die Bereitstellung von HTTP-APIs. Wiederkehrende Funktionalitäten wie Health-Endpunkte, Prometheus-Metriken, Tracing und OpenAPI-Dokumentation werden über gemeinsame Shared Crates bereitgestellt.
+\subsubsection{Workspace-Struktur}
+Auf Datei-Ebene sieht das Repo so aus:
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{contents/media/Workspace-Struktur.png}
+\end{figure}
 
-\textbf{Komponenten}:
-Die Architektur besteht aus folgenden Hauptkomponenten:
-
-\begin{tabular}{||l|p{4cm}|p{6cm}||}
+\subsubsection{Service-Inventar}
+\begin{tabular}{||c|l|l|c||}
     \hline
-    \textbf{Komponente} & \textbf{Technologie} & \textbf{Verantwortung} \\
+    \textbf{UC} & \textbf{Name} & \textbf{Pfad} & \textbf{Datenbank} \\
     \hline\hline
-    Frontend & Angular + TypeScript + TFHE.js & Benutzeroberfläche, clientseitige FHE-Operationen, Schlüsselgenerierung \\
+    01 & encrypted-key-value-store & /kv & Redis \\
     \hline
-    API Gateway &Traefik & Routing eingehender Requests, TLS-Terminierung \\
+    02 & encrypted-age-verification & /age-verification & - \\
     \hline
-    UC-Service 1-9 & Rust + Axum & Fachlogik des jeweiligen Use Cases \\
+    03 & encrypted-voting-polling & /voting & - \\
     \hline
-    Redis & Redis & Speicherung von Session-Daten und Schlüsseln \\
+    04 & sealed-bid-auction & /auction & - \\
     \hline
-    Kubernetes (k3s) & Kubernetes & Orchestrierung und Skalierung \\
+    05 & encrypted-statistics-service & /statistics & - \\
     \hline
-    Observability Stack & Prometheus, Grafana, Tempo & Monitoring, Metriken und Tracing \\
+    06 & encrypted-genomics & /genomics & Postgres \\
+    \hline
+    07 & encrypted-image-processing & /image-processing & - \\
+    \hline
+    08 & encrypted-leaderboard & /leaderboard & - \\
+    \hline
+    09 & encrypted-program-execution & /program-execution & - \\
     \hline
 \end{tabular}
 
-\textbf{FHE-Grenze}:
-Folgende Komponenten verarbeiten FHE-spezifische Datentypen:
-\begin{itemize}
-    \item Frontend (TFHE.js)
-    \item UC-Services (Rust + tfhe-rs)
-    \item Redis (gespeicherte Schlüsselmaterialien)
-\end{itemize}
+\subsubsection{Shared Crates (Gemeinsame Bausteine)}
+Jeder Service erledigt manche Dinge gleich (Health-Endpoints, Metriken, Tracing, OpenAPI-Doku). Damit das nicht neunfach kopiert werden muss, liegen diese Bausteine in shared/ und werden pro Service eingehängt:
 
-Folgende Komponenten kennen keine FHE-internen Datentypen:
-\begin{itemize}
-    \item Traefik Gateway
-    \item Kubernetes
-    \item Observability-Komponenten
-\end{itemize}
+\begin{tabular}{||l|p{8cm}||}
+    \hline
+    \textbf{Crate} & \textbf{Was es liefert} \\
+    \hline\hline
+    health & /healthz, /readyz, /version - damit Kubernetes weiß, ob der Service läuft \\
+    \hline
+    metrics & /metrics-Endpunkt mit Request-Zählern und Latenzen für Prometheus \\
+    \hline
+    observability & Verbindet den Service mit dem Trace-Sammler (Tempo) - jeder Request wird sichtbar \\
+    \hline
+    openapi-docs & Erzeugt automatisch eine /docs-Seite mit Swagger UI aus dem Rust-Code \\
+    \hline
+\end{tabular}
+
+Ein neuer Service braucht diese vier Bausteine zusammen mit seiner fachlichen Logik - mehr nicht.
 
 \subsection{Gateway und Routing}
 \label{sub:gateway_und_routing}
-Als API-Gateway wird Traefik eingesetzt. Traefik unterstützt die Kubernetes Gateway API und übernimmt das Routing eingehender HTTP-Anfragen auf die jeweiligen UC-Services.
+Im Cluster läuft nur Traefik als öffentliche Eintrittstür. Er nimmt HTTP auf Port 80 entgegen und entscheidet anhand des Pfads, an welchen Service der Request weitergeht (z. B. /leaderboard/... $\rightarrow$ Leaderboard-Service). Für die Datenbank-Zugriffe von außen (Service 1 Redis, Service 6 Postgres) kommen TCP-Listener auf Port 6301 bzw. 5432 dazu.
 
-\textbf{Routing}:
-Das Routing erfolgt pfadbasiert. Requests werden anhand ihres URL-Pfades an den zuständigen Microservice weitergeleitet.
-%
-%\textbf{Authentifizierung}:
+\textbf{Was Traefik mit einem Request macht} (z. B. GET /leaderboard/123/entries):
+\begin{enumerate}
+    \item Schaut auf den Pfad-Präfix - passt zur HTTPRoute des Leaderboard-Services.
+    \item Strippt den Präfix weg, der Service empfängt nur noch /123/entries. Dadurch wissen die Services nichts von ihrem öffentlichen Pfad - das macht sie umzieh-bar.
+    \item Setzt einen internen Host-Header, damit der nachgeschaltete KEDA-Interceptor (siehe unten) weiß, welcher Service gemeint ist.
+    \item Leitet den Request weiter - nicht direkt an den Service-Pod, sondern erst an den Interceptor.
+\end{enumerate}
 
-\textbf{Rate Limiting}:
-Traefik bietet technische Unterstützung für Rate Limiting über Middleware.
-%
-%\textbf{Fehlerbehandlung}:
+\textbf{Was Traefik sieht}: 
+HTTP-Methode, Pfad, Header, Body - den Body aber nur als Byte-Strom, ohne ihn zu lesen oder zu verändern. Keine Authentifizierung, kein Rate-Limit, keine WAF - jeder, der die URL kennt, kann beliebige Requests an jeden Service schicken.
 
-\textbf{Sichtbarkeit von Daten im Gateway}:
-Da Traefik ausschließlich als Gateway fungiert und keine FHE-Bibliotheken verwendet, verarbeitet das Gateway lediglich die eingehenden HTTP-Anfragen und die darin enthaltenen Request-Payloads.
+Kurze Begriffsklärung dazu:
+\begin{itemize}
+    \item WAF (Web Application Firewall) - Filter, der HTTP-Requests auf bekannte Angriffsmuster (SQL-Injection, XSS, Path-Traversal, …) prüft und blockiert.
+    \item OIDC (OpenID Connect) - Standard für Authentifizierung über einen externen Identity-Provider (Google, GitHub, Keycloak, …). Der Nutzer loggt sich beim Provider ein, der stellt ein signiertes Token aus, das die Anwendung dann prüft.
+\end{itemize}
+Das ist im Rahmen eines Uni-Projekts bewusst so akzeptiert: das System ist kein Produkt, sondern eine Lernumgebung für FHE. Für einen Produktiv-Betrieb müsste ein Auth-Layer (OIDC am Gateway oder Token-Prüfung pro Service) und ein Rate-Limit ergänzt werden.
+
+\textbf{Fehler}: 5xx-Antworten der Services werden 1:1 durchgereicht. Wenn ein Service gerade hochfährt, sieht der Client kein 503 - der Interceptor puffert solange (s. nächster Abschnitt). Erst wenn der Hochfahr-Vorgang in den Timeout läuft (30 s), gibt es ein 504 Gateway Timeout.
 
 \subsection{Key Lifecycle}
 \label{sub:key_lifecycle}
-Das Frontend verwendet TFHE.js und führt FHE-bezogene Operationen clientseitig aus.
-
-Redis wird zur Speicherung von Schlüsseln verwendet. Die Schlüssel werden mit einer Time-to-Live (TTL) abgelegt.
-%
-%\textbf{Schlüsselgenerierung}:
-%
-%\textbf{Schlüsselübertragung}:
-
-\textbf{Speicherung}:
-Schlüssel werden in Redis gespeichert und mit einer TTL versehen.
-
-\textbf{Isolation}:
+Aus Sicht der Schlüssel gibt es genau zwei Rollen:
 \begin{itemize}
-    \item Wie die Isolation zwischen Sessions umgesetzt wird
-    \item Wie Mandanten- oder Benutzertrennung erfolgt
+    \item Initiator - eine Partei mit dem ClientKey. Erstellt die Session, kann entschlüsseln.
+    \item Teilnehmer - null bis beliebig viele weitere Parteien mit nur dem PublicKey. Können verschlüsseln, aber nicht entschlüsseln.
 \end{itemize}
-%
-%\textbf{Wiederverwendung}:
-%
-%\textbf{Session-Ende}:
+
+Wer in welcher Rolle ist, hängt vom jeweiligen UC ab und steht in dessen Sektion - manche UCs kommen mit nur einer Partei (Initiator allein) aus, andere lassen viele Teilnehmer zu.
+
+In TFHE gibt es drei Arten von Schlüsseln, die der Initiator erzeugt:
+\begin{itemize}
+    \item ClientKey - der private Schlüssel zum Entschlüsseln. Bleibt immer beim Browser und wird nie an einen Server geschickt.
+    \item ServerKey - erlaubt dem Server, auf verschlüsselten Daten zu rechnen, ohne sie selbst entschlüsseln zu können. Wird beim Erstellen der Session hochgeladen.
+    \item PublicKey - kann an Teilnehmer weitergegeben werden, damit sie verschlüsseln können, ohne den ClientKey zu kennen. Wenn ein UC keine Teilnehmer hat, bleibt der PublicKey ungenutzt.
+\end{itemize}
+Konzeptueller Datenfluss (Details, Endpunkt-Namen und ob es überhaupt einen Session-Begriff gibt, hängen vom UC ab):
+\begin{enumerate}
+    \item Schlüsselerzeugung - der Initiator erzeugt client-seitig alle drei Schlüssel. Der ClientKey verlässt den Client nie.
+    \item ServerKey-Übertragung - der Initiator schickt den ServerKey zum Service.
+    \item Dekompression - der Service dekomprimiert den ServerKey. Da das mehrere Sekunden CPU-Zeit und mehrere hundert MB RAM kostet, läuft es in einem Hintergrund-Thread und nicht im HTTP-Handler.
+    \item Eingaben - werden verschlüsselt an den Service geschickt (vom Initiator selbst mit ClientKey oder PublicKey, oder von Teilnehmern mit dem PublicKey).
+    \item Berechnung - der Service rechnet auf den verschlüsselten Werten.
+    \item Ergebnis - kommt verschlüsselt zurück. Nur der Initiator kann es mit seinem ClientKey entschlüsseln.
+\end{enumerate}
+\textbf{Lebensdauer}: 
+Schlüssel und sonstiger Sitzungs-State leben ausschließlich im RAM des Service-Pods. Auf der Festplatte oder in einer Datenbank landen nur fachliche Klartext-Metadaten, niemals Schlüssel oder Ciphertexte, die noch jemand entschlüsseln könnte. Wenn der Pod neu startet oder von KEDA auf 0 skaliert wird, ist alles im RAM weg - die betroffene Partei muss von vorn anfangen. Einige UCs ergänzen das um zusätzliche Aufräum-Mechanismen (z. B. Idle-Eviction einzelner Sessions).
 
 \subsection{Serialisierung}
 \label{sub:serialisierung}
-Für die APIs werden Rust-Datenstrukturen verwendet, die gleichzeitig zur automatischen OpenAPI-Generierung genutzt werden.
+FHE-Ciphertexte sind im Kern Byte-Arrays, die nicht als JSON-Zahl darstellbar sind. Die Wahl, wie sie übers Netz transportiert werden, ist überall gleich:
 
-\textbf{API-Schnittstellen}:
-Die OpenAPI-Spezifikation wird automatisch mit aide und schemars aus den Rust-Datentypen erzeugt. Jeder Service stellt seine API-Dokumentation unter /docs bereit.
-%
-%\textbf{Serialisierungsformate}:
-%
-%\textbf{Größen von Ciphertexten}:
+\begin{tabular}{||l|l||}
+    \hline
+    \textbf{Schicht} & \textbf{Wie} \\
+    \hline\hline
+    Ciphertext intern (Service $\leftarrow\rightarrow$ Service) & bincode (binäres Format) \\
+    \hline
+    Ciphertext über HTTP & Base64-kodierter Bincode \\
+    \hline
+    Request/Response-Hüllen (DTOs) & normales JSON via serde \\
+    \hline
+    OpenAPI-Spec für Swagger UI & automatisch aus Rust-Typen \\
+    \hline
+\end{tabular}
+
+\textbf{Warum Base64?}:
+Damit der Ciphertext in einem JSON-String-Feld liegen kann - JSON verträgt keine rohen Bytes. Kostet ~33 \% Overhead, ist aber browserseitig trivial zu de-/kodieren.
+
+\textbf{Typische Größen}
+(TFHE-rs Standard-Konfiguration):
+
+\begin{tabular}{||l|l|l||}
+    \hline
+    \textbf{Typ} & \textbf{Bytes (bincode)} & \textbf{Bytes (base64)} \\
+    \hline\hline
+    FheBool & ~50 KB & ~67 KB \\
+    \hline
+    FheUint8 & ~50 KB & ~67 KB \\
+    \hline
+    FheUint16 & ~100 KB & ~134 KB \\
+    \hline
+    FheUint64 & ~400 KB & ~534 KB \\
+    \hline
+    CompressedServerKey & ~100 MB & ~134 MB \\
+    \hline
+    PublicKey & ~50 KB & ~67 KB \\
+    \hline
+\end{tabular}
+
+Das ist relevant für die HTTP-Endpunkte, die einen ServerKey entgegennehmen: Axum cappt den Body sonst bei 2 MB. Daher ist in den Services explizit ein 2 GiB Body-Limit gesetzt, damit der Upload durchgeht.
 
 \subsection{Build, Deployment, Tests}
 \label{sub:build_deployment_tests}
-\textbf{Build-Pipeline}:
-Das Projekt wird als Cargo-Workspace und Monorepo organisiert.
+Pipelines (.github/workflows/, alle auf ubuntu-latest):
 
-Für die Containerisierung wird ein eigenes Docker-Image pro UC-Service verwendet. Die Images werden mittels Multi-Stage-Builds und cargo-chef erzeugt, um Abhängigkeiten zwischenzuspeichern und Buildzeiten zu reduzieren.
-
-Zur Optimierung der FHE-Leistung wird die tfhe-Crate bereits im Entwicklungsprofil mit opt-level=3 kompiliert.
-
-Für produktive Builds wird zusätzlich eine CPU-Optimierung über target-cpu=znver5 genutzt.
-
-\textbf{CI/CD}:
-Die CI/CD-Pipeline basiert auf GitHub Actions.
-
-Wesentliche Bestandteile:
-\begin{itemize}
-    \item Pfadbasierte Change Detection mittels dorny/paths-filter
-    \item Clippy als verpflichtendes Qualitäts-Gate (-D warnings)
-    \item Automatischer Patch-Version-Bump nach Merge auf main
-    \item Veröffentlichung der Container-Images in GHCR
-    \item Automatische Aktualisierung der Helm-Konfiguration
-    \item Deployment über ArgoCD nach dem GitOps-Prinzip
-\end{itemize}
-
-\textbf{Deployment}:
-Das Deployment erfolgt auf einem k3s-Cluster.
-
-Verwendete Infrastrukturkomponenten:
-\begin{itemize}
-    \item Traefik (Gateway)
-    \item ArgoCD (GitOps)
-    \item KEDA (Scale-to-Zero)
-    \item Redis
-    \item Prometheus
-    \item Grafana
-    \item Tempo
-\end{itemize}
-
-Helm-Charts werden zur Verwaltung aller Kubernetes-Ressourcen verwendet.
-
-\textbf{Teststrategie}:
-Die Teststrategie umfasst:
-\begin{itemize}
-    \item Unit-Tests: Tests einzelner Komponenten und Funktionen innerhalb der Services.
-    \item Integrationstests: Tests der Endpunkte und des Zusammenspiels mehrerer Komponenten. Die Integrationstests werden im Release-Modus ausgeführt, um realistische Laufzeiten für FHE-Operationen zu gewährleisten.
-    \item FHE-Korrektheitstests: FHE-Ergebnisse werden gegen Klartextreferenzen validiert.
-\end{itemize}
-
-\textbf{Testausführung}:
-\begin{itemize}
-    \item \verb|cargo nextest| als Test-Runner
-    \item \verb|cargo llvm-cov| zur Ermittlung der Testabdeckung
-    \item Ausführung mit \verb|--test-threads=1|, um Speicherprobleme durch parallele ServerKey-Dekompression zu vermeiden
-\end{itemize}
-
-\textbf{Testabdeckung}:
-Die Testabdeckung wird über \verb|cargo llvm-cov| ermittelt.
-
-\textbf{Hinzufügen eines neuen Services}:
-\begin{enumerate}
-    \item Neuer Rust-Service als Crate im Cargo-Workspace anlegen.
-    \item Shared Crates als Dependencies einbinden.
-    \item Dockerfile und Helm-Chart ergänzen.
-    \item Routing-Konfiguration im Gateway erweitern.
-    \item GitHub-Action-Pipeline aktualisieren.
-    \item Deployment über ArgoCD automatisch ausrollen.
-\end{enumerate}
+\begin{tabular}{||l|p{4cm}|p{5cm}||}
+    \hline
+    \textbf{Workflow} & \textbf{Wann} & \textbf{Was} \\
+    \hline\hline
+    ci.yml & Push auf Feature-Branch & Format-Check, Linter (Clippy), Tests mit Coverage \\
+    \hline
+    release.yml & Push auf main & Version bumpen $\rightarrow$ Docker-Image bauen + nach ghcr.io pushen $\rightarrow$ README + Helm-Values updaten \\
+    \hline
+\end{tabular}

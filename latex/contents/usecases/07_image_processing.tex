@@ -2,7 +2,7 @@
 \label{sub:encrypted_image_processing}
 
 \subsubsection{Funktionsbeschreibung}
-Die Aufgabe dieses Use-Cases ist, visuelle Operationen auf Bildern durchzuführen und dabei die Ressourcen eines Servers zu verwenden. Um Die Bilddaten vor dem Server geheim zu halten, werden die Bilddaten homomorph verschlüsselt und dem Server nur in dieser Form zur Verfügung gestellt. Der Server führt die gewünschten Operationen auf den verschlüsselten Bilddaten durch und sendet die Ergebnisse zurück an den Client, der sie entschlüsselt und anzeigt. Mithilfe eines Sessionprinzips können mehrere Rechenoperationen auf einem Bild durchgeführt werden, ohne dass der Client die Ergebnisse nach jeder Operation entschlüsseln muss. Hat der Client alle gewünschten Operationen durchgeführt, kann er die Ergebnisse entschlüsseln und anzeigen. Die Operationen, die auf den Bildern durchgeführt werden können, umfassen beispielsweise das Drehen und Spiegeln der Bilder, das Invertieren der Helligkeitswerte und das Blurren und Bloomen der Bilder wobei letzteres nicht vollständig umgesetzt werden konnte. Die Strategien und Gründe dazu werden in späteren Abschnitten erläutert.
+Die Aufgabe dieses Use-Cases ist, visuelle Operationen auf Bildern durchzuführen und dabei die Ressourcen eines Servers zu verwenden. Um Die Bilddaten vor dem Server geheim zu halten, werden die Bilddaten homomorph verschlüsselt und dem Server nur in dieser Form zur Verfügung gestellt. Der Server führt die gewünschten Operationen auf den verschlüsselten Bilddaten durch und sendet die Ergebnisse zurück an den Client, der sie entschlüsselt und anzeigt. Mithilfe eines Sessionprinzips können mehrere Rechenoperationen auf einem Bild durchgeführt werden, ohne dass der Client die Ergebnisse nach jeder Operation entschlüsseln muss. Hat der Client alle gewünschten Operationen durchgeführt, kann er die Ergebnisse entschlüsseln und anzeigen. Die Operationen, die auf den Bildern durchgeführt werden können, umfassen beispielsweise das Drehen und Spiegeln der Bilder, das Invertieren der Helligkeitswerte und das Blurren und Bloomen der Bilder.
 
 Vorweg: Eine Session-ID existiert nicht, da die aktuelle Architektur nur eine einzige Session unterstützt. Der Server speichert die Session-Informationen und die verschlüsselten Bilddaten, solange die Session aktiv ist. Sobald der Client die Session beendet, werden die Session-Informationen und die verschlüsselten Bilddaten gelöscht, um die Privatsphäre des Clients zu schützen. Das öffnen mehrerer Sessions gleichzeitig wird nicht vom Service direkt unterstützt, da die Verarbeitung von Bildern bereits eine hohe Rechenlast auf dem Server verursacht. Trotzdem können mehrere Clients gleichzeitig mit dem Server interagieren, da jeder Client Bild-Operationen ausführen kann, selbst wenn ihm die Session nicht gehört. Allerdings kann nur der Ersteller der Session das Ergebnis der Operationen entschlüsseln und anzeigen, da nur er über den entsprechenden privaten Schlüssel verfügt.
 
@@ -25,18 +25,70 @@ Vorweg: Eine Session-ID existiert nicht, da die aktuelle Architektur nur eine ei
 \end{enumerate}
 
 \textbf{Verhaltensdiagramm}:
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{contents/media/Verhaltensdiagramm_Image.png}
+\end{figure}
 
 \subsubsection{OpenAPI-Schnittstelle}
 \textbf{Session-Endpunkte}:
+
+\textbf{POST /session}: Nimmt den Server-Key, die Bilddaten und die Höhe und Breite des Bildes entgegen. Erstellt dann eine neue Session und speichert das mitgeschickte verschlüsselte Bild in der Session ab.
+
+Request-Schema:
+\begin{lstlisting}
+{
+    "compressed_server_key": array<integer>,
+    "image_data": array<arra<integer>>,
+    "width": integer,
+    "height": integer
+}
+\end{lstlisting}
+
+Response-Schema:
+\begin{lstlisting}
+{
+    "success": boolean,
+    "message": string
+}
+\end{lstlisting}
+
+Fehlermeldungen:
 \begin{itemize}
-    \item \textbf{POST /session}: Erstellt eine neue Session, erwartet den \verb|compressed_server_key: Vec<u8>|, die \verb|image_data: Vec<Vec<u8>>|, die \verb|width: u32| und die \verb|height: u32| des Bildes. 
-    \item \textbf{DELETE /session}: Löscht die aktuelle Session und alle damit verbundenen Daten. Liefert die \verb|image_data: Vec<Vec<u8>>| des bearbeiteten Bildes, sowie die \verb|width: u32| und die \verb|height: u32| des Bildes zurück.
-    \item \textbf{GET /status}: Gibt Information darüber, ob zurzeit eine Session aktiv ist (\verb|session_active: bool|). 
+    \item 503: Another session is already active.
+    \item 400: Invalid request body.
+    \item 400: Invalid image data.
 \end{itemize}
-\textbf{Bild-Operationen}: 
-Die Bild-Operationen liefern keine zusätzlichen Daten an den Server und erhalten auch keine Daten zurück, da die Operationen direkt auf den verschlüsselten Bilddaten durchgeführt werden, die bereits in der Session gespeichert sind. Die Ergebnisse der Operationen werden erst am Ende der Session zurückgegeben, wenn der Client die Session löscht und die bearbeiteten Bilddaten entschlüsselt.
+
+\textbf{DELETE /session}: Löscht die aktuelle Session und alle damit verbundenen Daten. Liefert die Daten des bearbeiteten Bildes, sowie die Breite und die Höhe des Bildes zurück.
+
+Response-Schema:
+\begin{lstlisting}
+{
+    "image_data": array<array<integer>>,
+    "width": integer,
+    "height": integer
+}
+\end{lstlisting}
+
+Fehlermeldungen:
 \begin{itemize}
-    \item \textbf{POST /per-pixel/invert}: Invertiert das Bild der aktuellen Session.
+    \item 400: No active session to delete.
+\end{itemize}
+
+\textbf{GET /status}: Gibt Information darüber, ob zurzeit eine aktive Session existiert. 
+
+Response-Schema:
+\begin{lstlisting}
+{
+    "session_active": boolean
+}
+\end{lstlisting}
+
+\textbf{Bild-Operationen}: 
+Die Bild-Operationen liefern keinen Payload an den Server und erhalten auch da die Operationen direkt auf den verschlüsselten Bilddaten durchgeführt werden, die bereits in der Session gespeichert sind. Die Ergebnisse der Operationen werden erst am Ende der Session zurückgegeben, wenn der Client die Session löscht und die bearbeiteten Bilddaten entschlüsselt. Das Response-Schema und die Fehlermeldungen sind bei allen Image-Operationen identisch.
+\begin{itemize}
+    \item \textbf{POST /per-pixel/invert}: Invertiert die Helligkeitswerte der Pixel.
     \item \textbf{POST /per-pixel/white-threshold}: Alle Pixel über einem Helligkeitswert von 128 werden weiß.
     \item \textbf{POST /per-pixel/black-threshold}: Alle Pixel unter einem Helligkeitswert von 128 werden schwarz.
     \item \textbf{POST /rotate/90}: Dreht das Bild der aktuellen Session um 90 Grad.
@@ -46,6 +98,19 @@ Die Bild-Operationen liefern keine zusätzlichen Daten an den Server und erhalte
     \item \textbf{POST /flip/horizontal}: Kehrt das Bild der aktuellen Session horizontal um.
     \item \textbf{POST /effects/blur}: Wendet einen Unschärfe-Effekt auf das Bild der aktuellen Session an.
     \item \textbf{POST /effects/bloom}: Wendet einen Bloom-Effekt auf das Bild der aktuellen Session an.
+\end{itemize}
+
+Response-Schema:
+\begin{lstlisting}
+{
+    "success": boolean,
+    "message": string
+}
+\end{lstlisting}
+
+Fehlermeldungen:
+\begin{itemize}
+    \item 400: No active session.
 \end{itemize}
 
 \subsubsection{Trust- und Threat-Model}
@@ -67,8 +132,6 @@ Die Bild-Operationen liefern keine zusätzlichen Daten an den Server und erhalte
     \hline
 \end{tabular}
 
-\textbf{Request- und Response-Schema}:
-
 \textbf{Analyse beobachtbarer Metadaten}:
 Es werden ausschließlich die Pixelwerte der Bilder verschlüsselt, während die Bilddimensionen (Breite und Höhe) unverschlüsselt bleiben. Diese Informationen können potenziell von einem Angreifer genutzt werden, um Rückschlüsse auf den Inhalt des Bildes zu ziehen, insbesondere wenn die Bilder eine charakteristische Größe haben. Es ist jedoch wichtig zu beachten, dass die Bilddimensionen allein nicht ausreichen, um den Inhalt des Bildes zu rekonstruieren oder sensible Informationen preiszugeben. Dennoch sollten diese Metadaten mit Vorsicht behandelt werden, da sie in Kombination mit anderen Informationen möglicherweise Rückschlüsse auf den Inhalt des Bildes ermöglichen könnten. 
 
@@ -85,6 +148,7 @@ Für den Server bleiben außerdem weiterhin verschiedene Metadaten sichtbar:
 \end{itemize}
 
 \textbf{Restvertrauen in den Server}:
+Obwohl die Bilddaten während der gesamten Verarbeitung homomorph verschlüsselt bleiben und der Server keinen Zugriff auf die Klartext-Pixelwerte erhält, muss dem Server weiterhin in bestimmten Bereichen vertraut werden. Insbesondere wird vorausgesetzt, dass der Server die angeforderten Operationen korrekt auf den verschlüsselten Daten ausführt und die gespeicherten Daten nach dem Beenden einer Session tatsächlich löscht. Darüber hinaus hat der Server Zugriff auf verschiedene Metadaten wie Bilddimensionen, Zeitpunkte von Anfragen, die Anzahl der Anfragen sowie die IP-Adressen der Clients. Diese Informationen erlauben zwar keinen direkten Zugriff auf die Bildinhalte, können jedoch Rückschlüsse auf Nutzungsverhalten und Kommunikationsmuster ermöglichen. Das verbleibende Vertrauen beschränkt sich somit auf die korrekte Ausführung des Dienstes und den verantwortungsvollen Umgang mit den sichtbaren Metadaten.
 
 \subsubsection{FHE-Designentscheidungen}
 \textbf{THFE-rs-Typen}:
@@ -101,14 +165,14 @@ Die Berechnungsdauer auf Bildern steigt mit der Anzahl der Pixel stark an, da au
 Die Effekt-Operationen benötigen Zugriff auf benachbarte Pixel, um die gewünschten Effekte zu erziehlen. Um die Berechnungsdauer zu reduzieren, wurde der Zugriff auf benachbarte Pixel möglichst weit reduziert.
 
 \textbf{Blurring}:
-Der Blurring-Effekt wurde mithilfe eines Box-Blur-Effekts implementiert, der die Helligkeitswerte eines Pixels mit den Helligkeitswerten seiner unmittelbaren und diagonalen Nachbarn mittelt. Um die Zugriffe auf benachbarte Pixel zu reduzieren, wurde die Berechnung in zwei Schritte aufgeteilt, in denen zunächst die horizontalen Nachbarn und anschließend die vertikalen Nachbarn berücksichtigt werden. Dadurch sind pro Pixel nur 6 Zugriffe (2*3) nötig, anstatt 9 Zugriffe (3*3) bei einem direkten Zugriff auf alle Nachbarn. Bei der Bildung des Ergebniswertes wurde anstatt einer Addition gefolgt von einer Division durch 9 eine gewichtete Summe gebildet, bei der die Werte der Nachbarpixel durch Bitshifts gewichtet und anschlißend addiert wurden. Dadurch konnte die Berechnungsdauer weiter reduziert werden, da Bitshifts schneller als Divisionen sind. Zudem wird durch dieses Verfahren verhindert, dass die Werte der Pixel überlaufen, da die Werte der Nachbarpixel vor der Addition bereits reduziert werden.
+Der Blurring-Effekt wurde mithilfe eines Box-Blur-Effekts implementiert, der die Helligkeitswerte eines Pixels mit den Helligkeitswerten seiner unmittelbaren und diagonalen Nachbarn mittelt. Um die Zugriffe auf benachbarte Pixel zu reduzieren, wurde die Berechnung in zwei Schritte aufgeteilt, in denen zunächst die horizontalen Nachbarn und anschließend die vertikalen Nachbarn berücksichtigt werden. Dadurch sind pro Pixel nur 6 Zugriffe (2*3) nötig, anstatt 9 Zugriffe (3*3) bei einem direkten Zugriff auf alle Nachbarn. Bei der Bildung des Ergebniswertes wurde eine gewichtete Summe gebildet, bei der diagonale Nachbarn weniger gewichtet wurden, als direkt anliegende. Dadurch konnte die Berechnungsdauer weiter reduziert werden, da Bitshifts schneller als Divisionen sind. Zudem wird durch dieses Verfahren verhindert, dass die Werte der Pixel überlaufen, da die Werte der Nachbarpixel vor der Addition bereits reduziert werden.
 
 Bei der Optimierung des Blurring-Effekts wurden verschiedene Ansätze ausprobiert, um die Berechnungsdauer weiter zu reduzieren. Dazu gehören verschiedene Ansätze zum Zusammenfassen der benachbarten Pixelwerte, sowie die Reduktion von Zugriffen auf benachbarte Pixel, indem diagonale Nachbarn nicht berücksichtigt werden. Weitere Ansätze wurden betrachtet aber nicht implementiert. Dazu gehörten die Verwendung von Look-Up-Tabellen, um die Ergebnisse von häufig vorkommenden Pixelwerten vorab zu berechnen, sowie die Verwendung von approximativen Algorithmen, die weniger genaue Ergebnisse liefern, aber schneller sind. Letztendlich wurde jedoch entschieden, den Box-Blur-Effekt beizubehalten, da er eine gute Balance zwischen Bildqualität und Berechnungsdauer bietet.
 
 \textbf{Blooming}:
-Der Blooming-Effekt ist in der aktuellen Implementierung nicht vollständig umgesetzt, da die Berechnungsdauer für diesen Effekt deutlich höher ist als für die anderen Effekte. Der Blooming-Effekt erfordert die Berechnung von gewichteten Summen von Pixelwerten über einen größeren Bereich von Nachbarpixeln, was zu einer erheblichen Erhöhung der Berechnungsdauer führt. Die aktuelle Implementation des Blooming-Effekts arbeitet klassischerweise mehrschrittig, wobei jeder Schritt per Pixel ausgeführt wird, um eine möglichst hohe Parallelisierung beizubehalten. Dazu wird zunächst eine Lightmap erstellt, die alle Pixelwerte unter einem Helligkeitswert von 220 auf 0 setzt. Diese Lightmap wird dann mit dem vorher beschriebenen Blurring-Effekt geblurred, um die Lichtquellen zu verbreiten. Anschließend wird die geblurte Lightmap mit dem Originalbild kombiniert, um den Blooming-Effekt zu erzielen. Das Ergebnis des Blurring-Effekts ist nicht stark genug, um den Blooming-Effekt zu erzielen, da in den Berechnungsschritten verschiedene Kompromisse eingegangen werden mussten, um die Berechnungsdauer zu reduzieren. Da die Berechnungsdauer selbst bei kleinen Bildern (32x32) schon bereits mehrere Minuten beträgt, wurde entschieden, den Blooming-Effekt nicht weiter zu optimieren, da er bereits in der aktuellen Form eine erhebliche Berechnungsdauer aufweist und die Optimierungsmöglichkeiten begrenzt sind. 
+Der Blooming-Effekt erfordert die Berechnung von gewichteten Summen von Pixelwerten über einen größeren Bereich von Nachbarpixeln, was zu einer erheblichen Erhöhung der Berechnungsdauer führt. Die aktuelle Implementation des Blooming-Effekts arbeitet mit einer einschritten Berechnung jedes Pixels, ähnlich wie beim Blurring-Effekt. Dabei werden alle Nachbarwerte eines Pixels berücksichtigt und auf das Original addiert, wenn deren Helligkeitswert über einer bestimmten Grenze liegt. Dieses Vorgehen arbeitet, genauso wie das Blurring, mit gewichteten Summen durch Bitshifts.
 
-Ein weiterer implementierter Ansatz des Blooming-Effekts war eine einschritte Berechnung jedes Pixels, ähnlich wie beim Blurring-Effekt. Dabei wurden ebenfalls alle Nachbarwerte eines Pixels berücksichtigt und auf das original addiert, wenn deren Helligkeitswert über einer bestimmten Grenze lag. Dabei kam es jedoch zu unerwünschten Effekten, wie Integer-Overflows, die zu unbrauchbaren Ergebnissen führten. 
+Ein weiterer implementierter Ansatz des Blooming-Effekts war ein klassischerweise mehrschrittiger Ansatz, wobei jeder Schritt per Pixel ausgeführt wird, um eine möglichst hohe Parallelisierung beizubehalten. Dazu wird zunächst eine Lightmap erstellt, die alle Pixelwerte unter einem Helligkeitswert von 220 auf 0 setzt. Diese Lightmap wird dann mit dem vorher beschriebenen Blurring-Effekt geblurred, um die Lichtquellen zu verbreiten. Anschließend wird die geblurte Lightmap mit dem Originalbild kombiniert, um den Blooming-Effekt zu erzielen. Das Ergebnis des Blurring-Effekts ist nicht stark genug, um den Blooming-Effekt zu erzielen, da in den Berechnungsschritten verschiedene Kompromisse eingegangen werden mussten, um die Berechnungsdauer zu reduzieren. 
 
 \subsubsection{Komplexität der eigenen Algorithmen}
 Da der Farbraum der Bilder auf 256 Helligkeitswerte beschränkt ist, sind die einzigen relevanten Parameter für die Komplexität der Algorithmen die Anzahl der Pixel (Breite * Höhe) und die Anzahl der Operationen, die auf jedem Pixel durchgeführt werden. Die Anzahl der Operationen pro Pixel variiert je nach Art der Operation. Die Anzahl der Operationen verdoppelt sich mit dem verdoppelt der Höhe oder Breite. Werden beide Dimensionen verdoppelt, vervierfacht sich die Anzahl der Operationen.
@@ -123,16 +187,32 @@ Die Blur-Operation besteht aus zwei Schritten, die jeweils aus 3 Pixelzugriffen,
 Die Invert-Operation besteht aus nur einer arithemtischen Operation pro Pixel, der Negation des Helligkeitswertes. Bei einem Bild mit 32x32 Pixeln ergibt das 1 * 1024 = 1024 Operationen, was im Vergleich zum Blurring-Effekt eine deutlich geringere Berechnungsdauer aufweist.
 
 \subsubsection{Performance-Messung}
+Für die Performance-Messung wurden einmal 2 und einmal 10 Clients gleichzeitig simuliert, die zeitgleich Anfragen an den Server gesendet haben. Wichtig dabei ist, dass Anfragen zum Erstellen und Löschen einer Session nur genau ein Mal verschickt wurden und ansonsten nur Anfragen zum Bearbeiten der Bilder oder Abfragen des Status verwendet wurden. Dadurch wurde sichergestellt, dass die Anfragen nicht durch inkorrekte Verwendung fehlerhafte Antworten liefern können. Die Ergebnisse der Messung sind in folgender Tabelle aufgeführt:
+\begin{tabular}{||c|c|c||}
+    \hline
+    \textbf{Metrik} & \textbf{2 Clients} & \textbf{10 Clients} \\
+    \hline\hline
+    p50 & 32,4s & 153,2s \\
+    \hline
+    p90 & 167,5s & 486,4s \\
+    \hline
+    p95 & 194,7s & 754,1s \\
+    \hline
+    Fehlerrate & 0\% & 0\% \\
+    \hline
+    Durchsatz & 0,032 req/s & 0,032 req/s \\
+    \hline
+\end{tabular}
 
 \subsubsection{Limitationen}
 \textbf{Multi-Session-Behavior}:
-Die aktuelle Implementierung unterstützt nicht die gleichzeitige Verarbeitung mehrerer Sessions, da die Verarbeitung von Bildern bereits eine hohe Rechenlast auf dem Server verursacht. Es wäre jedoch möglich, die Implementierung so anzupassen, dass mehrere Sessions gleichzeitig verarbeitet werden können, indem die Ressourcen des Servers entsprechend verwaltet werden. Dies könnte beispielsweise durch die Einführung von Warteschlangen oder die Zuweisung von Ressourcen basierend auf der Anzahl der aktiven Sessions erfolgen. Die aktuelle Implementierung konzentriert sich daher auf die Verarbeitung einer einzelnen Session, um die Berechnungsdauer zu minimieren und die Komplexität der Implementierung zu reduzieren. Trotzdem können mehrere Clients gleichzeitig mit dem Server interagieren, da jeder Client Bild-Operationen ausführen kann, selbst wenn ihm die Session nicht gehört. Allerdings kann nur der Ersteller der Session das Ergebnis der Operationen entschlüsseln und anzeigen, da nur er über den entsprechenden privaten Schlüssel verfügt.
-
-\textbf{Blooming-Effekt}:
-Der Blooming-Effekt ist in der aktuellen Implementierung nicht vollständig umgesetzt, da die Berechnungsdauer für diesen Effekt deutlich höher ist als für die anderen Effekte. Der Blooming-Effekt erfordert die Berechnung von gewichteten Summen von Pixelwerten über einen größeren Bereich von Nachbarpixeln, was zu einer erheblichen Erhöhung der Berechnungsdauer führt. Die aktuelle Implementation des Blooming-Effekts arbeitet klassischerweise mehrschrittig, wobei jeder Schritt per Pixel ausgeführt wird, um eine möglichst hohe Parallelisierung beizubehalten. Dazu wird zunächst eine Lightmap erstellt, die alle Pixelwerte unter einem Helligkeitswert von 220 auf 0 setzt. Diese Lightmap wird dann mit dem vorher beschriebenen Blurring-Effekt geblurred, um die Lichtquellen zu verbreiten. Anschließend wird die geblurte Lightmap mit dem Originalbild kombiniert, um den Blooming-Effekt zu erzielen. Das Ergebnis des Blurring-Effekts ist nicht stark genug, um den Blooming-Effekt zu erzielen, da in den Berechnungsschritten verschiedene Kompromisse eingegangen werden mussten, um die Berechnungsdauer zu reduzieren. Da die Berechnungsdauer selbst bei kleinen Bildern (32x32) schon bereits mehrere Minuten beträgt, wurde entschieden, den Blooming-Effekt nicht weiter zu optimieren, da er bereits in der aktuellen Form eine erhebliche Berechnungsdauer aufweist und die Optimierungsmöglichkeiten begrenzt sind.
+Die aktuelle Implementierung unterstützt nicht die gleichzeitige Verarbeitung mehrerer Sessions, da die Verarbeitung von Bildern bereits eine hohe Rechenlast auf dem Server verursacht. Es wäre jedoch möglich, die Implementierung so anzupassen, dass mehrere Sessions gleichzeitig verarbeitet werden können, indem die Ressourcen des Servers entsprechend verwaltet werden. Die aktuelle Implementierung konzentriert sich auf die Verarbeitung einer einzelnen Session, um die Berechnungsdauer zu minimieren und die Komplexität der Implementierung zu reduzieren. Trotzdem können mehrere Clients gleichzeitig mit dem Server interagieren, da jeder Client Bild-Operationen ausführen kann, selbst wenn ihm die Session nicht gehört. Allerdings kann nur der Ersteller der Session das Ergebnis der Operationen entschlüsseln und anzeigen, da nur er über den entsprechenden privaten Schlüssel verfügt.
 
 \textbf{Farbbilder}:
 Die aktuelle Implementierung unterstützt nur die Verarbeitung von Graustufenbildern, da diese eine einfachere Darstellung und Verarbeitung ermöglichen. Zwar kann ein User ein farbliches Bild im Client hochladen, da der Server aber nur Graustufenbilder unterstützt, wird das Bild im Client in ein Graustufenbild umgewandelt, bevor es an den Server gesendet wird. Die Umwandlung von Farbbildern in Graustufenbilder führt zu einem Verlust von Farbinformationen, was die Qualität der bearbeiteten Bilder beeinträchtigen kann. 
 
 \textbf{Format}:
 Auf dem Client ist es aktuell nur möglich, Bilder im PNG-Format hochzuladen, da dieses Format eine verlustfreie Kompression bietet und die Bildqualität nicht beeinträchtigt. Es wäre jedoch möglich, die Implementierung so anzupassen, dass auch andere Bildformate unterstützt werden, wie beispielsweise JPEG oder BMP. Da der Server direkt auf Vektoren von Pixeln arbeitet, wäre es jedoch möglich, den Client zu erweitern, sodass auch andere Bildformate unterstützt werden, indem die Bilder im Client in Byte-Vektoren umgewandelt werden, bevor sie an den Server gesendet werden. 
+
+\textbf{Bildgröße}:
+Kleinere Bilder sorgen bereits für einen erheblichen zeitlichen Aufwand, vorallem bei der Berechnung von Blur- und Bloom-Effekten. Diese Effekte sind bei größeren Bildern nicht mehr praktikabel, da die Berechnungsdauer der Effekte schnell in den Stundenbereich geht. Dazu kommt, dass die Verschlüsselung von größeren Bildern viel RAM in Anspruch nimmt, wodurch das Verschlüsseln von Bildern in FullHD-Auflösung auf unseren eigenen Geräten nicht mehr möglich war.

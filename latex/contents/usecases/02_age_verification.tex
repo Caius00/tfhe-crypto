@@ -1,18 +1,17 @@
 \subsection{Encrypted-Age-Verification}
 \label{sub:encrypted_age_verification}
-\newline
 \subsubsection{Funktionsbeschreibung}
 Der Use Case Encrypted Age Verification löst das Problem, das Alter einer Person serverseitig zu prüfen, ohne dass der Server den tatsächlichen Alterswert jemals im Klartext zu Gesicht bekommt. Das Ergebnis der Prüfung (volljährig: ja/nein) wird ebenfalls verschlüsselt zurückgegeben -- der Server kennt weder Eingabe noch Ausgabe. \par
 Das Alter wird bereits auf dem Client mit dem ClientKey verschlüsselt und ausschließlich in verschlüsselter Form an das Backend übertragen.
 Das Backend führt die Altersüberprüfung mittels Fully Homomorphic Encryption (TFHE) durch, ohne den zugrunde liegenden Alterswert entschlüsseln zu können.
 Die Entschlüsselung des Ergebnisses ist ausschließlich durch den Besitzer des ClientKeys möglich.
-\newline
+
 \subsubsection{Akteure}
 \begin{itemize}
     \item \textbf{Client}: Generiert das TFHE-Schlüsselpaar, verschlüsselt das Alter mit dem \verb|ClientKey|, sendet \verb|encrypted_age| und \verb|server_key| an den Server, empfängt das verschlüsselte Ergebnis und entschlüsselt es lokal. Der Client besitzt den \verb|ClientKey| und ist der einzige Akteur, der das Ergebnis entschlüsseln kann.
     \item \textbf{Backend (Server)}: Empfängt \verb|encrypted_age| und \verb|CompressedServerKey|, setzt den ServerKey, führt die homomorphe Altersüberprüfung (\verb|age_check|) durch und gibt das verschlüsselte Ergebnis (\verb|FheBool|) zurück. Der Server sieht zu keinem Zeitpunkt das Alter oder das Ergebnis im Klartext.
 \end{itemize}
-\newline
+
 \subsubsection{Lebenszyklus einer Session}
 {Phase 1 -- Session-Setup (einmalig)}
 
@@ -31,18 +30,17 @@ Die Entschlüsselung des Ergebnisses ist ausschließlich durch den Besitzer des 
   \item Client entschlüsselt das \texttt{FheBool} mit dem \texttt{ClientKey} und erhält das boolesche Ergebnis.
 \end{enumerate}
 
-\newpage
 {Phase 3 -- Cleanup}
 
 \begin{enumerate}
   \setcounter{enumi}{6}
   \item Client sendet \texttt{DELETE /session/\{session\_id\}}, um die Session zu beenden und den serverseitigen RAM freizugeben.
 \end{enumerate}
-\newpage
+
 \subsubsection{Verhaltensdiagramm}
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{contents/media/UseCase2_Verhaltensdiagramm.png}
+    \includegraphics[width=0.8\textwidth]{contents/media/Verhaltensdiagramm_UC2_light.png}
 \end{figure}
 
 \subsubsection{OpenAPI-Schnittstelle}
