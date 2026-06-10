@@ -3,26 +3,6 @@
 
 \subsection{Architektur-Übersicht}
 \label{sub:architektur_uebersicht}
-<<<<<<< HEAD
-Das System besteht aus neun unabhängigen Rust-Services, einem Angular-Frontend und einer geteilten Plattform. Jeder Use Case ist ein eigener kleiner Server, der nur sich selbst kennt - keine zwei Services teilen sich Daten oder Schlüssel. Das macht Entwicklung und Betrieb einfacher: stürzt ein Service ab, betrifft das die anderen nicht.
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.7\textwidth]{contents/media/Architektur-Uebersicht.png}
-\end{figure}
-
-\textbf{Die FHE-Grenze}: 
-Nur der Browser des Initiators und die Service-Pods sehen jemals „echte" FHE-Werte. Alle anderen Komponenten (Gateway, Interceptor, Redis, Postgres) arbeiten mit den verschlüsselten Bytes wie mit beliebigen anderen Daten - sie wissen nicht, was drinsteht, und müssen es auch nicht.
-
-\subsubsection{Workspace-Struktur}
-Auf Datei-Ebene sieht das Repo so aus:
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.8\textwidth]{contents/media/Workspace-Struktur.png}
-\end{figure}
-
-\subsubsection{Service-Inventar}
-\begin{tabular}{||c|l|l|c||}
-=======
 
 Das System besteht aus neun unabhängigen Rust-Services, einem Angular-Frontend und einer geteilten Plattform. Jeder Use Case ist ein eigener kleiner Server, der nur sich selbst kennt. Keine zwei Services teilen sich Daten oder Schlüssel. Das macht Entwicklung und Betrieb einfacher, denn stürzt ein Service ab, betrifft das die anderen nicht.
 
@@ -67,116 +47,9 @@ Das System besteht aus neun unabhängigen Rust-Services, einem Angular-Frontend 
 \textbf{Komponenten und Verantwortung}:
 
 \begin{tabular}{||l|p{3.5cm}|p{6cm}||}
->>>>>>> ca0a3821751234053286635ada4b218612cf3a34
     \hline
-    \textbf{UC} & \textbf{Name} & \textbf{Pfad} & \textbf{Datenbank} \\
+    \textbf{Komponente} & \textbf{Technologie} & \textbf{Verantwortung} \\
     \hline\hline
-<<<<<<< HEAD
-    01 & encrypted-key-value-store & /kv & Redis \\
-    \hline
-    02 & encrypted-age-verification & /age-verification & - \\
-    \hline
-    03 & encrypted-voting-polling & /voting & - \\
-    \hline
-    04 & sealed-bid-auction & /auction & - \\
-    \hline
-    05 & encrypted-statistics-service & /statistics & - \\
-    \hline
-    06 & encrypted-genomics & /genomics & Postgres \\
-    \hline
-    07 & encrypted-image-processing & /image-processing & - \\
-    \hline
-    08 & encrypted-leaderboard & /leaderboard & - \\
-    \hline
-    09 & encrypted-program-execution & /program-execution & - \\
-    \hline
-\end{tabular}
-
-\subsubsection{Shared Crates (Gemeinsame Bausteine)}
-Jeder Service erledigt manche Dinge gleich (Health-Endpoints, Metriken, Tracing, OpenAPI-Doku). Damit das nicht neunfach kopiert werden muss, liegen diese Bausteine in shared/ und werden pro Service eingehängt:
-
-\begin{tabular}{||l|p{8cm}||}
-    \hline
-    \textbf{Crate} & \textbf{Was es liefert} \\
-    \hline\hline
-    health & /healthz, /readyz, /version - damit Kubernetes weiß, ob der Service läuft \\
-    \hline
-    metrics & /metrics-Endpunkt mit Request-Zählern und Latenzen für Prometheus \\
-    \hline
-    observability & Verbindet den Service mit dem Trace-Sammler (Tempo) - jeder Request wird sichtbar \\
-    \hline
-    openapi-docs & Erzeugt automatisch eine /docs-Seite mit Swagger UI aus dem Rust-Code \\
-    \hline
-\end{tabular}
-
-Ein neuer Service braucht diese vier Bausteine zusammen mit seiner fachlichen Logik - mehr nicht.
-
-\subsection{Gateway und Routing}
-\label{sub:gateway_und_routing}
-Im Cluster läuft nur Traefik als öffentliche Eintrittstür. Er nimmt HTTP auf Port 80 entgegen und entscheidet anhand des Pfads, an welchen Service der Request weitergeht (z. B. /leaderboard/... $\rightarrow$ Leaderboard-Service). Für die Datenbank-Zugriffe von außen (Service 1 Redis, Service 6 Postgres) kommen TCP-Listener auf Port 6301 bzw. 5432 dazu.
-
-\textbf{Was Traefik mit einem Request macht} (z. B. GET /leaderboard/123/entries):
-\begin{enumerate}
-    \item Schaut auf den Pfad-Präfix - passt zur HTTPRoute des Leaderboard-Services.
-    \item Strippt den Präfix weg, der Service empfängt nur noch /123/entries. Dadurch wissen die Services nichts von ihrem öffentlichen Pfad - das macht sie umzieh-bar.
-    \item Setzt einen internen Host-Header, damit der nachgeschaltete KEDA-Interceptor (siehe unten) weiß, welcher Service gemeint ist.
-    \item Leitet den Request weiter - nicht direkt an den Service-Pod, sondern erst an den Interceptor.
-\end{enumerate}
-
-\textbf{Was Traefik sieht}: 
-HTTP-Methode, Pfad, Header, Body - den Body aber nur als Byte-Strom, ohne ihn zu lesen oder zu verändern. Keine Authentifizierung, kein Rate-Limit, keine WAF - jeder, der die URL kennt, kann beliebige Requests an jeden Service schicken.
-
-Kurze Begriffsklärung dazu:
-\begin{itemize}
-    \item WAF (Web Application Firewall) - Filter, der HTTP-Requests auf bekannte Angriffsmuster (SQL-Injection, XSS, Path-Traversal, …) prüft und blockiert.
-    \item OIDC (OpenID Connect) - Standard für Authentifizierung über einen externen Identity-Provider (Google, GitHub, Keycloak, …). Der Nutzer loggt sich beim Provider ein, der stellt ein signiertes Token aus, das die Anwendung dann prüft.
-\end{itemize}
-Das ist im Rahmen eines Uni-Projekts bewusst so akzeptiert: das System ist kein Produkt, sondern eine Lernumgebung für FHE. Für einen Produktiv-Betrieb müsste ein Auth-Layer (OIDC am Gateway oder Token-Prüfung pro Service) und ein Rate-Limit ergänzt werden.
-
-\textbf{Fehler}: 5xx-Antworten der Services werden 1:1 durchgereicht. Wenn ein Service gerade hochfährt, sieht der Client kein 503 - der Interceptor puffert solange (s. nächster Abschnitt). Erst wenn der Hochfahr-Vorgang in den Timeout läuft (30 s), gibt es ein 504 Gateway Timeout.
-
-\subsection{Key Lifecycle}
-\label{sub:key_lifecycle}
-Aus Sicht der Schlüssel gibt es genau zwei Rollen:
-\begin{itemize}
-    \item Initiator - eine Partei mit dem ClientKey. Erstellt die Session, kann entschlüsseln.
-    \item Teilnehmer - null bis beliebig viele weitere Parteien mit nur dem PublicKey. Können verschlüsseln, aber nicht entschlüsseln.
-\end{itemize}
-
-Wer in welcher Rolle ist, hängt vom jeweiligen UC ab und steht in dessen Sektion - manche UCs kommen mit nur einer Partei (Initiator allein) aus, andere lassen viele Teilnehmer zu.
-
-In TFHE gibt es drei Arten von Schlüsseln, die der Initiator erzeugt:
-\begin{itemize}
-    \item ClientKey - der private Schlüssel zum Entschlüsseln. Bleibt immer beim Browser und wird nie an einen Server geschickt.
-    \item ServerKey - erlaubt dem Server, auf verschlüsselten Daten zu rechnen, ohne sie selbst entschlüsseln zu können. Wird beim Erstellen der Session hochgeladen.
-    \item PublicKey - kann an Teilnehmer weitergegeben werden, damit sie verschlüsseln können, ohne den ClientKey zu kennen. Wenn ein UC keine Teilnehmer hat, bleibt der PublicKey ungenutzt.
-\end{itemize}
-Konzeptueller Datenfluss (Details, Endpunkt-Namen und ob es überhaupt einen Session-Begriff gibt, hängen vom UC ab):
-\begin{enumerate}
-    \item Schlüsselerzeugung - der Initiator erzeugt client-seitig alle drei Schlüssel. Der ClientKey verlässt den Client nie.
-    \item ServerKey-Übertragung - der Initiator schickt den ServerKey zum Service.
-    \item Dekompression - der Service dekomprimiert den ServerKey. Da das mehrere Sekunden CPU-Zeit und mehrere hundert MB RAM kostet, läuft es in einem Hintergrund-Thread und nicht im HTTP-Handler.
-    \item Eingaben - werden verschlüsselt an den Service geschickt (vom Initiator selbst mit ClientKey oder PublicKey, oder von Teilnehmern mit dem PublicKey).
-    \item Berechnung - der Service rechnet auf den verschlüsselten Werten.
-    \item Ergebnis - kommt verschlüsselt zurück. Nur der Initiator kann es mit seinem ClientKey entschlüsseln.
-\end{enumerate}
-\textbf{Lebensdauer}: 
-Schlüssel und sonstiger Sitzungs-State leben ausschließlich im RAM des Service-Pods. Auf der Festplatte oder in einer Datenbank landen nur fachliche Klartext-Metadaten, niemals Schlüssel oder Ciphertexte, die noch jemand entschlüsseln könnte. Wenn der Pod neu startet oder von KEDA auf 0 skaliert wird, ist alles im RAM weg - die betroffene Partei muss von vorn anfangen. Einige UCs ergänzen das um zusätzliche Aufräum-Mechanismen (z. B. Idle-Eviction einzelner Sessions).
-
-\subsection{Serialisierung}
-\label{sub:serialisierung}
-FHE-Ciphertexte sind im Kern Byte-Arrays, die nicht als JSON-Zahl darstellbar sind. Die Wahl, wie sie übers Netz transportiert werden, ist überall gleich:
-
-\begin{tabular}{||l|l||}
-    \hline
-    \textbf{Schicht} & \textbf{Wie} \\
-    \hline\hline
-    Ciphertext intern (Service $\leftarrow\rightarrow$ Service) & bincode (binäres Format) \\
-    \hline
-    Ciphertext über HTTP & Base64-kodierter Bincode \\
-    \hline
-    Request/Response-Hüllen (DTOs) & normales JSON via serde \\
-=======
     Frontend & Angular + TypeScript + TFHE.js & Benutzeroberfläche, clientseitige FHE-Operationen, Schlüsselerzeugung \\
     \hline
     API Gateway & Traefik & Pfadbasiertes HTTP-Routing, TCP-Routing für Redis und Postgres \\
@@ -340,53 +213,11 @@ FHE-Ciphertexte sind im Kern Byte-Arrays, die nicht als JSON-Zahl darstellbar si
     Ciphertext über HTTP & Base64-kodierter Bincode \\
     \hline
     Request- und Response-Hüllen (DTOs) & normales JSON via serde \\
->>>>>>> ca0a3821751234053286635ada4b218612cf3a34
     \hline
     OpenAPI-Spec für Swagger UI & automatisch aus Rust-Typen \\
     \hline
 \end{tabular}
 
-<<<<<<< HEAD
-\textbf{Warum Base64?}:
-Damit der Ciphertext in einem JSON-String-Feld liegen kann - JSON verträgt keine rohen Bytes. Kostet ~33 \% Overhead, ist aber browserseitig trivial zu de-/kodieren.
-
-\textbf{Typische Größen}
-(TFHE-rs Standard-Konfiguration):
-
-\begin{tabular}{||l|l|l||}
-    \hline
-    \textbf{Typ} & \textbf{Bytes (bincode)} & \textbf{Bytes (base64)} \\
-    \hline\hline
-    FheBool & ~50 KB & ~67 KB \\
-    \hline
-    FheUint8 & ~50 KB & ~67 KB \\
-    \hline
-    FheUint16 & ~100 KB & ~134 KB \\
-    \hline
-    FheUint64 & ~400 KB & ~534 KB \\
-    \hline
-    CompressedServerKey & ~100 MB & ~134 MB \\
-    \hline
-    PublicKey & ~50 KB & ~67 KB \\
-    \hline
-\end{tabular}
-
-Das ist relevant für die HTTP-Endpunkte, die einen ServerKey entgegennehmen: Axum cappt den Body sonst bei 2 MB. Daher ist in den Services explizit ein 2 GiB Body-Limit gesetzt, damit der Upload durchgeht.
-
-\subsection{Build, Deployment, Tests}
-\label{sub:build_deployment_tests}
-Pipelines (.github/workflows/, alle auf ubuntu-latest):
-
-\begin{tabular}{||l|p{4cm}|p{5cm}||}
-    \hline
-    \textbf{Workflow} & \textbf{Wann} & \textbf{Was} \\
-    \hline\hline
-    ci.yml & Push auf Feature-Branch & Format-Check, Linter (Clippy), Tests mit Coverage \\
-    \hline
-    release.yml & Push auf main & Version bumpen $\rightarrow$ Docker-Image bauen + nach ghcr.io pushen $\rightarrow$ README + Helm-Values updaten \\
-    \hline
-\end{tabular}
-=======
 \textbf{Warum Base64}:
 Damit der Ciphertext in einem JSON-String-Feld liegen kann, denn JSON verträgt keine rohen Bytes. Das kostet etwa 33\,\% Overhead, ist aber browserseitig trivial zu de- und enkodieren.
 
@@ -460,4 +291,3 @@ Die Code Coverage wird in der CI per \verb|cargo-llvm-cov| pro Service ermittelt
     \item GitHub-Actions-Pipeline auf den neuen Service ausweiten.
     \item Deployment über ArgoCD automatisch ausrollen lassen.
 \end{enumerate}
->>>>>>> ca0a3821751234053286635ada4b218612cf3a34
