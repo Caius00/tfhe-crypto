@@ -2,11 +2,14 @@ mod routes;
 mod encrypted_image;
 
 use std::sync::Arc;
-use axum::{serve, Router};
+use aide::axum::{ApiRouter, routing::{get_with, post_with, delete_with}};
+use axum::serve;
 use axum::extract::DefaultBodyLimit;
 use axum::routing::{delete, get, post};
 use tokio::sync::{Mutex};
+use tower_http::cors::{Any, CorsLayer};
 use crate::routes::{AppState, ImageOperation, create_session, delete_session, session_status};
+
 
 #[tokio::main]
 async fn main() {
@@ -14,27 +17,97 @@ async fn main() {
         current_session: Arc::new(Mutex::new(None)),
     };
 
-    let app = Router::new()
-        .route("/session", post(create_session))
-        .route("/session", delete(delete_session))
-        .route("/status", get(session_status))
-        .route("/per-pixel/invert", post(ImageOperation::invert))
-        .route("/per-pixel/white-threshold", post(ImageOperation::white_threshold))
-        .route("/per-pixel/black-threshold", post(ImageOperation::black_threshold))
-        .route("/rotate/90", post(ImageOperation::rotate_90))
-        .route("/rotate/180", post(ImageOperation::rotate_180))
-        .route("/rotate/270", post(ImageOperation::rotate_270))
-        .route("/flip/vertical", post(ImageOperation::flip_vertical))
-        .route("/flip/horizontal", post(ImageOperation::flip_horizontal))
-        .route("/effects/blur", post(ImageOperation::blur))
-        .route("/effects/bloom", post(ImageOperation::bloom))
-        .with_state(state)
-        .layer(DefaultBodyLimit::max(2 * 1024 * 1024 * 1024))
-        .merge(health::router(env!("CARGO_PKG_VERSION")));
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
+    let api_router = ApiRouter::new()
+        .api_route(
+            "/session", 
+            post_with(create_session, |op| {
+                op.description("Nimmt den Server-Key, die Bilddaten und die Höhe und Breite des Bildes entgegen. Erstellt dann eine neue Session und speichert das mitgeschickte verschlüsselte Bild in der Session ab.")
+            }))
+        .api_route(
+            "/session", 
+            delete_with(delete_session, |op| {
+                op.description("Löscht die aktuelle Session und alle damit verbundenen Daten. Liefert die Daten des bearbeiteten Bildes, sowie die Breite und die Höhe des Bildes zurück.")
+            }))
+        .api_route(
+            "/status", 
+            get_with(session_status, |op| {
+                op.description("Gibt Information darüber, ob zurzeit eine aktive Session exis")
+            }))
+        .api_route(
+            "/per-pixel/invert", 
+            post_with(ImageOperation::invert, |op| {
+                op.description("Invertiert die Helligkeitswerte der Pixel.")
+            }))
+        .api_route(
+            "/per-pixel/white-threshold", 
+            post_with(ImageOperation::white_threshold, |op| {
+                op.description("Alle Pixel über einem Helligkeitswert von 128 werden weiß.")
+            }))
+        .api_route(
+            "/per-pixel/black-threshold", 
+            post_with(ImageOperation::black_threshold, |op| {
+                op.description("Alle Pixel unter einem Helligkeitswert von 128 werden schwarz.")
+            }))
+        .api_route(
+            "/rotate/90", 
+            post_with(ImageOperation::rotate_90, |op| {
+                op.description("Dreht das Bild der aktuellen Session um 90 Grad.")
+            }))
+        .api_route(
+            "/rotate/180", 
+            post_with(ImageOperation::rotate_180, |op| {
+                op.description("Dreht das Bild der aktuellen Session um 180 Grad.")
+            }))
+        .api_route(
+            "/rotate/270", 
+            post_with(ImageOperation::rotate_270, |op| {
+                op.description("Dreht das Bild der aktuellen Session um 270 Grad.")
+            }))
+        .api_route(
+            "/flip/vertical", 
+            post_with(ImageOperation::flip_vertical, |op| {
+                op.description("Kehrt das Bild der aktuellen Session vertikal um.")
+            }))
+        .api_route(
+            "/flip/horizontal", 
+            post_with(ImageOperation::flip_horizontal, |op| {
+                op.description("Kehrt das Bild der aktuellen Session horizontal um.")
+            }))
+        .api_route(
+            "/effects/blur", 
+            post_with(ImageOperation::blur, |op| {
+                op.description("Wendet einen Unschärfe-Effekt auf das Bild der aktuellen Session an.")
+            }))
+        .api_route(
+            "/effects/bloom", 
+            post_with(ImageOperation::bloom, |op| {
+                op.description("Wendet einen Bloom-Effekt auf das Bild der aktuellen Session an.")
+            }))
+        .with_state(state);
+
+    let app = openapi_docs::attach(
+        api_router,
+        "Encrypted Image Processing",
+        "Homomorphic genomics service. The client owns the ClientKey; requests provide a \
+         public key for server-side encryption and a server key for computation.",
+        env!("CARGO_PKG_VERSION"),
+    )
+    .merge(health::router(env!("CARGO_PKG_VERSION")))
+    .layer(DefaultBodyLimit::max(2 * 1024 * 1024 * 1024))
+    .layer(cors);
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], 8080));
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    serve(listener, app).await.unwrap();
+    println!(
+        "Encrypted Image Processing server running on http://{} with {} Rayon threads",
+        addr, rayon_threads
+    );
+    axum::serve(listener, app).await.unwrap();
 }
 
 /*
