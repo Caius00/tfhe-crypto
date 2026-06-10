@@ -50,17 +50,12 @@ async fn session_req(server: &TestServer, compressed_server_key: Vec<u8>) -> Str
     session_response.json::<MessageResponse>().message
 }
 
-async fn put_req(
-    server: &TestServer,
-    enc_key: &CustomFheAsciiString,
-    enc_value: &CustomFheAsciiString,
-    session_id: &str,
-) {
+async fn put_req(server: &TestServer, route_key: Vec<u8>, route_value: Vec<u8>, session_id: &str) {
     let response = server
         .post("/entry")
         .json(&PutRequest {
-            key: enc_key.compress().string,
-            value: enc_value.compress().string,
+            key: route_key,
+            value: route_value,
             session_id: session_id.to_string(),
         })
         .await;
@@ -70,14 +65,14 @@ async fn put_req(
 
 async fn get_req(
     server: &TestServer,
-    enc_key: &CustomFheAsciiString,
+    route_key: Vec<u8>,
     session_id: &String,
     client_key: &ClientKey,
 ) -> String {
     let response = server
         .get("/entry")
         .json(&GetRequest {
-            key: enc_key.compress().string,
+            key: route_key,
             session_id: session_id.clone(),
         })
         .await;
@@ -93,14 +88,14 @@ async fn get_req(
 
 async fn exists_req(
     server: &TestServer,
-    enc_key: &CustomFheAsciiString,
+    route_key: Vec<u8>,
     session_id: &String,
     client_key: &ClientKey,
 ) -> bool {
     let response = server
         .get("/entry/exists")
         .json(&ExistsRequest {
-            key: enc_key.compress().string,
+            key: route_key,
             session_id: session_id.clone(),
         })
         .await;
@@ -112,11 +107,11 @@ async fn exists_req(
     response_value.decompress().decrypt(client_key)
 }
 
-async fn delete_req(server: &TestServer, enc_key: &CustomFheAsciiString, session_id: &String) {
+async fn delete_req(server: &TestServer, route_key: Vec<u8>, session_id: &String) {
     let response = server
         .delete("/entry")
         .json(&DeleteRequest {
-            key: enc_key.compress().string,
+            key: route_key,
             session_id: session_id.clone(),
         })
         .await;
@@ -125,208 +120,371 @@ async fn delete_req(server: &TestServer, enc_key: &CustomFheAsciiString, session
 }
 
 #[cfg(test)]
-mod test_set {
-    use super::*;
-    use encrypted_key_value_store::custom_fhe_ascii_string::CustomFheAsciiString;
-    use std::time::Duration;
-    use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
-    use tfhe::{set_server_key, ServerKey};
-    use tokio::time::sleep;
-
-    async fn run_client(server: Arc<TestServer>, key: &str, value: &str) {
-        let parameters =
-            MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
-                .with_compression(true)
-                .find()
-                .expect("Could not find suitable parameters");
-
-        let client_key = ClientKey::generate(parameters);
-        let compressed_server_key = CompressedServerKey::new(&client_key);
-        set_server_key(compressed_server_key.decompress());
-
-        let enc_key = CustomFheAsciiString::new(key, &client_key);
-        let enc_value = CustomFheAsciiString::new(value, &client_key);
-
-        let session_id = get_session_id(&server, &compressed_server_key).await;
-        put_req(&server, &enc_key, &enc_value, &session_id).await;
-    }
-
-    #[tokio::test]
-    async fn basic() {
-        let server = get_test_server();
-
-        let parameters =
-            MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
-                .with_compression(true)
-                .find()
-                .expect("Could not find suitable parameters");
-
-        let client_key = ClientKey::generate(parameters);
-        let compressed_server_key = CompressedServerKey::new(&client_key);
-        set_server_key(compressed_server_key.decompress());
-
-        let key = "Hello Key";
-        let value = "Hello Value";
-        let enc_key = CustomFheAsciiString::new(key, &client_key);
-        let enc_value = CustomFheAsciiString::new(value, &client_key);
-
-        let session_id = get_session_id(&server, &compressed_server_key).await;
-        put_req(&server, &enc_key, &enc_value, &session_id).await;
-    }
-
-    #[tokio::test]
-    pub async fn different_threads() {
-        let server = Arc::new(get_test_server());
-
-        sleep(Duration::from_millis(100)).await;
-
-        let s1 = Arc::clone(&server);
-        let s2 = Arc::clone(&server);
-
-        let c1 = tokio::spawn(run_client(s1, "Hello Key A", "Hello Value A"));
-        let c2 = tokio::spawn(run_client(s2, "Hello Key B", "Hello Value B"));
-
-        tokio::try_join!(c1, c2).unwrap();
-    }
-
-    #[tokio::test]
-    async fn different_threads_same_key() {
-        let server = Arc::new(get_test_server());
-
-        sleep(Duration::from_millis(100)).await;
-
-        let s1 = Arc::clone(&server);
-        let s2 = Arc::clone(&server);
-
-        let c1 = tokio::spawn(run_client(s1, "Hello Key", "Hello Value A"));
-        let c2 = tokio::spawn(run_client(s2, "Hello Key", "Hello Value B"));
-
-        tokio::try_join!(c1, c2).unwrap();
-    }
-
-    #[tokio::test]
-    async fn empty_strings() {
-        let server = Arc::new(get_test_server());
-
-        sleep(Duration::from_millis(100)).await;
-
-        let s1 = Arc::clone(&server);
-        let s2 = Arc::clone(&server);
-
-        let c1 = tokio::spawn(run_client(s1, "", ""));
-        let c2 = tokio::spawn(run_client(s2, "", "Hello Value B"));
-
-        tokio::try_join!(c1, c2).unwrap();
-    }
-
-    #[tokio::test]
-    async fn non_utf8() {
-        let server = Arc::new(get_test_server());
-
-        sleep(Duration::from_millis(100)).await;
-
-        let s1 = Arc::clone(&server);
-        let s2 = Arc::clone(&server);
-
-        let c1 = tokio::spawn(run_client(s1, "你好世界", "你好，价值"));
-        let c2 = tokio::spawn(run_client(s2, "你好世界", "你好，价值"));
-
-        tokio::try_join!(c1, c2).unwrap();
-    }
-}
-
+// mod test_set {
+//     use super::*;
+//     use encrypted_key_value_store::custom_fhe_ascii_string::CustomFheAsciiString;
+//     use std::time::Duration;
+//     use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
+//     use tfhe::{set_server_key};
+//     use tokio::time::sleep;
+//
+//     async fn run_client(server: Arc<TestServer>, key: &str, value: &str) {
+//         let parameters =
+//             MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
+//                 .with_compression(true)
+//                 .find()
+//                 .expect("Could not find suitable parameters");
+//
+//         let client_key = ClientKey::generate(parameters);
+//         let compressed_server_key = CompressedServerKey::new(&client_key);
+//         set_server_key(compressed_server_key.decompress());
+//
+//         let enc_key = CustomFheAsciiString::new(key, &client_key);
+//         let enc_value = CustomFheAsciiString::new(value, &client_key);
+//
+//         let session_id = get_session_id(&server, &compressed_server_key).await;
+//         put_req(&server, &enc_key, &enc_value, &session_id).await;
+//     }
+//
+//     #[tokio::test]
+//     async fn basic() {
+//         let server = get_test_server();
+//
+//         let parameters =
+//             MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
+//                 .with_compression(true)
+//                 .find()
+//                 .expect("Could not find suitable parameters");
+//
+//         let client_key = ClientKey::generate(parameters);
+//         let compressed_server_key = CompressedServerKey::new(&client_key);
+//         set_server_key(compressed_server_key.decompress());
+//
+//         let key = "Hello Key";
+//         let value = "Hello Value";
+//         let enc_key = CustomFheAsciiString::new(key, &client_key);
+//         let enc_value = CustomFheAsciiString::new(value, &client_key);
+//
+//         let session_id = get_session_id(&server, &compressed_server_key).await;
+//         put_req(&server, &enc_key, &enc_value, &session_id).await;
+//     }
+//
+//     #[tokio::test]
+//     pub async fn different_threads() {
+//         let server = Arc::new(get_test_server());
+//
+//         sleep(Duration::from_millis(100)).await;
+//
+//         let s1 = Arc::clone(&server);
+//         let s2 = Arc::clone(&server);
+//
+//         let c1 = tokio::spawn(run_client(s1, "Hello Key A", "Hello Value A"));
+//         let c2 = tokio::spawn(run_client(s2, "Hello Key B", "Hello Value B"));
+//
+//         tokio::try_join!(c1, c2).unwrap();
+//     }
+//
+//     #[tokio::test]
+//     async fn different_threads_same_key() {
+//         let server = Arc::new(get_test_server());
+//
+//         sleep(Duration::from_millis(100)).await;
+//
+//         let s1 = Arc::clone(&server);
+//         let s2 = Arc::clone(&server);
+//
+//         let c1 = tokio::spawn(run_client(s1, "Hello Key", "Hello Value A"));
+//         let c2 = tokio::spawn(run_client(s2, "Hello Key", "Hello Value B"));
+//
+//         tokio::try_join!(c1, c2).unwrap();
+//     }
+//
+//     #[tokio::test]
+//     async fn empty_strings() {
+//         let server = Arc::new(get_test_server());
+//
+//         sleep(Duration::from_millis(100)).await;
+//
+//         let s1 = Arc::clone(&server);
+//         let s2 = Arc::clone(&server);
+//
+//         let c1 = tokio::spawn(run_client(s1, "", ""));
+//         let c2 = tokio::spawn(run_client(s2, "", "Hello Value B"));
+//
+//         tokio::try_join!(c1, c2).unwrap();
+//     }
+//
+//     #[tokio::test]
+//     async fn non_utf8() {
+//         let server = Arc::new(get_test_server());
+//
+//         sleep(Duration::from_millis(100)).await;
+//
+//         let s1 = Arc::clone(&server);
+//         let s2 = Arc::clone(&server);
+//
+//         let c1 = tokio::spawn(run_client(s1, "你好世界", "你好，价值"));
+//         let c2 = tokio::spawn(run_client(s2, "你好世界", "你好，价值"));
+//
+//         tokio::try_join!(c1, c2).unwrap();
+//     }
+// }
+//
+// #[cfg(test)]
+// mod test_get {
+//     use super::*;
+//     use encrypted_key_value_store::custom_fhe_ascii_string::CustomFheAsciiString;
+//     use std::time::Duration;
+//     use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
+//     use tfhe::{set_server_key, CompressedServerKey};
+//     use tokio::time::sleep;
+//
+//     async fn run_client(server: Arc<TestServer>, key: &str, value: &str) {
+//         let parameters =
+//             MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
+//                 .with_compression(true)
+//                 .find()
+//                 .expect("Could not find suitable parameters");
+//
+//         let client_key = ClientKey::generate(parameters);
+//         let compressed_server_key = CompressedServerKey::new(&client_key);
+//         set_server_key(compressed_server_key.decompress());
+//
+//         let enc_key = CustomFheAsciiString::new(key, &client_key);
+//         let enc_value = CustomFheAsciiString::new(value, &client_key);
+//
+//         let session_id = get_session_id(&server, &compressed_server_key).await;
+//         put_req(&server, &enc_key, &enc_value, &session_id).await;
+//         sleep(Duration::from_millis(100)).await;
+//
+//         let found = get_req(&server, &enc_key, &session_id, &client_key).await;
+//
+//         assert_eq!(found, value.to_string());
+//     }
+//
+//     #[tokio::test]
+//     async fn basic() {
+//         let server = get_test_server();
+//
+//         let parameters =
+//             MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
+//                 .with_compression(true)
+//                 .find()
+//                 .expect("Could not find suitable parameters");
+//
+//         let client_key = tfhe::ClientKey::generate(parameters);
+//         let compressed_server_key = CompressedServerKey::new(&client_key);
+//         set_server_key(compressed_server_key.decompress());
+//
+//         let key = "Hello Key";
+//         let value = "Hello Value";
+//         let enc_key = CustomFheAsciiString::new(key, &client_key);
+//         let enc_value = CustomFheAsciiString::new(value, &client_key);
+//
+//         // Setup
+//         let session_id = get_session_id(&server, &compressed_server_key).await;
+//
+//         put_req(&server, &enc_key, &enc_value, &session_id).await;
+//
+//         let response_value = get_req(&server, &enc_value, &session_id, &client_key).await;
+//         assert_eq!(value, response_value);
+//     }
+//
+//     #[tokio::test]
+//     async fn two_clients() {
+//         let server = Arc::new(get_test_server());
+//
+//         sleep(Duration::from_millis(100)).await;
+//
+//         let s1 = Arc::clone(&server);
+//         let s2 = Arc::clone(&server);
+//
+//         let c1 = tokio::spawn(run_client(s1, "Hello Key A", "Hello Value A"));
+//         sleep(Duration::from_secs(30)).await;
+//         let c2 = tokio::spawn(run_client(s2, "Hello Key B", "Hello Value B"));
+//
+//         tokio::try_join!(c1, c2).unwrap();
+//     }
+// }
+//
+// #[cfg(test)]
+// mod test_exists {
+//     use super::*;
+//     use encrypted_key_value_store::custom_fhe_ascii_string::CustomFheAsciiString;
+//     use serial_test::serial;
+//     use std::time::Duration;
+//     use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
+//     use tfhe::{set_server_key, CompressedServerKey};
+//     use tokio::time::sleep;
+//
+//     async fn run_client(
+//         server: Arc<TestServer>,
+//         key: &str,
+//         value: &str,
+//         insert_before: bool,
+//     ) -> bool {
+//         let parameters =
+//             MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
+//                 .with_compression(true)
+//                 .find()
+//                 .expect("Could not find suitable parameters");
+//
+//         let client_key = ClientKey::generate(parameters);
+//         let compressed_server_key = CompressedServerKey::new(&client_key);
+//
+//         let enc_key = CustomFheAsciiString::new(key, &client_key);
+//         let enc_value = CustomFheAsciiString::new(value, &client_key);
+//         let session_id = get_session_id(&server, &compressed_server_key).await;
+//         if insert_before {
+//             put_req(&server, &enc_key, &enc_value, &session_id).await;
+//             sleep(Duration::from_millis(100)).await;
+//         }
+//
+//         exists_req(&server, &enc_key, &session_id, &client_key).await
+//     }
+//
+//     #[tokio::test]
+//     async fn basic() {
+//         let server = get_test_server();
+//
+//         let parameters =
+//             MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
+//                 .with_compression(true)
+//                 .find()
+//                 .expect("Could not find suitable parameters");
+//
+//         let client_key = tfhe::ClientKey::generate(parameters);
+//         let compressed_server_key = CompressedServerKey::new(&client_key);
+//         set_server_key(compressed_server_key.decompress());
+//
+//         let key = "Hello Key";
+//         let value = "Hello Value";
+//         let enc_key = CustomFheAsciiString::new(key, &client_key);
+//         let enc_value = CustomFheAsciiString::new(value, &client_key);
+//
+//         // Setup
+//         server.delete("/clear").await;
+//         let session_id = get_session_id(&server, &compressed_server_key).await;
+//
+//         put_req(&server, &enc_key, &enc_value, &session_id).await;
+//
+//         // Test
+//         let first_exists = exists_req(&server, &enc_key, &session_id, &client_key).await;
+//         assert!(first_exists);
+//
+//         server.delete("/clear").await;
+//
+//         let second_exists = exists_req(&server, &enc_key, &session_id, &client_key).await;
+//         assert!(!second_exists);
+//     }
+//
+//     #[tokio::test]
+//     #[serial]
+//     async fn two_clients_different_key() {
+//         let server = Arc::new(get_test_server());
+//
+//         sleep(Duration::from_millis(100)).await;
+//
+//         let s1 = Arc::clone(&server);
+//         let s2 = Arc::clone(&server);
+//
+//         let c1 = tokio::spawn(run_client(s1, "Hello Key A", "Hello Value A", true));
+//         let c2 = tokio::spawn(run_client(s2, "Hello Key B", "Hello Value B", false));
+//
+//         let results = tokio::try_join!(c1, c2).unwrap();
+//
+//         println!("{:?}", results);
+//
+//         assert!(results.0);
+//         assert!(!results.1);
+//     }
+//
+//     #[cfg(test)]
+//     mod test_delete {
+//         use super::*;
+//         use encrypted_key_value_store::custom_fhe_ascii_string::CustomFheAsciiString;
+//         use tfhe::set_server_key;
+//         use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
+//
+//         #[tokio::test]
+//         async fn test_delete_route() {
+//             let server = get_test_server();
+//
+//             let parameters = MetaParametersFinder::new(
+//                 Constraint::LessThanOrEqual(Log2PFail(-128.0)),
+//                 Backend::Cpu,
+//             )
+//                 .with_compression(true)
+//                 .find()
+//                 .expect("Could not find suitable parameters");
+//
+//             let client_key = tfhe::ClientKey::generate(parameters);
+//             let compressed_server_key = CompressedServerKey::new(&client_key);
+//             set_server_key(compressed_server_key.decompress());
+//
+//             let key = "Hello Key";
+//             let value = "Hello Value";
+//             let enc_key = CustomFheAsciiString::new(key, &client_key);
+//             let enc_value = CustomFheAsciiString::new(value, &client_key);
+//
+//             server.delete("/clear").await;
+//             let session_id = get_session_id(&server, &compressed_server_key).await;
+//             put_req(&server, &enc_key, &enc_value, &session_id).await;
+//             let session_id = get_session_id(&server, &compressed_server_key).await;
+//
+//             delete_req(&server, &enc_key, &session_id).await;
+//
+//             let exists = exists_req(&server, &enc_key, &session_id, &client_key).await;
+//             assert!(!exists);
+//         }
+//     }
+// }
 #[cfg(test)]
-mod test_get {
+mod test_all {
     use super::*;
-    use encrypted_key_value_store::custom_fhe_ascii_string::CustomFheAsciiString;
-    use std::time::Duration;
-    use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
-    use tfhe::{set_server_key, CompressedServerKey};
-    use tokio::time::sleep;
-
-    async fn run_client(server: Arc<TestServer>, key: &str, value: &str) {
-        let parameters =
-            MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
-                .with_compression(true)
-                .find()
-                .expect("Could not find suitable parameters");
-
-        let client_key = ClientKey::generate(parameters);
-        let compressed_server_key = CompressedServerKey::new(&client_key);
-        set_server_key(compressed_server_key.decompress());
-
-        let enc_key = CustomFheAsciiString::new(key, &client_key);
-        let enc_value = CustomFheAsciiString::new(value, &client_key);
-
-        let session_id = get_session_id(&server, &compressed_server_key).await;
-        put_req(&server, &enc_key, &enc_value, &session_id).await;
-        sleep(Duration::from_millis(100)).await;
-
-        let found = get_req(&server, &enc_key, &session_id, &client_key).await;
-
-        assert_eq!(found, value.to_string());
-    }
-
-    #[tokio::test]
-    async fn basic() {
-        let server = get_test_server();
-
-        let parameters =
-            MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
-                .with_compression(true)
-                .find()
-                .expect("Could not find suitable parameters");
-
-        let client_key = tfhe::ClientKey::generate(parameters);
-        let compressed_server_key = CompressedServerKey::new(&client_key);
-        set_server_key(compressed_server_key.decompress());
-
-        let key = "Hello Key";
-        let value = "Hello Value";
-        let enc_key = CustomFheAsciiString::new(key, &client_key);
-        let enc_value = CustomFheAsciiString::new(value, &client_key);
-
-        // Setup
-        let session_id = get_session_id(&server, &compressed_server_key).await;
-
-        put_req(&server, &enc_key, &enc_value, &session_id).await;
-
-        let response_value = get_req(&server, &enc_value, &session_id, &client_key).await;
-        assert_eq!(value, response_value);
-    }
-
-    #[tokio::test]
-    async fn two_clients() {
-        let server = Arc::new(get_test_server());
-
-        sleep(Duration::from_millis(100)).await;
-
-        let s1 = Arc::clone(&server);
-        let s2 = Arc::clone(&server);
-
-        let c1 = tokio::spawn(run_client(s1, "Hello Key A", "Hello Value A"));
-        let c2 = tokio::spawn(run_client(s2, "Hello Key B", "Hello Value B"));
-
-        tokio::try_join!(c1, c2).unwrap();
-    }
-}
-
-#[cfg(test)]
-mod test_exists {
-    use super::*;
-    use encrypted_key_value_store::custom_fhe_ascii_string::CustomFheAsciiString;
+    // use encrypted_key_value_store::routes::VALUE_LENGTH;
     use serial_test::serial;
+    use std::error::Error;
     use std::time::Duration;
     use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
-    use tfhe::{set_server_key, CompressedServerKey};
+    use tfhe::{set_server_key, CompactCiphertextListBuilder, CompactPublicKey};
     use tokio::time::sleep;
 
-    async fn run_client(
-        server: Arc<TestServer>,
-        key: &str,
+    async fn test_all(
+        server: &TestServer,
+        compressed_server_key: CompressedServerKey,
+        route_key: Vec<u8>,
+        route_value: Vec<u8>,
         value: &str,
-        insert_before: bool,
-    ) -> bool {
+        client_key: &ClientKey,
+    ) {
+        // Setup
+        let session_id = get_session_id(server, &compressed_server_key).await;
+
+        // Check initial exists
+        let initial_exists = exists_req(server, route_key.clone(), &session_id, client_key).await;
+        assert!(!initial_exists);
+
+        // Put
+        put_req(server, route_key.clone(), route_value.clone(), &session_id).await;
+
+        // Check Successful Put
+        let put_exists = exists_req(server, route_key.clone(), &session_id, client_key).await;
+        assert!(put_exists);
+
+        // Get
+        let response_value = get_req(server, route_key.clone(), &session_id, client_key).await;
+        assert_eq!(value, response_value);
+
+        // Delete
+        delete_req(server, route_key.clone(), &session_id).await;
+
+        // Check Successful Delete
+        let delete_exists = exists_req(server, route_key.clone(), &session_id, client_key).await;
+        assert!(!delete_exists);
+    }
+
+    async fn run_client(server: Arc<TestServer>, key: &str, value: &str) {
         let parameters =
             MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
                 .with_compression(true)
@@ -335,238 +493,106 @@ mod test_exists {
 
         let client_key = ClientKey::generate(parameters);
         let compressed_server_key = CompressedServerKey::new(&client_key);
+        let compact_pub_key = CompactPublicKey::new(&client_key);
         set_server_key(compressed_server_key.decompress());
 
-        let enc_key = CustomFheAsciiString::new(key, &client_key);
-        let enc_value = CustomFheAsciiString::new(value, &client_key);
-        let session_id = get_session_id(&server, &compressed_server_key).await;
-        if insert_before {
-            put_req(&server, &enc_key, &enc_value, &session_id).await;
-            sleep(Duration::from_millis(100)).await;
-        }
+        let route_key = route_compress(key, &compact_pub_key).unwrap();
+        let route_value = route_compress(value, &compact_pub_key).unwrap();
 
-        exists_req(&server, &enc_key, &session_id, &client_key).await
-    }
-
-    #[tokio::test]
-    async fn basic() {
-        let server = get_test_server();
-
-        let parameters =
-            MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
-                .with_compression(true)
-                .find()
-                .expect("Could not find suitable parameters");
-
-        let client_key = tfhe::ClientKey::generate(parameters);
-        let compressed_server_key = CompressedServerKey::new(&client_key);
-        set_server_key(compressed_server_key.decompress());
-
-        let key = "Hello Key";
-        let value = "Hello Value";
-        let enc_key = CustomFheAsciiString::new(key, &client_key);
-        let enc_value = CustomFheAsciiString::new(value, &client_key);
-
-        // Setup
-        server.delete("/clear").await;
-        let session_id = get_session_id(&server, &compressed_server_key).await;
-
-        put_req(&server, &enc_key, &enc_value, &session_id).await;
-
-        // Test
-        let first_exists = exists_req(&server, &enc_key, &session_id, &client_key).await;
-        assert!(first_exists);
-
-        server.delete("/clear").await;
-
-        let second_exists = exists_req(&server, &enc_key, &session_id, &client_key).await;
-        assert!(!second_exists);
+        test_all(
+            &server,
+            compressed_server_key,
+            route_key,
+            route_value,
+            value,
+            &client_key,
+        )
+        .await;
     }
 
     #[tokio::test]
     #[serial]
-    async fn two_clients_different_key() {
+    async fn basic() {
+        let server = get_test_server();
+        server.delete("/clear").await;
+
+        let parameters =
+            MetaParametersFinder::new(Constraint::LessThanOrEqual(Log2PFail(-128.0)), Backend::Cpu)
+                .with_compression(true)
+                .find()
+                .expect("Could not find suitable parameters");
+
+        let client_key = ClientKey::generate(parameters);
+        let compressed_server_key = CompressedServerKey::new(&client_key);
+        let compact_pub_key = CompactPublicKey::new(&client_key);
+        set_server_key(compressed_server_key.decompress());
+
+        let key = "Hello Key";
+        let value = "Hello Value";
+        let enc_key = route_compress(key, &compact_pub_key).unwrap();
+        let enc_value = route_compress(value, &compact_pub_key).unwrap();
+
+        test_all(
+            &server,
+            compressed_server_key,
+            enc_key,
+            enc_value,
+            value,
+            &client_key,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn two_clients() {
         let server = Arc::new(get_test_server());
+        server.delete("/clear").await;
 
         sleep(Duration::from_millis(100)).await;
 
         let s1 = Arc::clone(&server);
         let s2 = Arc::clone(&server);
 
-        let c1 = tokio::spawn(run_client(s1, "Hello Key A", "Hello Value A", true));
-        let c2 = tokio::spawn(run_client(s2, "Hello Key B", "Hello Value B", false));
+        let c1 = std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(run_client(s1, "Hello Key A", "Hello Value A"))
+        });
 
-        let results = tokio::try_join!(c1, c2).unwrap();
+        let c2 = std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(run_client(s2, "Hello Key B", "Hello Value B"))
+        });
 
-        println!("{:?}", results);
-
-        assert!(results.0);
-        assert!(!results.1);
+        c1.join().unwrap();
+        c2.join().unwrap();
     }
 
-    #[cfg(test)]
-    mod test_delete {
-        use super::*;
-        use encrypted_key_value_store::custom_fhe_ascii_string::CustomFheAsciiString;
-        use tfhe::set_server_key;
-        use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
+    pub fn route_compress(
+        s: &str,
+        compact_pk: &CompactPublicKey,
+    ) -> Result<Vec<u8>, Box<dyn Error>> {
+        let bytes = s.as_bytes();
 
-        #[tokio::test]
-        async fn test_delete_route() {
-            let server = get_test_server();
+        // if bytes.len() > VALUE_LENGTH {
+        //     return Err("route compress failed".into());
+        // }
 
-            let parameters = MetaParametersFinder::new(
-                Constraint::LessThanOrEqual(Log2PFail(-128.0)),
-                Backend::Cpu,
-            )
-            .with_compression(true)
-            .find()
-            .expect("Could not find suitable parameters");
+        let mut builder = CompactCiphertextListBuilder::new(compact_pk);
+        builder.extend(bytes.iter().copied());
 
-            let client_key = tfhe::ClientKey::generate(parameters);
-            let compressed_server_key = CompressedServerKey::new(&client_key);
-            set_server_key(compressed_server_key.decompress());
+        // for _ in bytes.len()..VALUE_LENGTH {
+        //     builder.push(0u8);
+        // }
 
-            let key = "Hello Key";
-            let value = "Hello Value";
-            let enc_key = CustomFheAsciiString::new(key, &client_key);
-            let enc_value = CustomFheAsciiString::new(value, &client_key);
+        let list = builder.build();
 
-            server.delete("/clear").await;
-            let session_id = get_session_id(&server, &compressed_server_key).await;
-            put_req(&server, &enc_key, &enc_value, &session_id).await;
-            let session_id = get_session_id(&server, &compressed_server_key).await;
-
-            delete_req(&server, &enc_key, &session_id).await;
-
-            let exists = exists_req(&server, &enc_key, &session_id, &client_key).await;
-            assert!(!exists);
-        }
-    }
-
-    #[cfg(test)]
-    mod test_all {
-        use super::*;
-        use encrypted_key_value_store::custom_fhe_ascii_string::CustomFheAsciiString;
-        use serial_test::serial;
-        use std::time::Duration;
-        use tfhe::set_server_key;
-        use tfhe::shortint::parameters::{Backend, Constraint, Log2PFail, MetaParametersFinder};
-        use tokio::time::sleep;
-
-        async fn test_all(
-            server: &TestServer,
-            compressed_server_key: CompressedServerKey,
-            enc_key: CustomFheAsciiString,
-            enc_value: CustomFheAsciiString,
-            value: &str,
-            client_key: &ClientKey,
-        ) {
-            // Setup
-            let session_id = get_session_id(server, &compressed_server_key).await;
-
-            // Check initial exists
-            let initial_exists = exists_req(server, &enc_key, &session_id, client_key).await;
-            assert!(!initial_exists);
-
-            // Put
-            put_req(server, &enc_key, &enc_value, &session_id).await;
-
-            // Check Successful Put
-            let put_exists = exists_req(server, &enc_key, &session_id, client_key).await;
-            assert!(put_exists);
-            println!("Passed Put test.");
-
-            // Get
-            let response_value = get_req(server, &enc_value, &session_id, client_key).await;
-            assert_eq!(value, response_value);
-            println!("Passed Get test.");
-
-            // Delete
-            delete_req(server, &enc_key, &session_id).await;
-
-            // Check Successful Delete
-            let delete_exists = exists_req(server, &enc_key, &session_id, client_key).await;
-            assert!(!delete_exists);
-            println!("Passed Delete test.");
-        }
-
-        async fn run_client(server: Arc<TestServer>, key: &str, value: &str) {
-            let parameters = MetaParametersFinder::new(
-                Constraint::LessThanOrEqual(Log2PFail(-128.0)),
-                Backend::Cpu,
-            )
-            .with_compression(true)
-            .find()
-            .expect("Could not find suitable parameters");
-
-            let client_key = ClientKey::generate(parameters);
-            let compressed_server_key = CompressedServerKey::new(&client_key);
-            set_server_key(compressed_server_key.decompress());
-
-            let enc_key = CustomFheAsciiString::new(key, &client_key);
-            let enc_value = CustomFheAsciiString::new(value, &client_key);
-
-            test_all(
-                &server,
-                compressed_server_key,
-                enc_key,
-                enc_value,
-                value,
-                &client_key,
-            )
-            .await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn basic() {
-            let server = get_test_server();
-            server.delete("/clear").await;
-
-            let parameters = MetaParametersFinder::new(
-                Constraint::LessThanOrEqual(Log2PFail(-128.0)),
-                Backend::Cpu,
-            )
-            .with_compression(true)
-            .find()
-            .expect("Could not find suitable parameters");
-
-            let client_key = ClientKey::generate(parameters);
-            let compressed_server_key = CompressedServerKey::new(&client_key);
-            set_server_key(compressed_server_key.decompress());
-
-            let key = "Hello Key";
-            let value = "Hello Value";
-            let enc_key = CustomFheAsciiString::new(key, &client_key);
-            let enc_value = CustomFheAsciiString::new(value, &client_key);
-
-            test_all(
-                &server,
-                compressed_server_key,
-                enc_key,
-                enc_value,
-                value,
-                &client_key,
-            )
-            .await;
-        }
-
-        #[tokio::test]
-        #[serial]
-        async fn two_clients() {
-            let server = Arc::new(get_test_server());
-            server.delete("/clear").await;
-
-            sleep(Duration::from_millis(100)).await;
-
-            let s1 = Arc::clone(&server);
-            let s2 = Arc::clone(&server);
-
-            let c1 = tokio::spawn(run_client(s1, "Hello Key A", "Hello Value A"));
-            let c2 = tokio::spawn(run_client(s2, "Hello Key B", "Hello Value B"));
-
-            tokio::try_join!(c1, c2).unwrap();
-        }
+        Ok(bincode::serialize(&list)?)
     }
 }

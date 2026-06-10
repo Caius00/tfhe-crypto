@@ -1,1 +1,55 @@
 <h1>01 – Encrypted Key-Value Store</h1>
+
+<!-- Notifications -->
+@if (error(); as err) {
+    <div class="notification error">
+        <strong>Error:</strong> {{ err }}
+    </div>
+}
+@if (message(); as msg) {
+    <div class="notification success">
+        {{ msg }}
+    </div>
+}
+
+<!-- Actions -->
+<div class="button-group">
+    @for (action of actions; track action.label) {
+        <button type="button" (click)="action.handler()">
+            {{ action.label }}
+        </button>
+    }
+</div>
+
+<!-- NEW: Put Request Inputs -->
+<div class="input-section">
+    <h3>Input</h3>
+    <div class="input-group">
+        <input
+                type="text"
+                placeholder="Enter Key"
+                [(ngModel)]="key"
+        />
+        <input
+                type="text"
+                placeholder="Enter Value"
+                [(ngModel)]="value"
+        />
+    </div>
+</div>
+
+<!-- Session ID Display -->
+@if (sessionId(); as id) {
+    <section class="session-id">
+        <h3>Active Session ID</h3>
+        <code>{{ id }}</code>
+    </section>
+}
+
+<!-- Raw Response Display -->
+@if (response(); as res) {
+    <section class="response">
+        <h3>Raw Response</h3>
+        <pre>{{ res | json }}</pre>
+    </section>
+}
