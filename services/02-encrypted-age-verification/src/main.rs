@@ -27,15 +27,6 @@ pub(crate) struct AppState {
     pub(crate) sessions: SessionStore,
 }
 
-/// Request für den zustandslosen Endpunkt (abwärtskompatibel, Tests unverändert).
-#[derive(Deserialize, Serialize, JsonSchema)]
-pub(crate) struct AgeRequest {
-    /// Base64-kodierter, mit dem ClientKey verschlüsselter `FheInt8` (Alter in Jahren).
-    pub(crate) encrypted_age: String,
-    /// Base64-kodierter `CompressedServerKey` (bincode-serialisiert).
-    pub(crate) server_key: String,
-}
-
 #[derive(Serialize, Deserialize, JsonSchema)]
 pub(crate) struct AgeResponse {
     /// Base64-kodierter `FheBool` — true wenn Alter ≥ 18 und ≥ 0.
@@ -111,22 +102,6 @@ pub(crate) fn encode_result(result: &FheBool) -> Result<String, (StatusCode, Str
                 format!("Serialization error: {}", e),
             )
         })
-}
-
-pub(crate) async fn verify_age(
-    Json(req): Json<AgeRequest>,
-) -> Result<Json<AgeResponse>, (StatusCode, String)> {
-    let compressed = decode_server_key(&req.server_key)?;
-    let enc_age = decode_encrypted_age(&req.encrypted_age)?;
-
-    let enc_result = tokio::task::block_in_place(|| {
-        tfhe::set_server_key(compressed.decompress());
-        age_check(&enc_age)
-    });
-
-    Ok(Json(AgeResponse {
-        is_adult: encode_result(&enc_result)?,
-    }))
 }
 
 /// POST /session
