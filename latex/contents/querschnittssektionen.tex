@@ -3,6 +3,7 @@
 
 \subsection{Architektur-Übersicht}
 \label{sub:architektur_uebersicht}
+<<<<<<< HEAD
 Das System besteht aus neun unabhängigen Rust-Services, einem Angular-Frontend und einer geteilten Plattform. Jeder Use Case ist ein eigener kleiner Server, der nur sich selbst kennt - keine zwei Services teilen sich Daten oder Schlüssel. Das macht Entwicklung und Betrieb einfacher: stürzt ein Service ab, betrifft das die anderen nicht.
 \begin{figure}[H]
     \centering
@@ -21,9 +22,56 @@ Auf Datei-Ebene sieht das Repo so aus:
 
 \subsubsection{Service-Inventar}
 \begin{tabular}{||c|l|l|c||}
+=======
+
+Das System besteht aus neun unabhängigen Rust-Services, einem Angular-Frontend und einer geteilten Plattform. Jeder Use Case ist ein eigener kleiner Server, der nur sich selbst kennt. Keine zwei Services teilen sich Daten oder Schlüssel. Das macht Entwicklung und Betrieb einfacher, denn stürzt ein Service ab, betrifft das die anderen nicht.
+
+\textbf{Verwendete Patterns}:
+\begin{itemize}
+    \item \textbf{Mono-Repo}: Der gesamte Code (Rust-Services, Shared Crates, Angular-Frontend, Helm-Charts, CI-Workflows, Dokumentation) liegt in einem einzigen Git-Repo. Das erlaubt atomare Commits über mehrere Schichten hinweg und vermeidet Versions-Mismatches mehrerer Repos.
+    \item \textbf{Microservice-Pattern}: Jeder Use Case ist ein eigener Service mit eigenem Lebenszyklus, eigenem Namespace und gegebenenfalls eigener Datenbank.
+    \item \textbf{Cargo Workspace}: Ein einziges Cargo-Projekt enthält alle Services und geteilten Bausteine als Sub-Crates. Vorteil ist eine gemeinsame Cargo.lock, ein einzelner \verb|cargo build|-Aufruf kompiliert alles und Versionen sind zentral pinnbar.
+    \item \textbf{Shared Library}: Wiederkehrende Aufgaben wie Health, Metriken, Tracing und OpenAPI-Doku liegen in \verb|shared/|-Crates und werden per Pfad-Dependency in jeden Service eingehängt.
+    \item \textbf{Code-First OpenAPI}: Die OpenAPI-Spec wird nicht handgeschrieben, sondern zur Laufzeit aus den Rust-Typen generiert (via \verb|aide| und \verb|schemars|). DTOs im Code sind die Quelle der Wahrheit, Swagger-UI und JSON-Spec entstehen automatisch.
+    \item \textbf{Stateless-by-Default mit optionalem In-Memory-State}: Die meisten Services sind zustandslos. Wo ein UC eine Session braucht, lebt der State im RAM des Pods, nicht in der Datenbank, weil dort niemals Schlüssel oder noch-entschlüsselbare Ciphertexte liegen dürfen.
+    \item \textbf{Path-based Routing}: Services kennen ihren öffentlichen Pfad nicht. Das Routing wird komplett am Gateway gemacht.
+\end{itemize}
+
+\textbf{Komponentendiagramm}:
+
+\begin{verbatim}
+            +--------------------------------------------------+
+  Browser --| Angular Client (verschluesselt lokal)            |
+            +-----------+--------------------------------------+
+                        |  HTTP, Body enthaelt Base64-Ciphertexte
+            +-----------v--------------+
+            | Traefik Gateway          |   <- Hier endet das Klartext-Web
+            +-----------+--------------+
+                        |
+            +-----------v--------------+   Keine FHE-Logik hier,
+            | KEDA Interceptor         |   nur Routing + Pod-Hochfahren
+            +-----------+--------------+
+                        |
+        +---------------+---------------+
+        |               |               |
+   +----v---+       +---v----+      +---v----+   <- Hier wird gerechnet
+   | Svc 01 |  ...  | Svc 08 |  ... | Svc 09 |      (auf Ciphertexten)
+   +----+---+       +--------+      +--------+
+        |
+   +----v------+                    +-----------+
+   | Redis     |   <- speichert     | Postgres  | (Svc 06)
+   | (Svc 01)  |      nur Bytes     |           |
+   +-----------+                    +-----------+
+\end{verbatim}
+
+\textbf{Komponenten und Verantwortung}:
+
+\begin{tabular}{||l|p{3.5cm}|p{6cm}||}
+>>>>>>> ca0a3821751234053286635ada4b218612cf3a34
     \hline
     \textbf{UC} & \textbf{Name} & \textbf{Pfad} & \textbf{Datenbank} \\
     \hline\hline
+<<<<<<< HEAD
     01 & encrypted-key-value-store & /kv & Redis \\
     \hline
     02 & encrypted-age-verification & /age-verification & - \\
@@ -128,11 +176,177 @@ FHE-Ciphertexte sind im Kern Byte-Arrays, die nicht als JSON-Zahl darstellbar si
     Ciphertext über HTTP & Base64-kodierter Bincode \\
     \hline
     Request/Response-Hüllen (DTOs) & normales JSON via serde \\
+=======
+    Frontend & Angular + TypeScript + TFHE.js & Benutzeroberfläche, clientseitige FHE-Operationen, Schlüsselerzeugung \\
+    \hline
+    API Gateway & Traefik & Pfadbasiertes HTTP-Routing, TCP-Routing für Redis und Postgres \\
+    \hline
+    KEDA Interceptor & KEDA HTTP Add-on & Puffert Requests, fährt Pods bei Bedarf von 0 hoch \\
+    \hline
+    UC-Service 1-9 & Rust + Axum & Fachlogik des jeweiligen Use Cases, FHE-Berechnungen \\
+    \hline
+    Redis (Svc 01) & Redis & Speichert Bytes als Key-Value-Store, ohne Kenntnis der Inhalte \\
+    \hline
+    Postgres (Svc 06) & Postgres & Persistenz fachlicher Klartext-Metadaten für den Genomics-UC \\
+    \hline
+    Cluster & k3s auf NetCup & Orchestrierung und Skalierung \\
+    \hline
+    Observability & Prometheus, Grafana, Tempo & Monitoring, Metriken und verteiltes Tracing \\
+    \hline
+\end{tabular}
+
+\textbf{Workspace-Struktur}:
+
+\begin{verbatim}
+tfhe-crypto/
++-- Cargo.toml              # Workspace-Wurzel (alle Members + Deps)
++-- client/                 # Angular Frontend
++-- shared/
+|   +-- health/             # Health-Endpunkte
+|   +-- metrics/            # Prometheus-Exporter
+|   +-- observability/      # OpenTelemetry / Tracing
+|   +-- openapi-docs/       # Swagger-UI Generator
++-- services/
+|   +-- 01-encrypted-key-value-store/
+|   +-- 02-encrypted-age-verification/
+|   +-- ...
+|   +-- 09-encrypted-program-execution/
++-- helm/                   # Kubernetes-Deployments
+|   +-- infrastructure/     # Cluster-Basis (Traefik, ArgoCD, KEDA, Monitoring)
+|   +-- services/           # Helm-Charts pro Service
++-- .github/workflows/      # CI/CD
+\end{verbatim}
+
+\textbf{Service-Inventar}:
+
+\begin{tabular}{||l|l|l|l||}
+    \hline
+    \textbf{UC} & \textbf{Name} & \textbf{Pfad} & \textbf{Datenbank} \\
+    \hline\hline
+    01 & encrypted-key-value-store & /kv & Redis \\
+    02 & encrypted-age-verification & /age-verification & - \\
+    03 & encrypted-voting-polling & /voting & - \\
+    04 & sealed-bid-auction & /auction & - \\
+    05 & encrypted-statistics-service & /statistics & - \\
+    06 & encrypted-genomics & /genomics & Postgres \\
+    07 & encrypted-image-processing & /image-processing & - \\
+    08 & encrypted-leaderboard & /leaderboard & - \\
+    09 & encrypted-program-execution & /program-execution & - \\
+    \hline
+\end{tabular}
+
+\textbf{Shared Crates}:
+Jeder Service erledigt manche Dinge gleich, etwa Health-Endpoints, Metriken, Tracing und OpenAPI-Doku. Damit das nicht neunfach kopiert werden muss, liegen diese Bausteine in \verb|shared/| und werden pro Service eingehängt:
+
+\begin{tabular}{||l|p{8cm}||}
+    \hline
+    \textbf{Crate} & \textbf{Was es liefert} \\
+    \hline\hline
+    health & \verb|/healthz|, \verb|/readyz|, \verb|/version|, damit Kubernetes weiß, ob der Service läuft \\
+    \hline
+    metrics & \verb|/metrics|-Endpunkt mit Request-Zählern und Latenzen für Prometheus \\
+    \hline
+    observability & Verbindet den Service mit dem Trace-Sammler (Tempo), jeder Request wird sichtbar \\
+    \hline
+    openapi-docs & Erzeugt automatisch eine \verb|/docs|-Seite mit Swagger UI aus dem Rust-Code \\
+    \hline
+\end{tabular}
+
+\textbf{Die FHE-Grenze}:
+Nur der Browser des Initiators und die Service-Pods sehen jemals echte FHE-Werte. Alle anderen Komponenten (Gateway, Interceptor, Redis, Postgres) arbeiten mit den verschlüsselten Bytes wie mit beliebigen anderen Daten. Sie wissen nicht, was darin steht, und müssen es auch nicht.
+
+Folgende Komponenten verarbeiten FHE-spezifische Datentypen:
+\begin{itemize}
+    \item Frontend (TFHE.js)
+    \item UC-Services (Rust + tfhe-rs)
+\end{itemize}
+
+Folgende Komponenten kennen keine FHE-internen Datentypen und sehen nur opake Byte-Arrays:
+\begin{itemize}
+    \item Traefik Gateway
+    \item KEDA Interceptor
+    \item Kubernetes
+    \item Redis und Postgres
+    \item Observability-Komponenten
+\end{itemize}
+
+\subsection{Gateway und Routing}
+\label{sub:gateway_und_routing}
+
+Im Cluster läuft nur Traefik als öffentliche Eintrittstür. Er nimmt HTTP auf Port 80 entgegen und entscheidet anhand des Pfads, an welchen Service der Request weitergeht. Für die Datenbank-Zugriffe von außen (Service 1 Redis, Service 6 Postgres) kommen TCP-Listener auf Port 6301 beziehungsweise 5432 dazu. Diese externen Datenbankzugriffe werden über die Gateway API im Experimental Channel in Version 1.2.0 abgebildet, weil das nötige TCPRoute im Standard-Channel noch nicht enthalten ist.
+
+\textbf{Verarbeitung eines Requests}:
+Am Beispiel eines Aufrufs \verb|GET /leaderboard/123/entries| arbeitet Traefik in folgenden Schritten:
+
+\begin{enumerate}
+    \item Der Pfad-Präfix wird ausgewertet. Im Beispiel passt der Präfix zur HTTPRoute des Leaderboard-Services.
+    \item Traefik strippt den Präfix weg. Der Service empfängt nur noch \verb|/123/entries|. Dadurch wissen die Services nichts von ihrem öffentlichen Pfad und bleiben umziehbar.
+    \item Ein interner Host-Header wird gesetzt, damit der nachgeschaltete KEDA-Interceptor weiß, welcher Service gemeint ist.
+    \item Der Request wird weitergeleitet, allerdings nicht direkt an den Service-Pod, sondern erst an den Interceptor.
+\end{enumerate}
+
+\textbf{Sichtbarkeit von Daten im Gateway}:
+Was Traefik sieht, sind HTTP-Methode, Pfad, Header und der Body. Den Body sieht es nur als Byte-Strom, ohne ihn zu lesen oder zu verändern. Da der Body bei FHE-Endpunkten nur Base64-kodierte Ciphertexte enthält, bleibt der eigentliche Inhalt für das Gateway opak.
+
+\textbf{Authentifizierung und Rate Limiting}:
+Es gibt aktuell keine Authentifizierung, kein Rate-Limit und keine Web Application Firewall am Gateway. Jeder, der die URL kennt, kann beliebige Requests an jeden Service schicken. Das ist im Rahmen eines Uni-Projekts bewusst so akzeptiert. Das System ist kein Produkt, sondern eine Lernumgebung für FHE. Für einen Produktiv-Betrieb müsste ein Auth-Layer (etwa OIDC am Gateway oder Token-Prüfung pro Service) und ein Rate-Limit ergänzt werden.
+
+\textbf{Fehlerpropagation}:
+5xx-Antworten der Services werden 1:1 durchgereicht. Wenn ein Service gerade hochfährt, sieht der Client kein 503, weil der KEDA-Interceptor den Request solange puffert. Erst wenn der Hochfahr-Vorgang in den Timeout von 30 Sekunden läuft, antwortet das Gateway mit 504 Gateway Timeout.
+
+\subsection{Key Lifecycle}
+\label{sub:key_lifecycle}
+
+Aus Sicht der Schlüssel gibt es genau zwei Rollen. Der \textbf{Initiator} besitzt den ClientKey, erstellt die Session und kann als einziger entschlüsseln. \textbf{Teilnehmer} sind null bis beliebig viele weitere Parteien, die nur den PublicKey haben und damit zwar verschlüsseln, aber nicht entschlüsseln können. Wer in welcher Rolle ist, hängt vom jeweiligen UC ab. Manche UCs kommen mit nur einer Partei (Initiator allein) aus, andere lassen viele Teilnehmer zu.
+
+\textbf{Schlüsseltypen}:
+In TFHE erzeugt der Initiator drei Arten von Schlüsseln:
+
+\begin{itemize}
+    \item \textbf{ClientKey}: Der private Schlüssel zum Entschlüsseln. Bleibt immer im Browser und wird nie an einen Server geschickt.
+    \item \textbf{ServerKey}: Erlaubt dem Service, auf verschlüsselten Daten zu rechnen, ohne sie selbst entschlüsseln zu können. Wird beim Erstellen der Session hochgeladen.
+    \item \textbf{PublicKey}: Kann an Teilnehmer weitergegeben werden, damit sie verschlüsseln können, ohne den ClientKey zu kennen. Wenn ein UC keine Teilnehmer hat, bleibt der PublicKey ungenutzt.
+\end{itemize}
+
+\textbf{Konzeptueller Datenfluss}:
+Details, Endpunkt-Namen und ob es überhaupt einen Session-Begriff gibt, hängen vom UC ab. Der grundlegende Ablauf ist aber immer derselbe:
+
+\begin{enumerate}
+    \item \textbf{Schlüsselerzeugung}: Der Initiator erzeugt clientseitig alle drei Schlüssel. Der ClientKey verlässt den Client nie.
+    \item \textbf{ServerKey-Übertragung}: Der Initiator schickt den ServerKey zum Service.
+    \item \textbf{Dekompression}: Der Service dekomprimiert den ServerKey. Da das mehrere Sekunden CPU-Zeit und mehrere hundert MB RAM kostet, läuft es in einem Hintergrund-Thread und nicht im HTTP-Handler.
+    \item \textbf{Eingaben}: Werden verschlüsselt an den Service geschickt, entweder vom Initiator selbst mit ClientKey oder PublicKey oder von Teilnehmern mit dem PublicKey.
+    \item \textbf{Berechnung}: Der Service rechnet auf den verschlüsselten Werten.
+    \item \textbf{Ergebnis}: Kommt verschlüsselt zurück. Nur der Initiator kann es mit seinem ClientKey entschlüsseln.
+\end{enumerate}
+
+\textbf{Speicherung und Isolation}:
+Schlüssel und sonstiger Sitzungs-State leben ausschließlich im RAM des Service-Pods. Auf der Festplatte oder in einer Datenbank landen nur fachliche Klartext-Metadaten, niemals Schlüssel oder Ciphertexte, die noch jemand entschlüsseln könnte. Auch der Redis-Store von Service 01 und die Postgres-Instanz von Service 06 speichern nur opake Bytes beziehungsweise reine Metadaten. Die Isolation zwischen Sessions ergibt sich automatisch aus der Trennung pro Service-Pod und der separaten Verwaltung im prozesseigenen Speicher.
+
+\textbf{Lebensdauer und Session-Ende}:
+Wenn der Pod neu startet oder von KEDA auf 0 skaliert wird, ist alles im RAM weg. Die betroffene Partei muss von vorn anfangen. Eine Wiederverwendung der Schlüssel über einen Pod-Lebenszyklus hinaus ist nicht vorgesehen und auch nicht möglich, weil der ClientKey ohnehin nur im Browser des Initiators existiert. Einige UCs ergänzen das um zusätzliche Aufräum-Mechanismen, etwa eine Idle-Eviction einzelner Sessions, um RAM früher freizugeben.
+
+\subsection{Serialisierung}
+\label{sub:serialisierung}
+
+FHE-Ciphertexte sind im Kern Byte-Arrays, die nicht als JSON-Zahl darstellbar sind. Die Wahl, wie sie übers Netz transportiert werden, ist in allen Services gleich:
+
+\begin{tabular}{||l|p{6cm}||}
+    \hline
+    \textbf{Schicht} & \textbf{Format} \\
+    \hline\hline
+    Ciphertext intern (Service-interne Verarbeitung) & bincode (binäres Format) \\
+    \hline
+    Ciphertext über HTTP & Base64-kodierter Bincode \\
+    \hline
+    Request- und Response-Hüllen (DTOs) & normales JSON via serde \\
+>>>>>>> ca0a3821751234053286635ada4b218612cf3a34
     \hline
     OpenAPI-Spec für Swagger UI & automatisch aus Rust-Typen \\
     \hline
 \end{tabular}
 
+<<<<<<< HEAD
 \textbf{Warum Base64?}:
 Damit der Ciphertext in einem JSON-String-Feld liegen kann - JSON verträgt keine rohen Bytes. Kostet ~33 \% Overhead, ist aber browserseitig trivial zu de-/kodieren.
 
@@ -172,3 +386,78 @@ Pipelines (.github/workflows/, alle auf ubuntu-latest):
     release.yml & Push auf main & Version bumpen $\rightarrow$ Docker-Image bauen + nach ghcr.io pushen $\rightarrow$ README + Helm-Values updaten \\
     \hline
 \end{tabular}
+=======
+\textbf{Warum Base64}:
+Damit der Ciphertext in einem JSON-String-Feld liegen kann, denn JSON verträgt keine rohen Bytes. Das kostet etwa 33\,\% Overhead, ist aber browserseitig trivial zu de- und enkodieren.
+
+\textbf{Typische Größen} (TFHE-rs Standard-Konfiguration):
+
+\begin{tabular}{||l|r|r||}
+    \hline
+    \textbf{Typ} & \textbf{Bytes (bincode)} & \textbf{Bytes (base64)} \\
+    \hline\hline
+    FheBool & \(\sim 50\) KB & \(\sim 67\) KB \\
+    \hline
+    FheUint8 & \(\sim 50\) KB & \(\sim 67\) KB \\
+    \hline
+    FheUint16 & \(\sim 100\) KB & \(\sim 134\) KB \\
+    \hline
+    FheUint64 & \(\sim 400\) KB & \(\sim 534\) KB \\
+    \hline
+    CompressedServerKey & \(\sim 100\) MB & \(\sim 134\) MB \\
+    \hline
+    PublicKey & \(\sim 50\) KB & \(\sim 67\) KB \\
+    \hline
+\end{tabular}
+
+\textbf{Body-Limit}:
+Die Größen sind insbesondere für die Endpunkte relevant, die einen ServerKey entgegennehmen. Axum cappt den Body sonst standardmäßig bei 2 MB. In den Services ist deshalb explizit ein Limit von 2 GiB gesetzt, damit der Upload des dekomprimierbaren ServerKey-Materials durchgeht.
+
+\subsection{Build, Deployment, Tests}
+\label{sub:build_deployment_tests}
+
+\textbf{Pipelines}:
+Die CI/CD-Pipelines liegen unter \verb|.github/workflows/| und laufen vollständig auf GitHub-hosted Runnern (\verb|ubuntu-latest|). Auf dem Cluster selbst gibt es keine self-hosted Runner.
+
+\begin{tabular}{||l|p{3cm}|p{6cm}||}
+    \hline
+    \textbf{Workflow} & \textbf{Wann} & \textbf{Was} \\
+    \hline\hline
+    ci.yml & Push auf Feature-Branch & Format-Check, Linter (Clippy als verpflichtendes Gate mit \verb|-D warnings|), Tests mit Coverage \\
+    \hline
+    release.yml & Push auf main & Patch-Version bumpen, Docker-Image bauen und nach ghcr.io pushen, README und Helm-Values updaten \\
+    \hline
+\end{tabular}
+
+Der Helm-Values-Update am Ende ist wichtig. Erst wenn das Image garantiert in der Registry liegt, wird der Tag im Chart hochgezogen. Sonst würde ArgoCD versuchen, ein noch nicht existierendes Image zu deployen.
+
+\textbf{Image-Build}:
+Das Dockerfile ist als Multi-Stage-Build mit \verb|cargo-chef| umgesetzt. \verb|cargo-chef| ist ein Trick, der Rust-Dependencies separat von der eigenen Quellcode-Schicht baut. Bei Code-Änderungen ohne neue Dependency wird der teure Compile-Schritt aus dem Docker-Cache wiederverwendet. Builds gehen von rund 10 Minuten auf etwa 1 Minute runter. Das fertige Image basiert auf \verb|debian:bookworm-slim| und ist 100 bis 200 MB groß. Zur Optimierung der FHE-Leistung wird die \verb|tfhe|-Crate bereits im Entwicklungsprofil mit \verb|opt-level=3| kompiliert. Für produktive Builds kommt zusätzlich eine CPU-Optimierung über \verb|target-cpu=znver5| zum Einsatz.
+
+\textbf{Deployment}:
+Das Deployment erfolgt auf einem k3s-Cluster nach dem GitOps-Prinzip mit ArgoCD. Jede Änderung an \verb|helm/services/*| wird gepusht, ArgoCD erkennt sie und deployt automatisch ohne manuelles \verb|helm install|. Die Infrastruktur-Charts (Traefik, ArgoCD, KEDA, Monitoring) werden bewusst nicht über ArgoCD verwaltet, sondern manuell per \verb|helm install| installiert, damit beim Neuaufbau des Clusters eine klare Reihenfolge eingehalten werden kann.
+
+\textbf{Teststrategie}:
+Jeder Service bringt seine eigenen Tests mit. Was konkret geprüft wird, hängt von der Fachlichkeit des UCs ab und steht in der jeweiligen UC-Sektion. Auf Pipeline-Ebene ruft die CI für jeden Service einheitlich \verb|cargo test --release -- --test-threads=1| auf.
+
+\begin{itemize}
+    \item \textbf{Unit-Tests}: Tests einzelner Komponenten und Funktionen innerhalb der Services.
+    \item \textbf{Integrationstests}: Tests der Endpunkte und des Zusammenspiels mehrerer Komponenten. Sie laufen im Release-Modus, um realistische Laufzeiten für FHE-Operationen zu gewährleisten.
+    \item \textbf{FHE-Korrektheitstests}: FHE-Ergebnisse werden gegen Klartextreferenzen validiert.
+\end{itemize}
+
+Das Flag \verb|--release| ist Pflicht, weil FHE im Debug-Modus rund 10-mal langsamer ist. \verb|--test-threads=1| verhindert, dass parallele Tests den ServerKey-Speicher mehrfach allokieren.
+
+\textbf{Testabdeckung}:
+Die Code Coverage wird in der CI per \verb|cargo-llvm-cov| pro Service ermittelt und als Zeilen-Coverage-Badge ins jeweilige Service-README geschrieben. Sie ist nicht hart als CI-Gate erzwungen. Der Wert dient als Indikator, nicht als Block.
+
+\textbf{Hinzufügen eines neuen Services}:
+\begin{enumerate}
+    \item Neuer Rust-Service als Crate im Cargo-Workspace anlegen.
+    \item Shared Crates (health, metrics, observability, openapi-docs) als Dependencies einbinden.
+    \item Dockerfile und Helm-Chart unter \verb|helm/services/| ergänzen.
+    \item Routing-Konfiguration im Gateway um eine HTTPRoute mit passendem Pfad-Präfix erweitern.
+    \item GitHub-Actions-Pipeline auf den neuen Service ausweiten.
+    \item Deployment über ArgoCD automatisch ausrollen lassen.
+\end{enumerate}
+>>>>>>> ca0a3821751234053286635ada4b218612cf3a34

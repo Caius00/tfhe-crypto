@@ -84,7 +84,7 @@ $0010\_0000$ & $INC$              & $ignored$  & $*$   & $A \leftarrow A + 1$ \\
 
 
 \textbf{Client-Server-Interaktion:}\\
-Die Kommunikation mit dem Server findet über eine REST-Schnittstelle oder einen Websocket statt.
+Die Kommunikation mit dem Server findet über eine REST-Schnittstelle oder einen WebSocket statt.
 Das folgende Sequenzdiagramm illustriert den Ablauf der Ausführung eines Programms.
 Zuvor muss der Client ein Schlüsselpaar (ClientKey, ServerKey) generieren, Zellenwerte und Länge des RAMs (beinhaltet Programm),
 und Werte für A und B Register sowie für die Carry-Flag bestimmen und verschlüsseln.
@@ -209,17 +209,77 @@ und Werte für A und B Register sowie für die Carry-Flag bestimmen und verschl�
 }
 
 Bei längeren und komplexeren Programmen sind die regelmäßigen Mitteilungen des aktuellen Programmzustandes,
-die durch die Verwendung von Websockets ermöglicht werden, besonders vorteilhaft,
+die durch die Verwendung von WebSockets ermöglicht werden, besonders vorteilhaft,
 da so eventuelle Fehler im Programm frühestmöglich erkannt, und die Ausführung abgebrochen werden kann.
 Ebenso kann der Server die Ausführung ohne einen expliziten Befehl des Clients abbrechen,
 falls die Verbindung ungeordnet beendet wurde, um so Ressourcen zu schonen.
 
-Das Schließen des Websockets beendet die Session aus Sicht des Servers.
-Aus Sicht des Clients kann die Session jedoch verlängert werden, indem ein neuer Websocket geöffnet, und der übermittelte Programmendzustand dem Server
+Das Schließen des WebSockets beendet die Session aus Sicht des Servers.
+Aus Sicht des Clients kann die Session jedoch verlängert werden, indem ein neuer WebSocket geöffnet, und der übermittelte Programmendzustand dem Server
 als Startzustand des Programms einer neuen Programmausführung übermittelt wird.
 So kann ein Programm über mehrere Sessions hinweg ausgeführt werden.
 
 \subsubsection{OpenAPI-Schnittstelle}
+\textbf{GET /execute-stream}\\
+Etabliert den WebSocket.
+Nach Verbindungsaufbau kann genau ein Programm ausgeführt werden, nachdem die angegebene Anzahl an Programmschritten
+ausgeführt wurde, wird der WebSocket geordnet geschlossen.\\
+\textbf{Response 101}
+
+\textbf{Request Execute Program Message}\\
+Programmzustand, Server-Key und Anzahl auszuführender Schritte zur unmittelbaren Ausführung.
+Dies ist die erste Nachricht, die über den WebSocket gesendet wird.
+Der Client sendet diese Nachricht genau einmal zu beginn der Kommunikation,
+für nachfolgende Programme muss ein neuer WebSocket geöffnet werden.
+Weitere Request-Execute-Program-Nachrichten haben keinen Effekt und bewirken keine Antwort vom Server.
+
+\begin{lstlisting}[label={lst:message}]
+{
+    "cycles": "number",
+    "a": "string", <Base64-Enkodierter TFHE-rs FheUint8>
+    "b": "string", <Base64-Enkodierter TFHE-rs FheUint8>
+    "pc": "string", <Base64-Enkodierter TFHE-rs FheUint8>
+    "carry": "string", <Base64-Enkodierter TFHE-rs FheBool>
+    "memory": [
+        "string", <Base64-Enkodierter TFHE-rs FheUint8>
+    ],
+    "server_key": "string"
+    <Base64-Enkodierter TFHE-rs compressed Server Key>
+}
+\end{lstlisting}
+
+\textbf{Error Response}\\
+Falls die Nachricht unvollständig oder Fehlerhaft ist,
+sendet der Server eine Error-Response und schließt den WebSocket geordnet.
+\begin{lstlisting}[label={lst:error response}]
+{
+    "message": "string"
+}
+\end{lstlisting}
+
+\textbf{Program State Response}\\
+Nach jedem ausgeführtem Zyklus teilt der Server dem Client den mutierten Programmzustand mit.
+Diese Nachricht wird also bei $n$ auszuführenden Zyklen $n$-Mal gesendet.
+Nach der $n$-ten Nachricht schließt der Server den WebSocket geordnet.
+\begin{lstlisting}[label={lst:state-response}]
+{
+    "a": "string", <Base64-Enkodierter TFHE-rs FheUint8>
+    "b": "string", <Base64-Enkodierter TFHE-rs FheUint8>
+    "pc": "string", <Base64-Enkodierter TFHE-rs FheUint8>
+    "carry": "string", <Base64-Enkodierter TFHE-rs FheBool>
+    "memory": [
+        "string", <Base64-Enkodierter TFHE-rs FheUint8>
+    ]
+}
+\end{lstlisting}
+
+\textbf{Close Codes}\\
+Folgende Close-Codes werden vom Server gesendet:
+\begin{itemize}
+    \item 1000 bei geordnetem Verbindungsabbau durch Client oder nach Ende der Programmausführung
+    \item 1003 bei fehlerhaftem Request-Execute-Payload
+    \item 1011 bei Fehler während der Simulation
+\end{itemize}
 
 \subsubsection{Trust- und Threat-Model}
 Eine Übersicht über den Wissensstand des Servers zu Eingaben und Komponenten bietet \autoref{tab:09-trust}.
@@ -302,7 +362,7 @@ Somit lässt sich zwar demonstrieren, dass der Server auch bei kleinen Programme
 insbesondere die Anzahl der Zyklen lässt jedoch Rückschlüsse auf die Komplexität ausgeführter Algorithmen zu.
 Sollte dies ein relevantes Risiko für User darstellen, können Programmausführungen künstlich verlängert werden:
 auch wenn das Ergebnis nach $n$ Zyklen bereit ist, kann der Server bspw.\ angewiesen werden, das Programm für $2n$ Zyklen auszuführen.
-Die Websocket-Kommunikation erlaubt dem User dabei, das Ergebnis bereits nach den tatsächlich nötigen $n$ Takten auszuwerten.\\
+Die WebSocket-Kommunikation erlaubt dem User dabei, das Ergebnis bereits nach den tatsächlich nötigen $n$ Takten auszuwerten.\\
 
 Die Software ermöglicht somit Usern, schützenswerte Programme und Algorithmen,
 die einem Geheimhaltungsgebot unterliegen,
@@ -338,7 +398,7 @@ Dank Hardware-Attestation-Keys kann die Existenz einer solchen Umgebung verifizi
 Ebenfalls kann eine kryptographische Softwarelösung durch Zero-Knowledge-Proofs eingesetzt werden, dies ist jedoch nicht implementiert.
 
 \subsubsection{FHE-Designentscheidungen}
-Die Software verwendet ausschließlich TFHE-Verschlüsselte Booleans und 8-Bit positive Ganzzahlen.
+Die Software verwendet ausschließlich TFHE-verschlüsselte Booleans und 8-Bit positive Ganzzahlen.
 Die darauf ausgeführten Operationen sind beschrieben in \autoref{tab:tfhe_cost}.
 Dabei werden Bitshift und -rotationen exklusiv im Kontext von Instruktionen ausgeführt, bspw.:
 \begin{align*}
@@ -398,6 +458,39 @@ Wobei $(N_{instructions_A})$ die Menge an Instruktionen, die das A-Register ver�
 äquivalent für B-Register, Programmzähler und Carry-Flag.
 
 \subsubsection{Performance-Messung}
+Das folgende Programm wurde als Benchmark gewählt:
+\begin{lstlisting}[label={lst:lstlisting}]
+; Addition zweier 64-Bit Zahlen.
+; $50d bis $57d = A, $58d bis $65d = B
+; Ergebnis = $66d bis $73d
+    ; Byte 0  |  ; Byte 4
+    LDA $65d  |  LDA $61d
+    SWP       |  SWP
+    LDA $57d  |  LDA $53d
+    ADD       |  ADDC
+    LDR $73d  |  LDR $69d
+    ; Byte 1  |  ; Byte 5
+    LDA $64d  |  LDA $60d
+    SWP       |  SWP
+    LDA $56d  |  LDA $52d
+    ADDC      |  ADDC
+    LDR $72d  |  LDR $68d
+    ; Byte 2  |  ; Byte 6
+    LDA $63d  |  LDA $59d
+    SWP       |  SWP
+    LDA $55d  |  LDA $51d
+    ADDC      |  ADDC
+    LDR $71d  |  LDR $67d
+    ; Byte 3  |  ; Byte 7
+    LDA $62d  |  LDA $58d
+    SWP       |  SWP
+    LDA $54d  |  LDA $50d
+    ADDC      |  ADDC
+    LDR $70d  |  LDR $66d
+
+\end{lstlisting}
+
+Performance:
 
 \subsubsection{Limitationen}
 Die Software ermöglicht die verschlüsselte Ausführung eines Programmes,
@@ -406,13 +499,11 @@ die das Programm ausführt Informationen über Inhalt oder berechnetes erlangen 
 Limitiert ist dieser Anwendungsfall dadurch, dass die vollhomomorph verschlüsselte Ausführung deutlich langsamer ist,
 als die unverschlüsselte Ausführung.
 So dauert eine Addition auf einem modernen Consumer-Grade-CISC-Prozessor meist einen Takt (mit 4GHz Takt $\equalhat 0.25ns$), inklusive Pipelining,
-sodass vier Additionen von 64-Bit-Zahlen gleichzeitig ausgeführt werden können,
-und das Ergebnis der vierten Addition nach lediglich $0.4375ns$ bereit ist.
+sodass vier Additionen von 64-Bit-Zahlen gleichzeitig ausgeführt werden können, und das Ergebnis der vierten Addition nach lediglich $0.4375ns$ bereit ist.
 
-Für vier aufeinanderfolgende Additionen von 8-Bit-Zahlen braucht der Simulator nach Messung auf der beschriebenen Server-Hardware ungefähr 20 Sekunden.
-Dies stellt eine Verlangsamung um einenen Faktor von etwa $5 * 10^6$ dar.
-Ferner müssen für die Addition von zwei 64-Bit-Zahlen acht 8-Bit Additionen durchgeführt werden, zzgl.\ sieben Transportbefehle, und 7 SWAP-Befehlen
-für insgesamt 22 Instruktionen pro 64-Bit Addition.
+Um auf dem Simulator zwei 64-Bit-Zahlen zu addieren, müssen acht 8-Bit Additionen durchgeführt werden, zzgl.\ 24 Transportbefehle, und 8 SWAP-Befehlen
+für insgesamt 40 Instruktionen pro 64-Bit Addition,.
+Wie oben beschrieben .
 Somit ergibt sich ein Gesamtfaktor von ca. $10^8$,
 die ein Consumer-Grade-Prozessor die auf dem Server simulierte Berechnung schneller ausführt.
 
@@ -421,8 +512,8 @@ Somit ergeben sich zwei Limitationen:
 \begin{enumerate}
     \item Das Instructionset ist für Berechnungen im Kontext schützenswerter Algorithmen, Daten, oder Programme evtl.\ nicht ausreichend
     \item Die drastischen Perfomanceeinbüßungen bedeuten,
-dass die Ausführung des Programmes auf dem Endgerät des Nutzers schneller wäre, als sie verschlüsselt auf dem Server auszuführen.
+    dass die Ausführung des Programmes auf dem Endgerät des Nutzers schneller wäre, als sie verschlüsselt auf dem Server auszuführen.
 \end{enumerate}
 
-Hierbei ist der letzte Punkt besonders relevant, da die lokale Ausführung des Programmes die selben Anforderungen erfüllt,
-wie die vollhomomorph verschlüsselte Ausführung bei nicht-vertrauenswürdigen Drittanbieter von Cloud-Rechenleistung.
+Hierbei ist der letzte Punkt besonders relevant, da die lokale Ausführung des Programmes ebenso die Anforderung erfüllt,
+dass unauthorisierte dritte Parteien keine Informationen über die oben genannten schützenswerten Daten erlangen können.
