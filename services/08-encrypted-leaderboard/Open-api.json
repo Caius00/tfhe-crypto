@@ -1,0 +1,321 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Encrypted Leaderboard",
+    "description": "Homomorphic leaderboard service: encrypted score submission, FHE-sorted ranking, and encrypted rank queries — only E (the creator) can decrypt.",
+    "version": "0.1.26"
+  },
+  "paths": {
+    "/create": {
+      "post": {
+        "description": "Create a new leaderboard room. Returns a 6-digit code.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{code}/public-key": {
+      "get": {
+        "description": "Get the room's public key so players can encrypt scores.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "description": "6-stelliger Raumcode des Leaderboards (aus dem URL-Pfad).",
+            "required": true,
+            "schema": {
+              "description": "6-stelliger Raumcode des Leaderboards (aus dem URL-Pfad).",
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicKeyResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{code}/submit": {
+      "post": {
+        "description": "Submit an encrypted score. Re-submits keep the FHE-max.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "description": "6-stelliger Raumcode des Leaderboards (aus dem URL-Pfad).",
+            "required": true,
+            "schema": {
+              "description": "6-stelliger Raumcode des Leaderboards (aus dem URL-Pfad).",
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitRequest"
+              }
+            }
+          },
+          "required": true
+        }
+      }
+    },
+    "/{code}/entries": {
+      "get": {
+        "description": "List entries — sorted view if ready, otherwise insertion order.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "description": "6-stelliger Raumcode des Leaderboards (aus dem URL-Pfad).",
+            "required": true,
+            "schema": {
+              "description": "6-stelliger Raumcode des Leaderboards (aus dem URL-Pfad).",
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntriesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{code}/rank": {
+      "post": {
+        "description": "Rank lookup: per-position encrypted match bools.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "description": "6-stelliger Raumcode des Leaderboards (aus dem URL-Pfad).",
+            "required": true,
+            "schema": {
+              "description": "6-stelliger Raumcode des Leaderboards (aus dem URL-Pfad).",
+              "type": "string"
+            },
+            "style": "simple"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RankRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RankResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CodePath": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "description": "6-stelliger Raumcode des Leaderboards (aus dem URL-Pfad).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "CreateRequest": {
+        "type": "object",
+        "properties": {
+          "public_key": {
+            "description": "Base64-kodierter Public-Key. Der Service nutzt ihn nicht selbst,\n reicht ihn nur an Spieler weiter, damit die Scores damit verschlüsseln.",
+            "type": "string"
+          },
+          "server_key": {
+            "description": "Base64-kodierter `CompressedServerKey` (bincode-serialisiert).\n Wird einmalig beim Raum-Anlegen dekomprimiert — danach lebt der\n dekomprimierte Key in der `FheEngine` der Session.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "server_key",
+          "public_key"
+        ]
+      },
+      "CreateResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "description": "6-stelliger Raumcode, den E mit Spielern teilt.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "EntriesResponse": {
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EntryDto"
+            }
+          },
+          "roster": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RosterEntryDto"
+            }
+          }
+        },
+        "required": [
+          "entries",
+          "roster"
+        ]
+      },
+      "EntryDto": {
+        "type": "object",
+        "properties": {
+          "encrypted_id": {
+            "type": "string"
+          },
+          "encrypted_score": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "encrypted_score",
+          "encrypted_id"
+        ]
+      },
+      "PublicKeyResponse": {
+        "type": "object",
+        "properties": {
+          "public_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "public_key"
+        ]
+      },
+      "RankRequest": {
+        "type": "object",
+        "properties": {
+          "encrypted_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "encrypted_id"
+        ]
+      },
+      "RankResponse": {
+        "type": "object",
+        "properties": {
+          "matches": {
+            "description": "Pro Position der sortierten Liste: ein verschlüsselter Bool\n (true = die Kennung passt). 1-basierter Rang = Index + 1.\n Mehrere `true`-Treffer sind möglich, falls mehrere Einträge die\n gesuchte ID tragen — der Client wertet das lokal aus.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "matches"
+        ]
+      },
+      "RosterEntryDto": {
+        "description": "Klartext-Roster der bekannten Spieler im Raum (Insertion-Order).\n\n Wird parallel zur sortierten `entries`-Liste ausgeliefert, damit der Creator\n nach Entschlüsselung der `encrypted_id` einer sortierten Position den\n passenden Namen daneben legen kann.\n\n `player_key` ist bewusst Klartext — er ist es ohnehin schon im Submit-Request\n (siehe Threat-Model: server-seitiges Dedup-Token).",
+        "type": "object",
+        "properties": {
+          "encrypted_id": {
+            "type": "string"
+          },
+          "player_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "player_key",
+          "encrypted_id"
+        ]
+      },
+      "SubmitRequest": {
+        "type": "object",
+        "properties": {
+          "encrypted_id": {
+            "description": "Base64-kodierter `FheUint8` mit der Spieler-ID (0..=255).",
+            "type": "string"
+          },
+          "encrypted_score": {
+            "description": "Base64-kodierter `FheUint16` mit dem aktuellen Score (0..=65535).",
+            "type": "string"
+          },
+          "player_key": {
+            "description": "KLARTEXT-Schlüssel des Spielers (für server-seitiges Dedup).\n Identifiziert den Spieler innerhalb seines Raums — z.B. \"alice\", \"player_42\".",
+            "type": "string"
+          }
+        },
+        "required": [
+          "player_key",
+          "encrypted_score",
+          "encrypted_id"
+        ]
+      }
+    }
+  }
+}
