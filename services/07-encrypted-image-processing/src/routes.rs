@@ -287,7 +287,7 @@ impl ImageOperation {
         State(state): State<AppState>,
     ) -> (StatusCode, Json<ApiResponse>) {
         Self::run_image_operation(state, |image| {
-            image.blooming()
+            image.blooming_per_pixel_simple()
         }).await
     }
 }

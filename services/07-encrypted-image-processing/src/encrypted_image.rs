@@ -214,40 +214,75 @@ impl EncryptedImage {
         });
     }
 
-    pub fn blooming_per_pixel(&mut self) {
-        let strong = FheUint8::encrypt_trivial(20u8);
-        let weak = FheUint8::encrypt_trivial(10u8);
-        let zero = FheUint8::encrypt_trivial(0u8);
-        let threshhold = 220u8;
+    pub fn blooming_per_pixel_simple(&mut self) {
+        let threshhold = 200u8;
+        let width = self.width;
 
         self.extended_base_func(|row, col, image| {
             if row == 0 || col == 0 ||row == image.height - 1 || col == image.width - 1 {
                 return image.get_pixel(row, col).clone();
             }
 
-            let center = image.get_pixel(row, col);
+            let index = row * width + col;
+            let pixels = &image.pixels;
+            let center =  &pixels[index as usize];
+
+            let n = &pixels[(index - width) as usize];
+            let s = &pixels[(index + width) as usize];
+            let e = &pixels[(index + 1) as usize];
+            let w = &pixels[(index - 1) as usize];
             
-            let n  = image.get_pixel(row - 1, col);
-            let s  = image.get_pixel(row + 1, col);
-            let e  = image.get_pixel(row, col + 1);
-            let w  = image.get_pixel(row, col - 1);
+            let boost1 = 
+                n.gt(threshhold).if_then_else(&(n >> 3u8), &(center >> 3u8))
+                + s.gt(threshhold).if_then_else(&(s >> 3u8), &(center >> 3u8));
+            let boost2 =
+                e.gt(threshhold).if_then_else(&(e >> 3u8), &(center >> 3u8))
+                + w.gt(threshhold).if_then_else(&(w >> 3u8), &(center >> 3u8));
+
+            let cent = center >> 1u8;
             
-            let ne = image.get_pixel(row - 1, col + 1);
-            let nw = image.get_pixel(row - 1, col - 1);
-            let se = image.get_pixel(row + 1, col + 1);
-            let sw = image.get_pixel(row + 1, col - 1);
+            cent + (boost1 + boost2)
+    });}
+
+    pub fn blooming_per_pixel(&mut self) {
+        let threshhold = 220u8;
+        let width = self.width;
+
+        self.extended_base_func(|row, col, image| {
+            if row == 0 || col == 0 ||row == image.height - 1 || col == image.width - 1 {
+                return image.get_pixel(row, col).clone();
+            }
+
+            let index = row * width + col;
+            let pixels = &image.pixels;
+            let center =  &pixels[index as usize];
+
+            let n = &pixels[(index - width) as usize];
+            let s = &pixels[(index + width) as usize];
+            let e = &pixels[(index + 1) as usize];
+            let w = &pixels[(index - 1) as usize];
+
+            let ne = &pixels[(index - width + 1) as usize];
+            let nw = &pixels[(index - width - 1) as usize];
+            let se = &pixels[(index + width + 1) as usize];
+            let sw = &pixels[(index + width - 1) as usize];
             
-            let boost = 
-                n.gt(threshhold).if_then_else(&strong, &zero)
-                + s.gt(threshhold).if_then_else(&strong, &zero)
-                + e.gt(threshhold).if_then_else(&strong, &zero)
-                + w.gt(threshhold).if_then_else(&strong, &zero)
-                + ne.gt(threshhold).if_then_else(&weak, &zero)
-                + nw.gt(threshhold).if_then_else(&weak, &zero)
-                + se.gt(threshhold).if_then_else(&weak, &zero)
-                + sw.gt(threshhold).if_then_else(&weak, &zero);
+            let boost1 = 
+                n.gt(threshhold).if_then_else(&(n >> 3u8), &(center >> 3u8))
+                + s.gt(threshhold).if_then_else(&(s >> 3u8), &(center >> 3u8));
+            let boost2 =
+                e.gt(threshhold).if_then_else(&(e >> 3u8), &(center >> 3u8))
+                + w.gt(threshhold).if_then_else(&(w >> 3u8), &(center >> 3u8));
+            let boost3 =
+                ne.gt(threshhold).if_then_else(&(ne >> 4u8), &(center >> 4u8))
+                + nw.gt(threshhold).if_then_else(&(nw >> 4u8), &(center >> 4u8));
+            let boost4 =
+                se.gt(threshhold).if_then_else(&(se >> 4u8), &(center >> 4u8))
+                + sw.gt(threshhold).if_then_else(&(sw >> 4u8), &(center >> 4u8));
+
+            let cent = center >> 1u8;
             
-            center + boost
+            cent + (boost1 + boost2) + (boost3 + boost4)
     });}
 
     // ROTATIONS:
