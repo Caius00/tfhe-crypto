@@ -3,14 +3,479 @@
 
 \subsubsection{Funktionsbeschreibung}
 
+Der Use Case Leaderboard ermöglicht eine vertrauliche Rangliste innerhalb kleiner Gruppen. Ziel ist es, die Reihenfolge der Spieler nach ihrem Score zu bestimmen, ohne dass der Server zu irgendeinem Zeitpunkt die einzelnen Scores im Klartext sieht.
+
+Hierzu verschlüsseln die Spieler ihre Scores bereits auf dem Client und übertragen diesen ausschließlich in verschlüsselter Form an das Backend. Das Backend vergleicht die verschlüsselten Werte mittels Fully Homomorphic Encryption (TFHE) und sortiert die Liste in einem datenunabhängigen Sortiernetzwerk, ohne dabei zu erfahren, welcher Score höher oder niedriger ist. Die Entschlüsselung der sortierten Liste ist ausschließlich durch den Besitzer des ClientKeys möglich.
+
+Eine Leaderboard-Session unterstützt bis zu 20 Spieler. Reicht derselbe Spieler später erneut einen Score ein, behält der Server verschlüsselt das Maximum aus altem und neuem Wert.
+
+\paragraph{Akteure}\mbox{}\\
+\begin{itemize}
+    \item \textbf{Ersteller (E):} Der Ersteller generiert lokal das TFHE-Schlüsselmaterial (ClientKey, ServerKey, PublicKey), legt den Raum an und teilt den 6-stelligen Raumcode extern an die Spieler. Der ClientKey verbleibt ausschließlich bei E, nur ServerKey und PublicKey wandern zum Server. E ist der einzige Akteur, der die sortierte Liste am Ende entschlüsseln kann.
+    \item \textbf{Spieler (Client):} Ein Spieler tritt einem Raum bei, indem er den Raumcode eingibt. Beim ersten Beitritt wählt er einmalig einen Namen, der Client erzeugt im Hintergrund eine UUID und ein zufälliges ID-Byte und legt beides in \texttt{localStorage} ab. Der Spieler holt den PublicKey vom Server, verschlüsselt damit seinen Score und sein ID-Byte und sendet beides per Submit. Spieler sehen zu keinem Zeitpunkt die Score-Werte anderer Teilnehmer.
+    \item \textbf{Backend (Server):} Der Server verwaltet pro Raum eine Session mit dekomprimiertem ServerKey, der Liste verschlüsselter Einträge (Score + ID als Ciphertext) und einer sortierten Sicht. Er führt homomorphe Vergleiche aus, sortiert die Liste blind und hat zu keinem Zeitpunkt Zugriff auf Klartext-Scores.
+\end{itemize}
+
+\paragraph{Lebenszyklus einer Session}\mbox{}\\
+\begin{enumerate}
+    \item \textbf{Raum anlegen:} Der Ersteller generiert das TFHE-Schlüsselpaar und ruft \texttt{POST /create} mit ServerKey und PublicKey auf. Der Server dekomprimiert den ServerKey einmalig im Hintergrund, legt eine Session an und gibt einen 6-stelligen Code zurück. Der ClientKey verbleibt ausschließlich beim Ersteller.
+    \item \textbf{Code teilen:} Der Ersteller gibt den Code out-of-band an seine Spieler weiter, also etwa per Chat oder mündlich. Es gibt keinen Einladungs-Endpoint, die Zulassung wird sozial geregelt.
+    \item \textbf{Namen wählen:} Beim ersten Beitritt zeigt der Spieler-Client einen einmaligen Name-Dialog (nur Buchstaben, 1 bis 20 Zeichen). Im Hintergrund werden eine UUID und ein zufälliges ID-Byte erzeugt. Beides wird in \texttt{localStorage} unter \texttt{lb\_player\_<code>} abgelegt. Bei einem späteren Beitritt in denselben Raum wird der Dialog übersprungen und die gespeicherte Identität wiederverwendet.
+    \item \textbf{Mitmachen:} Der Spieler ruft \texttt{GET /\{code\}/public-key} ab, verschlüsselt lokal seinen Score und sein ID-Byte und sendet beides per \texttt{POST /\{code\}/submit}. Als \texttt{player\_key} geht das Klartext-Format \texttt{name:uuid} zum Backend, die UUID dient nur der Eindeutigkeit für die Wiedererkennung und wird nirgends im UI angezeigt. Reicht derselbe Spieler später erneut ein, behält der Server verschlüsselt das Maximum aus altem und neuem Score (\texttt{keep\_max}).
+    \item \textbf{Sortieren:} Nach jedem Submit stößt der Server im Hintergrund eine Sortierung an (Batcher-Odd-Even-Mergesort). Pro Session läuft immer nur eine Sortierung gleichzeitig; weitere Submits während eines laufenden Sorts werden nach dessen Abschluss berücksichtigt.
+    \item \textbf{Ergebnis abrufen:} Der Ersteller ruft \texttt{GET /\{code\}/entries} ab. Die Response enthält zwei Listen: die sortierten Ciphertexte (Score und ID) und eine Klartext-Spielerliste mit \texttt{player\_key} und \texttt{encrypted\_id} pro Eintrag. Der Ersteller entschlüsselt jeden ID-Ciphertext lokal mit seinem ClientKey, baut daraus eine Tabelle \texttt{id-byte} $\rightarrow$ \texttt{name} und ordnet die Namen den sortierten Positionen zu. Optional fragt er über \texttt{POST /\{code\}/rank} die Position einer bestimmten ID ab und bekommt pro Listenplatz einen verschlüsselten Bool zurück.
+    \item \textbf{Schließen:} Es gibt keinen expliziten Schließen-Endpoint. Sessions werden vom Janitor nach 10 Minuten Inaktivität entfernt. Der Janitor ist ein Hintergrund-Task, der einmal pro Minute durch die Session-Map iteriert und alle Räume freigibt, an denen seit über 10 Minuten kein Request mehr eingegangen ist. Beim Entfernen wird der dekomprimierte ServerKey (mehrere hundert MB) freigegeben, andernfalls würde der Speicher volllaufen. Bei einem Server-Neustart gehen alle Sessions verloren; es gibt keine Persistenz.
+\end{enumerate}
+
+\paragraph{Verhaltensdiagramm}\mbox{}\\
+\begin{lstlisting}[basicstyle=\ttfamily\small,breaklines=true]
+E                          Server                          Spieler
+|                             |                               |
+|-- POST /create ------------>|                               |
+|<------ { code } ------------|                               |
+|                                                             |
+|-- Code per Chat (out-of-band) ----------------------------->|
+|                             |                               |
+|                             |   [Name-Dialog, einmalig pro Raum]
+|                             |   [localStorage: {name, uuid, id-byte}]
+|                             |                               |
+|                             |<---- GET /public-key ---------|
+|                             |------ { public_key } -------->|
+|                             |                               |
+|                             |<---- POST /submit ------------|
+|                             |      player_key = name:uuid   |
+|                             | [keep_max + Hintergrund-Sort] |
+|                             |<---- POST /submit ... --------|
+|                             |                               |
+|-- GET /entries ------------>|                               |
+|<-- entries + Spielerliste --|                               |
+|                                                             |
+| E entschluesselt jede ID, mappt Spielerliste -> Namen pro Rang
+\end{lstlisting}
+
 \subsubsection{OpenAPI-Schnittstelle}
+
+Der Service stellt eine fachliche Leaderboard-API unter dem Pfad-Prefix \texttt{/leaderboard} bereit, mit der Räume erstellt, verschlüsselte Scores eingereicht und sortierte Ergebnisse abgefragt werden können. Die OpenAPI-Definition wird per \texttt{aide} aus dem Code generiert und ist unter \texttt{GET /openapi.json} sowie \texttt{GET /docs} (Swagger UI) verfügbar. Daneben existieren \texttt{/healthz}, \texttt{/readyz}, \texttt{/version} und \texttt{/metrics} aus den shared Crates.
+
+Das Body-Limit liegt bei 2\,GiB (\texttt{DefaultBodyLimit::max(2*1024\textasciicircum 3)}), weil der komprimierte ServerKey je nach Parametern dreistellige Megabyte groß werden kann.
+
+\paragraph{POST /create}
+
+Legt einen neuen Leaderboard-Raum an. Der ServerKey wird einmalig dekomprimiert und in der Session gehalten, der PublicKey wird unverändert gespeichert und später an Spieler ausgeliefert.
+
+\textbf{Request}:
+\begin{lstlisting}
+{
+  "server_key": "<base64(bincode(CompressedServerKey))>",
+  "public_key": "<base64(bincode(CompactPublicKey))>"
+}
+\end{lstlisting}
+
+\textbf{Response 200}:
+\begin{lstlisting}
+{ "code": "847391" }
+\end{lstlisting}
+
+\textbf{Fehlercodes}:
+\begin{itemize}
+    \item \textbf{400} -- \texttt{server\_key} oder \texttt{public\_key} kein gültiges Base64 oder fehlgeschlagene bincode-Deserialisierung
+    \item \textbf{500} -- Panic im Dekomprimierungs-Thread
+\end{itemize}
+
+\paragraph{GET /\{code\}/public-key}
+
+Gibt den PublicKey des Raums unverändert zurück, so wie er beim Anlegen hochgeladen wurde. Spieler nutzen ihn, um ihre Scores zu verschlüsseln.
+
+\textbf{Response 200}:
+\begin{lstlisting}
+{ "public_key": "<base64>" }
+\end{lstlisting}
+
+\textbf{Fehlercodes}:
+\begin{itemize}
+    \item \textbf{404} -- Raum nicht gefunden oder bereits vom Janitor entfernt
+\end{itemize}
+
+\paragraph{POST /\{code\}/submit}
+
+Ein Spieler reicht seinen verschlüsselten Score ein. Bei einem Re-Submit desselben \texttt{player\_key} führt der Server \texttt{keep\_max} aus und behält verschlüsselt das Maximum aus altem und neuem Score.
+
+\textbf{Request}:
+\begin{lstlisting}
+{
+  "player_key": "Alice:550e8400-e29b-41d4-a716-446655440000",
+  "encrypted_score": "<base64(bincode(FheUint16))>",
+  "encrypted_id":    "<base64(bincode(FheUint8))>"
+}
+\end{lstlisting}
+
+\begin{itemize}
+    \item \texttt{player\_key} ist Klartext im Format \texttt{name:uuid}. Der Server nutzt den vollständigen String als Wiedererkennungs-Schlüssel, sodass ein erneutes Einreichen derselben Identität ein \texttt{keep\_max} auslöst. Die UUID sorgt für Eindeutigkeit, falls mehrere Spieler denselben Namen wählen, und wird nirgends im UI angezeigt.
+    \item \texttt{encrypted\_score} ist ein \texttt{FheUint16} (Score zwischen 0 und 65535).
+    \item \texttt{encrypted\_id} ist ein \texttt{FheUint8}, ein zufälliges ID-Byte (0 bis 255), das der Client pro Raum einmalig erzeugt. Es wandert zusammen mit dem Score durch den FHE-Sort und dient dem Ersteller später als Klartext-Label, um die sortierte Liste auf Namen zu mappen.
+\end{itemize}
+
+\textbf{Response 200}: Leerer Body.
+
+\textbf{Fehlercodes}:
+\begin{itemize}
+    \item \textbf{400} -- ungültiges Base64 oder fehlgeschlagene bincode-Deserialisierung
+    \item \textbf{404} -- Raum nicht gefunden
+    \item \textbf{409} -- Raum voll (\texttt{MAX\_ENTRIES = 20} erreicht und \texttt{player\_key} ist neu)
+    \item \textbf{500} -- FHE-Panic
+\end{itemize}
+
+\paragraph{GET /\{code\}/entries}
+
+Liefert die zuletzt fertig berechnete sortierte Reihenfolge sowie eine Klartext-Spielerliste der bekannten Teilnehmer. Ist noch kein Sort durchgelaufen, fällt \texttt{entries} auf die Einfügereihenfolge zurück. Die Spielerliste ist unabhängig vom Sort-Status immer vollständig (Einfügereihenfolge, mit \texttt{player\_key} und \texttt{encrypted\_id} pro Eintrag).
+
+\textbf{Response 200}:
+\begin{lstlisting}
+{
+  "entries": [
+    { "encrypted_score": "<base64(FheUint16)>",
+      "encrypted_id":    "<base64(FheUint8)>" }
+  ],
+  "roster": [
+    { "player_key":   "Alice:550e8400-...",
+      "encrypted_id": "<base64(FheUint8)>" }
+  ]
+}
+\end{lstlisting}
+
+Der Ersteller entschlüsselt aus der Spielerliste pro Eintrag das ID-Byte und baut sich daraus eine \texttt{byte} $\rightarrow$ \texttt{name}-Tabelle. Mit dieser Tabelle bekommt jede sortierte Position in \texttt{entries} ihren Namen.
+
+\textbf{Fehlercodes}:
+\begin{itemize}
+    \item \textbf{404} -- Raum nicht gefunden
+\end{itemize}
+
+\paragraph{POST /\{code\}/rank}
+
+Fragt die Position einer verschlüsselten ID in der sortierten Liste ab. Pro Listenplatz kommt ein verschlüsselter Bool zurück (\texttt{true} heißt: die ID passt). Der Ersteller entschlüsselt jeden Bool lokal, und jede \texttt{true}-Position ist ein 1-basierter Rang. Mehrfachtreffer werden automatisch unterstützt.
+
+\textbf{Request}:
+\begin{lstlisting}
+{ "encrypted_id": "<base64(bincode(FheUint8))>" }
+\end{lstlisting}
+
+\textbf{Response 200}:
+\begin{lstlisting}
+{ "matches": ["<base64(FheBool)>", "<base64(FheBool)>"] }
+\end{lstlisting}
+
+\textbf{Fehlercodes}:
+\begin{itemize}
+    \item \textbf{400} -- ungültiges Base64 oder fehlgeschlagene bincode-Deserialisierung
+    \item \textbf{404} -- Raum nicht gefunden
+    \item \textbf{500} -- FHE-Panic
+\end{itemize}
 
 \subsubsection{Trust- und Threat-Model}
 
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{||p{6.5cm}|c|c|c||}
+    \hline
+    \textbf{Datum} & \makecell{\textbf{Am Server}\\\textbf{klar}} & \makecell{\textbf{Am Server}\\\textbf{verschlüsselt}} & \makecell{\textbf{Am}\\\textbf{Client}} \\
+    \hline\hline
+    Raumcode (6-stellig, im URL-Pfad) & X & & X \\
+    \hline
+    ServerKey (notwendig für FHE-Ops) & X & & X \\
+    \hline
+    PublicKey (wird an Spieler ausgeliefert) & X & & X \\
+    \hline
+    ClientKey & & & X (nur bei E) \\
+    \hline
+    \texttt{player\_key} (\texttt{name:uuid}, Wiedererkennungs-Token) & X & & X \\
+    \hline
+    UUID-Anteil von \texttt{player\_key} & X & & X (nie im UI sichtbar) \\
+    \hline
+    Anzahl Spieler im Raum & X & & X \\
+    \hline
+    Submit-Zeitpunkt & X & & X \\
+    \hline
+    Spieler-Score & & X (\texttt{FheUint16}) & X (nur entschl. bei E) \\
+    \hline
+    Spieler-ID-Byte & & X (\texttt{FheUint8}) & X (nur entschl. bei E) \\
+    \hline
+    \texttt{/rank}-Target-ID & & X (\texttt{FheUint8}) & X \\
+    \hline
+    Sortierte Reihenfolge (verschlüsselt) & & X & X \\
+    \hline
+    Sortierte Reihenfolge (entschlüsselt) & & & X (nur bei E) \\
+    \hline
+\end{tabular}
+\end{table}
+
+\textbf{Analyse: Beobachtbare Metadaten}:
+TFHE schützt ausschließlich die Inhalte von Scores, IDs und der sortierten Liste. Für den Server bleiben weiterhin verschiedene Metadaten sichtbar:
+\begin{itemize}
+    \item Anzahl und Aktivität paralleler Räume
+    \item Anzahl der Spieler pro Raum
+    \item Wer (per \texttt{player\_key = name:uuid}) wann und wie oft postet
+    \item Aus dem Timing der FHE-Operationen die Unterscheidung zwischen Erst-Submit (kein Vergleich) und Re-Submit (\texttt{keep\_max})
+    \item Bei \texttt{/rank} der Zeitpunkt, zu dem E eine Rang-Abfrage stellt -- jedoch nicht für welche Position
+    \item Request-Timing und Submit-Pattern
+\end{itemize}
+
+Ein Server-Operator kann daraus Rückschlüsse auf Aktivitätsmuster, Gruppengrößen und das Verhalten einzelner Spieler ziehen. Der Klartext-Score bleibt dabei stets unsichtbar.
+
+\textbf{Restvertrauen in den Server}:
+Der Server kann zwar keine Scores entschlüsseln, muss jedoch weiterhin als korrekter Ausführer des Protokolls vertrauenswürdig sein. Insbesondere wird angenommen, dass der Server:
+\begin{itemize}
+    \item den richtigen PublicKey ausliefert und ihn nicht gegen einen unter seiner Kontrolle stehenden Schlüssel austauscht
+    \item homomorphe Operationen korrekt ausführt und Ciphertexte nicht manipuliert
+    \item die sortierte Liste vollständig und unverändert zurückgibt und keine Einträge ignoriert oder dupliziert
+    \item Räume voneinander trennt
+    \item die Verfügbarkeit des Systems sicherstellt
+\end{itemize}
+
+TFHE reduziert somit die Vertrauensabhängigkeit hinsichtlich der Inhaltsvertraulichkeit, ersetzt jedoch kein vollständig vertrauensloses Protokoll. Eine Verifizierbarkeit der serverseitigen Berechnung (etwa per ZKP) ist nicht umgesetzt.
+
+\textbf{Annahmen außerhalb von TFHE}:
+\begin{itemize}
+    \item Die Kommunikation zwischen Client und Server erfolgt über TLS. In Test-Umgebungen wird teilweise reines HTTP verwendet, was akzeptabel ist, da ohnehin nur Ciphertexte über die Leitung gehen.
+    \item Das Frontend führt die Verschlüsselung und Entschlüsselung korrekt aus.
+    \item Die verwendete TFHE-rs-Bibliothek (Version 1.6.1) wird als kryptographisch korrekt implementierte Black Box betrachtet.
+    \item Der ClientKey verbleibt ausschließlich beim Raum-Ersteller.
+    \item Der \texttt{player\_key} ist absichtlich Klartext, damit der Server Re-Submits desselben Spielers erkennen kann.
+\end{itemize}
+
+Das System besitzt keine starke Benutzerauthentifizierung. Die Spieler-Zulassung erfolgt ausschließlich über die Kenntnis des Raumcodes, der out-of-band geteilt wird.
+
+\textbf{Schutzversprechen}:
+
+Durch den Einsatz von TFHE wird garantiert:
+\begin{itemize}
+    \item Der Server kann individuelle Scores nicht im Klartext lesen.
+    \item Der Server kann beim Vergleich zweier verschlüsselter Scores das Vorzeichen des Vergleichs nicht ableiten.
+    \item Die sortierte Liste liegt auf dem Server ausschließlich verschlüsselt vor.
+    \item Auch die \texttt{/rank}-Antwort liegt auf dem Server ausschließlich verschlüsselt vor.
+\end{itemize}
+
+Nicht garantiert werden:
+\begin{itemize}
+    \item Vertraulichkeit der Klartext-Namen (\texttt{player\_key}), da sie für die serverseitige Wiedererkennung notwendig sind
+    \item Vertraulichkeit von Metadaten wie Anzahl Spieler, Submit-Zeitpunkten und Raum-Aktivität
+    \item Schutz vor Traffic- und Timing-Analysen
+    \item Schutz vor einem aktiv manipulierenden Operator (Key-Tausch, Eintrags-Manipulation, Antwort-Fälschung)
+    \item Authentifizierung, Rate-Limiting oder Persistenz
+\end{itemize}
+
+\textit{,,Der Server kennt den Klartext-Score nicht. Er sieht nur Ciphertexte, vergleicht zwei Ciphertexte miteinander, ohne das Vorzeichen des Vergleichs zu kennen, und gibt die sortierte Liste an E zurück. Nur E kann die Liste mit seinem ClientKey entschlüsseln."}
+
+Diese Garantie hält gegen einen Operator, der das Protokoll korrekt ausführt, aber Metadaten beobachtet. Gegen einen aktiv manipulierenden Operator hält sie nicht.
+
+\textbf{Einordnung}:
+Der Use Case implementiert ein TFHE-geschütztes Leaderboard mit Vertraulichkeit auf Inhaltsebene. Geschützt werden ausschließlich individuelle Scores, die zugehörigen ID-Bytes und die daraus abgeleitete sortierte Reihenfolge. Klartext-Namen, Metadaten und der allgemeine Kontrollfluss der Anwendung bleiben außerhalb des Schutzbereichs von TFHE.
+
 \subsubsection{FHE-Designentscheidungen}
+
+Verwendet wird TFHE-rs in Version 1.6.1 mit \texttt{ConfigBuilder::default()}, also die Standard-Parameter ohne eigenes Tuning. Für die hier gebrauchten Bitbreiten reicht das aus.
+
+\textbf{Verwendete TFHE-rs-Typen}:
+
+Für den Score wird \texttt{FheUint16} (Wertebereich 0 bis 65535) verwendet. Spielrelevante Scores wie Punkte oder Zeiten in Hundertstelsekunden lassen sich darauf vollständig abbilden. \texttt{FheUint8} (max 255) wäre für viele Quiz- und Spielszenarien zu eng, und \texttt{FheUint32} ist etwa doppelt so langsam pro Vergleich, ohne dass der erweiterte Wertebereich hier benötigt wird.
+
+Für die Spieler-ID wird \texttt{FheUint8} verwendet. Bei \texttt{MAX\_ENTRIES = 20} reichen die 0 bis 255 darstellbaren Werte mehr als aus. Die ID dient nur als Tag, der zusammen mit dem Score durchsortiert wird, damit der Ersteller nach dem Entschlüsseln weiß, wer auf welchem Platz steht.
+
+Als Rückgabewert von \texttt{/rank} wird \texttt{FheBool} verwendet, jeweils einer pro Position der sortierten Liste. Das ist der minimale Ciphertext, da der Client nur ,,passt / passt nicht`` lesen muss.
+
+\textbf{Verwendete homomorphe Operationen}:
+
+Der Server führt drei verschiedene Operationen auf den verschlüsselten Werten aus. \texttt{FheUint16::lt} ist der einzige benötigte Vergleich -- absteigend sortieren heißt: ,,tausche, wenn links kleiner ist``. \texttt{FheBool::if\_then\_else} schaltet Score und ID synchron um, ohne dass der Server weiß, welcher Branch gewinnt. Diese Operation wird in \texttt{keep\_max} (zweimal für Score, zweimal für ID) und im Sort-Comparator (viermal pro Vergleich) eingesetzt. \texttt{FheUint8::eq} kommt ausschließlich in \texttt{rank\_matches} zum Einsatz, dem Endpoint für die Positions-Abfrage.
+
+Andere homomorphe Operationen wie Addition, Multiplikation oder Bit-Shifts werden nicht benötigt, dadurch bleibt die serverseitige Verarbeitung vollständig auf Vergleichen und datenabhängigem Auswählen beschränkt.
+
+\textbf{Verworfene Alternativen}:
+
+\underline{FheUint32 für Score}: \texttt{FheUint32} hätte mehr Headroom geboten, wurde aber verworfen, da jede zusätzliche Bitbreite die FHE-Vergleichszeit etwa verdoppelt und 16 Bit für diesen Use Case ausreichen.
+
+\underline{Klartext-Score mit ZKP}: Ein Klartext-Score, kombiniert mit einem Zero-Knowledge-Proof für den erlaubten Wertebereich, wäre semantisch interessant. Dann sähe der Server jedoch den Score, und genau das soll vermieden werden.
+
+\underline{Vollständig datenabhängiger Sort}: Ein klassischer Sortier-Algorithmus mit datenabhängigen Branches ist in TFHE-rs prinzipiell nicht möglich, weil Verzweigungen auf Ciphertexten nicht entscheidbar sind. Die Lösung ist ein datenunabhängiges Sortiernetzwerk (siehe Komplexität), das in einer festen Sequenz von Compare-and-Swap-Schritten arbeitet.
+
+\underline{Verschlüsselter player\_key}: Den \texttt{player\_key} zu verschlüsseln wäre technisch möglich, aber unverhältnismäßig teuer. Der Server benötigt den Schlüssel, um beim Submit zu prüfen, ob bereits ein Eintrag desselben Spielers existiert, und gegebenenfalls \texttt{keep\_max} auszuführen. Im Klartext geschieht das durch einen einfachen String-Vergleich in $O(1)$. Verschlüsselt müsste der Server pro Submit jeden existierenden Eintrag homomorph vergleichen (\texttt{eq}) und jede Score- und ID-Position bedingt überschreiben (\texttt{if\_then\_else}). Da er auf einem verschlüsselten Bool keine Verzweigung treffen kann, müsste er jeden Submit zugleich als neuen Eintrag anhängen und auf alle bestehenden Einträge bedingt anwenden. Damit stiegen die Submit-Kosten von $O(1)$ auf $O(n)$ FHE-Operationen, und die Listenlänge wäre nicht mehr sinnvoll beschränkbar. Der Privacy-Gewinn (Pseudonym statt Name) rechtfertigt diesen Aufwand nicht, da der Creator die Identität der Mitspieler ohnehin kennt.
+
+Approximationen werden nicht eingesetzt. Alle Operationen liefern exakte Resultate, solange die ServerKey-Parameter korrekt installiert sind. Es gibt kein Rauschen, das akzeptiert werden müsste, weil TFHE-rs intern bootstrappt und der Output deterministisch ist.
 
 \subsubsection{Komplexität der eigenen Algorithmen}
 
+\begin{itemize}
+    \item $n$: Anzahl der Spieler im Raum (maximal 20)
+\end{itemize}
+
+Die interne Komplexität der TFHE-rs-Bibliothek wird nicht betrachtet; jede homomorphe Operation wird gemäß Aufgabenstellung als $O(1)$ angenommen.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{||l|c|c||}
+    \hline
+    \textbf{Funktion} & \textbf{Zeitkomplexität} & \textbf{Platzkomplexität} \\
+    \hline\hline
+    \texttt{create\_session} & $O(1)$ & $O(1)$ \\
+    \hline
+    \texttt{get\_public\_key} & $O(1)$ & $O(1)$ \\
+    \hline
+    \texttt{submit\_score} (\texttt{keep\_max}) & $O(1)$ & $O(1)$ \\
+    \hline
+    \texttt{sort\_by\_score\_desc} & $O(n \cdot \log^2 n)$ & $O(n)$ \\
+    \hline
+    \texttt{get\_entries} & $O(n)$ & $O(n)$ \\
+    \hline
+    \texttt{query\_rank} (\texttt{rank\_matches}) & $O(n)$ & $O(n)$ \\
+    \hline
+\end{tabular}
+\end{table}
+
+\textit{Create\_session -- $O(1)$, $O(1)$}: Beim Anlegen eines Raums wird der ServerKey einmalig im Hintergrund dekomprimiert und in der Session abgelegt. Die übrigen Operationen (Code-Generierung, Initialisierung leerer Listen, Einfügen in die Session-Map) besitzen konstante Laufzeit. Der dekomprimierte ServerKey belegt mehrere hundert MB RAM, ist aber unabhängig von $n$.
+
+\textit{Get\_public\_key -- $O(1)$, $O(1)$}: Die Session wird per HashMap-Lookup gefunden, der PublicKey-String wird unverändert zurückgegeben. Es erfolgt weder eine FHE-Operation noch eine Iteration über Einträge.
+
+\textit{Submit\_score -- $O(1)$, $O(1)$}: Reicht ein Spieler einen neuen Score ein, obwohl bereits ein alter vorliegt, behält der Server verschlüsselt den höheren. Das sind unabhängig von der Belegung des Raums stets dieselben fünf FHE-Operationen (ein \texttt{lt} plus vier \texttt{if\_then\_else}), also $O(1)$. Ist der Spieler neu, entfällt der Vergleich ganz und der Eintrag wird direkt angehängt. Der nachgelagerte Sort läuft asynchron im Hintergrund und blockiert die Antwort nicht.
+
+\textit{Sort\_by\_score\_desc -- $O(n \cdot \log^2 n)$, $O(n)$}: Auf verschlüsselten Zahlen kann der Server die Größenrelation nicht einsehen und auf dieser Grundlage entscheiden. Die Vergleiche müssen blind erfolgen, in einer festen Reihenfolge, die unabhängig vom Inhalt funktioniert. Dies leistet ein Sortiernetzwerk: eine vorab festgelegte Folge von Compare-and-Swap-Operationen der Form ,,Vergleiche zwei Positionen und tausche sie, falls links kleiner ist``. Verwendet wird Batchers Odd-Even-Mergesort, da seine Vergleiche in Schichten organisiert sind, deren Paare disjunkt sind. Eine vollständige Schicht kann dadurch parallel auf mehreren CPU-Kernen ausgeführt werden. Der Aufwand beträgt $O(n \cdot \log^2 n)$ Vergleiche insgesamt bei $O(\log^2 n)$ Schichten in der Tiefe. Für $n = 20$ ergeben sich rund 120 Vergleiche in etwa 15 Schichten. Die Korrektheit ist im Test \texttt{batcher\_layers\_form\_a\_valid\_sorting\_network} per 0/1-Prinzip nachgewiesen. Der Platzbedarf ist linear in $n$, da die Liste der Ciphertexte vorgehalten wird.
+
+Der aufwendige Sortierschritt ist der maßgebliche Grund für die feste Obergrenze \texttt{MAX\_ENTRIES = 20}.
+
+\textit{Get\_entries -- $O(n)$, $O(n)$}: Für die Antwort wird die sortierte Liste (oder als Fallback die Einfügereihenfolge) sowie die Spielerliste ausgegeben. Jeder der $n$ Einträge wird einmal in das DTO kopiert. Es erfolgt keine FHE-Operation.
+
+\textit{Query\_rank -- $O(n)$, $O(n)$}: Für jede der $n$ Positionen der sortierten Liste wird genau ein \texttt{eq}-Vergleich zwischen der Ziel-ID und der Listen-ID ausgeführt. Das Ergebnis ist eine Liste von $n$ verschlüsselten Booleans. Es werden weder Schleifen über Scores noch zusätzliche Comparator-Operationen benötigt.
+
 \subsubsection{Performance-Messung}
 
+\textbf{Mess-Setup}:
+Die Tests laufen auf einem NetCup-Server (AMD EPYC 9645, 8 Cores) gegen Image \texttt{v0.1.19}, TFHE-rs 1.6.1 mit \texttt{ConfigBuilder::default()}, \texttt{FheUint16} für den Score und \texttt{FheUint8} für die ID. Die Last erzeugt k6 mit vor-generierten Ciphertexten gegen \url{http://159.195.145.100/leaderboard}. Die Skripte liegen unter \texttt{loadtest/k6/}.
+
+Gemessen werden die FHE-Endpunkte: \texttt{POST /create} (ServerKey-Decompress) und \texttt{POST /\{code\}/submit} (\texttt{keep\_max} plus Background-Sort). Bewusst ausgeklammert sind \texttt{GET /entries}, \texttt{GET /\{code\}/public-key} und \texttt{POST /rank}, weil sie kein FHE machen und nur Grundrauschen liefern.
+
+\paragraph{Test 1 -- Room-Growth (29.05.2026)}
+
+Jede Minute wird ein neuer Raum mit einem Spieler und einem Submit angelegt, mit einem Keepalive alle 9 Minuten. Skript: \texttt{01\_room\_growth.js}.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{||l|l||}
+    \hline
+    \textbf{Metrik} & \textbf{Wert} \\
+    \hline\hline
+    p50 & 328\,ms \\
+    \hline
+    p95 & 6{,}41\,s \\
+    \hline
+    Fehlerrate & 5{,}20\,\% \\
+    \hline
+    \textbf{Kipp-Punkt} & \textbf{Raum 59 (\texttt{502 Bad Gateway})} \\
+    \hline
+    Sessions vor Kipp & 57 stabil \\
+    \hline
+\end{tabular}
+\end{table}
+
+Die CPU-Last bleibt während des gesamten Tests nahezu konstant niedrig. Jeder Raum erzeugt nur ein \texttt{create} und alle 9 Minuten einen Keepalive-Submit, also keine nennenswerte FHE-Dauerlast. Dieser Test misst damit ausschließlich die RAM-Obergrenze durch Session-Akkumulation, nicht die Rechenleistung.
+
+\paragraph{Test 2 -- Room-Fill (30.05.2026)}
+
+Ein Raum, in dem die Spielerzahl in 20 Runden von 1 auf 20 wächst. Pro Runde gibt es 10 Tempo-Stufen (Sleep 10\,s herunter auf 1\,s) und danach 2 Minuten Pause. Skript: \texttt{02\_room\_fill.js}.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{||l|l||}
+    \hline
+    \textbf{Metrik} & \textbf{Wert} \\
+    \hline\hline
+    p50 (Submit) & 612\,ms \\
+    \hline
+    p95 & 2{,}39\,s \\
+    \hline
+    Fehlerrate & 0{,}02\,\% \\
+    \hline
+    Durchsatz $\varnothing$ & 1{,}75\,req/s über 4\,h \\
+    \hline
+    \textbf{Kipp-Punkt} & \textbf{kein Crash, 4\,h durchgelaufen} \\
+    \hline
+    \textbf{Erste p95-Sprünge} & \textbf{ab Runde 7 (= 7 Spieler)} \\
+    \hline
+    6 Timeouts & Runde 18 (Sek 12\,317), sofortige Recovery \\
+    \hline
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{contents/media/service_8_latency.png}
+\end{figure}
+
+\textit{Test 2 -- p50/p95/p99 über die Zeit}
+
+Im Latenz-Verlauf zeigt sich:
+\begin{itemize}
+    \item p50 (grün) steigt gleichmäßig mit jeder zusätzlichen Spielerzahl.
+    \item p95 (gelb) zeigt ab Runde 7 erste deutliche Sprünge, die mit jeder weiteren Runde größer werden.
+    \item p99 (blau) hat Spitzen bis 30\,s ab Runde 12, die sich am Ende häufen.
+\end{itemize}
+
+Die p95- und p99-Spitzen treten systematisch zu Beginn jeder Runde auf. Nach der zweiminütigen Pause setzen alle aktiven Spieler nahezu gleichzeitig ihren ersten Submit ab, wodurch sich die FHE-Queue und der Hintergrund-Sort kurz aufstauen. Innerhalb weniger Sekunden desynchronisieren sich die Spieler und die Latenz stabilisiert sich auf einem niedrigeren Niveau.
+
+\paragraph{Test 3 -- Happy-Flow (30.05.2026)}
+
+Ein Spieler durchläuft 20-mal sequentiell den Ablauf \texttt{public-key} $\rightarrow$ 5$\times$ \texttt{submit} $\rightarrow$ \texttt{entries} $\rightarrow$ \texttt{rank} (8 Requests pro Iteration). Skript: \texttt{03\_happy\_flow.js}.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{||l|l||}
+    \hline
+    \textbf{Metrik} & \textbf{Wert} \\
+    \hline\hline
+    Fehlerrate & 0{,}00\,\% (160/160 Checks) \\
+    \hline
+    \textbf{Flow-Summe p50} & \textbf{4{,}6\,s} \\
+    \hline
+    \textbf{Flow-Summe p95} & \textbf{5{,}9\,s} \\
+    \hline
+\end{tabular}
+\end{table}
+
+\paragraph{Throughput-Grenze}\mbox{}\\
+\begin{itemize}
+    \item \textbf{Parallele Sessions:} 57 stabil. Ab Raum 59 fällt der Service mit \texttt{502} aus.
+    \item \textbf{Submit unter Dauerlast (4\,h, bis 20 Spieler):} p95 gesamt 2{,}39\,s, erste p95-Sprünge ab Runde 7 (siehe Test-2-Grafik), p50 steigt gleichmäßig mit der Spielerzahl, p99-Spitzen bis 30\,s.
+    \item \textbf{RAM pro aktiver Session:} etwa 350 bis 400\,MB für den dekomprimierten ServerKey (komprimiert über die Leitung 80\,MB).
+\end{itemize}
+
+\paragraph{Lastkurve}\mbox{}\\
+Im Grafana-Dashboard \texttt{leaderboard-perf} lässt sich der jeweilige Run über den Filter \texttt{testid} einblenden. Dort sind die per-Stufe-Latenzen und die Ressourcen über die Zeit ablesbar.
+
+\paragraph{Reproduzierbarkeit}\mbox{}\\
+\begin{lstlisting}[basicstyle=\ttfamily\footnotesize,breaklines=true]
+cargo run --release -p encrypted-leaderboard --features loadtest \
+  --bin gen_corpus -- --out services/08-encrypted-leaderboard/loadtest/corpus
+
+kubectl port-forward -n monitoring svc/prometheus-operated 9090:9090 &
+cd services/08-encrypted-leaderboard/loadtest/k6
+
+K6_PROMETHEUS_RW_SERVER_URL=http://localhost:9090/api/v1/write \
+k6 run --out experimental-prometheus-rw 01_room_growth.js \
+  -e BASE_URL=http://159.195.145.100/leaderboard
+
+K6_PROMETHEUS_RW_SERVER_URL=http://localhost:9090/api/v1/write \
+k6 run --out experimental-prometheus-rw 02_room_fill.js \
+  -e BASE_URL=http://159.195.145.100/leaderboard
+
+K6_PROMETHEUS_RW_SERVER_URL=http://localhost:9090/api/v1/write \
+k6 run --out experimental-prometheus-rw 03_happy_flow.js \
+  -e BASE_URL=http://159.195.145.100/leaderboard
+\end{lstlisting}
+
 \subsubsection{Limitationen}
+\begin{itemize}
+    \item Maximal 20 Spieler pro Raum (\texttt{MAX\_ENTRIES}), bedingt durch die FHE-Sort-Komplexität $O(n \cdot \log^2 n)$. Größere Räume sind technisch möglich, würden aber die Latenz pro Submit überproportional steigen lassen.
+    \item Maximal etwa 57 parallele Räume pro Service-Instanz, begrenzt durch den RAM-Verbrauch der dekomprimierten ServerKeys (siehe Test 1). Ab Raum 59 fällt die Instanz mit \texttt{502 Bad Gateway} aus.
+    \item Sessions werden nach 10 Minuten Inaktivität vom Janitor entfernt. Es gibt keine Persistenz, ein Server-Neustart entfernt sämtliche aktiven Sessions inklusive aller eingereichten Scores.
+    \item Keine Authentifizierung und kein Rate-Limit. Wer den Raumcode kennt, kann submitten. Die Spieler-Zulassung ist sozial geregelt, dadurch dass der Ersteller den Code nur an seine Gruppe weitergibt.
+    \item Keine Float-Werte, keine Division und keine datenabhängigen Branches in TFHE-rs. Score-Updates müssen sich auf \texttt{max()} reduzieren lassen, Nachkommastellen werden über eine Skalierung auf Ganzzahlen abgebildet.
+    \item Der \texttt{player\_key} muss im Klartext zum Server gehen, damit die serverseitige Wiedererkennung funktioniert. Das verrät, wer wann postet, lässt aber keinen Rückschluss auf den Score zu.
+    \item Verliert der Ersteller seinen ClientKey, ist die sortierte Liste nicht mehr lesbar. Eine Recovery ist nicht möglich, da der Server keinen Klartext-Score kennt.
+\end{itemize}
