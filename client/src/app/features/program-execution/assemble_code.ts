@@ -18,10 +18,13 @@ export function assemble_code(programme: string): number[] {
             or_s = "00";
         }
 
-        const [op, or] = mnemonic_to_opcode(op_s, or_s);
-        bytes.push(op, or);
+        if (op_s.startsWith("#")) {
+            bytes.push(Number.parseInt(op_s.slice(1), 16), Number.parseInt(or_s.slice(1), 16))
+        } else {
+            const [op, or] = mnemonic_to_opcode(op_s, or_s);
+            bytes.push(op, or);
+        }
     }
-
 
     return bytes;
 }
@@ -154,3 +157,101 @@ const mnemonic_to_opcode = (mnemonic: string, operand: string): [number, number]
 
     return [op, or % 256];
 }
+
+/*
+LDA $95
+SWP
+LDA $87
+ADD
+LDR $103
+LDA $94
+SWP
+LDA $86
+ADDC
+LDR $102
+LDA $93
+SWP
+LDA $85
+ADDC
+LDR $101
+LDA $92
+SWP
+LDA $84
+ADDC
+LDR $100
+LDA $91
+SWP
+LDA $83
+ADDC
+LDR $99
+LDA $90
+SWP
+LDA $82
+ADDC
+LDR $98
+LDA $89
+SWP
+LDA $81
+ADDC
+LDR $97
+LDA $88
+SWP
+LDA $80
+ADDC
+LDR $96
+*/
+
+/*
+LDA $95
+SWP
+LDA $87
+ADD
+LDR $103
+LDA $94
+SWP
+LDA $86
+ADDC
+LDR $102
+LDA $93
+SWP
+LDA $85
+ADDC
+LDR $101
+LDA $92
+SWP
+LDA $84
+ADDC
+LDR $100
+LDA $91
+SWP
+LDA $83
+ADDC
+LDR $99
+LDA $90
+SWP
+LDA $82
+ADDC
+LDR $98
+LDA $89
+SWP
+LDA $81
+ADDC
+LDR $97
+LDA $88
+SWP
+LDA $80
+ADDC
+LDR $96
+#DE #AD; A
+#BE #EF
+#CA #FE
+#DE #AF
+#AF #FE; B
+#DA #DA
+#BA #DD
+#DA #ED
+NOP
+NOP
+NOP
+NOP
+ */
