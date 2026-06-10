@@ -27,15 +27,6 @@ pub(crate) struct AppState {
     pub(crate) sessions: SessionStore,
 }
 
-/// Request für den zustandslosen Endpunkt (abwärtskompatibel, Tests unverändert).
-#[derive(Deserialize, Serialize, JsonSchema)]
-pub(crate) struct AgeRequest {
-    /// Base64-kodierter, mit dem ClientKey verschlüsselter `FheInt8` (Alter in Jahren).
-    pub(crate) encrypted_age: String,
-    /// Base64-kodierter `CompressedServerKey` (bincode-serialisiert).
-    pub(crate) server_key: String,
-}
-
 #[derive(Serialize, Deserialize, JsonSchema)]
 pub(crate) struct AgeResponse {
     /// Base64-kodierter `FheBool` — true wenn Alter ≥ 18 und ≥ 0.
@@ -113,22 +104,6 @@ pub(crate) fn encode_result(result: &FheBool) -> Result<String, (StatusCode, Str
         })
 }
 
-pub(crate) async fn verify_age(
-    Json(req): Json<AgeRequest>,
-) -> Result<Json<AgeResponse>, (StatusCode, String)> {
-    let compressed = decode_server_key(&req.server_key)?;
-    let enc_age = decode_encrypted_age(&req.encrypted_age)?;
-
-    let enc_result = tokio::task::block_in_place(|| {
-        tfhe::set_server_key(compressed.decompress());
-        age_check(&enc_age)
-    });
-
-    Ok(Json(AgeResponse {
-        is_adult: encode_result(&enc_result)?,
-    }))
-}
-
 /// POST /session
 /// Lädt den CompressedServerKey einmalig hoch, dekomprimiert ihn und gibt
 /// eine session_id zurück. Alle folgenden /verify/:id Requests sind ~88 KB.
@@ -200,17 +175,7 @@ pub fn create_app() -> Router {
         sessions: Arc::new(RwLock::new(HashMap::new())),
     };
 
-    // Stateless-Route ohne State für openapi_docs
-    let stateless_router = ApiRouter::new().api_route(
-        "/",
-        post_with(verify_age, |op| {
-            op.description("Zustandslose Altersverifikation — server_key im Request-Body.")
-                .response::<200, Json<AgeResponse>>()
-        }),
-    );
-
-    // Session-Routen mit State
-    let session_router = ApiRouter::new()
+    let api_router = ApiRouter::new()
         .api_route(
             "/session",
             post_with(setup_session, |op| {
@@ -235,12 +200,11 @@ pub fn create_app() -> Router {
         .with_state(state);
 
     openapi_docs::attach(
-        stateless_router,
+        api_router,
         "Encrypted Age Verification",
         "Homomorphic age-check service.",
         env!("CARGO_PKG_VERSION"),
     )
-    .merge(session_router)
     .merge(health::router(env!("CARGO_PKG_VERSION")))
     .layer(DefaultBodyLimit::max(2 * 1024 * 1024 * 1024))
 }
